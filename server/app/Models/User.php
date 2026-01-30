@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -11,22 +12,30 @@ class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
 
-    protected $primaryKey = 'user_id';
-
     /**
      * The attributes that are mass assignable.
      *
      * @var array<int, string>
      */
     protected $fillable = [
-        'username',
-        'full_name',
+        'google_id',
         'email',
-        'password_hash',
+        'password',
+        'first_name',
+        'last_name',
+        'role',
         'department',
+        'employee_id',
+        'profile_picture',
         'is_active',
-        'created_by',
-        'role', // Keeping 'role' for backward compatibility or simple role check
+        'login_attempts',
+        'lock_until',
+        'violation_count',
+        'last_login',
+        'last_failed_login',
+        'google_calendar_token',
+        'google_calendar_refresh_token',
+        'google_calendar_token_expires_at',
     ];
 
     /**
@@ -35,7 +44,8 @@ class User extends Authenticatable
      * @var array<int, string>
      */
     protected $hidden = [
-        'password_hash',
+        'password',
+        'remember_token',
     ];
 
     /**
@@ -46,38 +56,84 @@ class User extends Authenticatable
     protected $casts = [
         'email_verified_at' => 'datetime',
         'is_active' => 'boolean',
+        'last_login' => 'datetime',
+        'last_failed_login' => 'datetime',
+        'lock_until' => 'datetime',
+        'password' => 'hashed',
     ];
 
-    public function getAuthPasswordName()
+    /**
+     * Get the user's full name.
+     */
+    public function getFullNameAttribute()
     {
-        return 'password_hash';
+        return "{$this->first_name} {$this->last_name}";
+    }
+
+    /**
+     * Compare password (wrapper for Hash::check)
+     */
+    public function comparePassword($password)
+    {
+        return \Hash::check($password, $this->password);
+    }
+
+    /**
+     * Increment login attempts and handle lockout logic
+     */
+    public function incrementLoginAttempts()
+    {
+        $this->increment('login_attempts');
+        $this->update(['last_failed_login' => now()]);
+
+        if ($this->login_attempts >= 5) {
+            $this->lockAccount();
+        }
+    }
+
+    /**
+     * Reset login attempts
+     */
+    public function resetLoginAttempts()
+    {
+        $this->update([
+            'login_attempts' => 0,
+            'lock_until' => null
+        ]);
+    }
+
+    /**
+     * Lock account temporarily
+     */
+    public function lockAccount()
+    {
+        // Progressive lockout logic could go here, currently fixed 5 mins
+        $lockoutMinutes = 5;
+        $this->update([
+            'lock_until' => now()->addMinutes($lockoutMinutes),
+            'violation_count' => $this->violation_count + 1
+        ]);
     }
 
     // Relationships
 
-    public function roles()
-    {
-        return $this->belongsToMany(Role::class, 'user_roles', 'user_id', 'role_id')
-                    ->withPivot('assigned_at', 'assigned_by');
-    }
-
     public function sentMemos()
     {
-        return $this->hasMany(Memo::class, 'sender_id', 'user_id');
+        return $this->hasMany(Memo::class, 'sender_id');
     }
 
-    public function acknowledgments()
+    public function receivedMemos()
     {
-        return $this->hasMany(MemoAcknowledgment::class, 'recipient_id', 'user_id');
+        return $this->hasMany(Memo::class, 'recipient_id');
+    }
+
+    public function createdMemos()
+    {
+        return $this->hasMany(Memo::class, 'created_by');
     }
 
     public function activityLogs()
     {
-        return $this->hasMany(UserActivityLog::class, 'user_id', 'user_id');
-    }
-
-    public function memoLogs()
-    {
-        return $this->hasMany(MemoLog::class, 'performed_by', 'user_id');
+        return $this->hasMany(UserActivityLog::class, 'actor_id');
     }
 }

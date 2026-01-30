@@ -4,41 +4,50 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Memo extends Model
 {
     use HasFactory;
 
-    protected $primaryKey = 'memo_id';
-
     protected $fillable = [
-        'subject',
-        'content',
+        'created_by',
         'sender_id',
-        'priority',
-        'is_deleted',
-        'deleted_by',
-        'deleted_at',
+        'recipient_id',
+        'subject',
+        'message',
+        'priority', // urgent, high, normal, low
+        'status', // draft, sent, read, archived, deleted
+        'attachments',
+        'version',
+        'is_draft',
+        'user_id'
     ];
 
     protected $casts = [
-        'is_deleted' => 'boolean',
-        'deleted_at' => 'datetime',
+        'attachments' => 'array',
+        'is_draft' => 'boolean',
+        'version' => 'integer',
     ];
+
+    // Relationships
 
     public function sender()
     {
-        return $this->belongsTo(User::class, 'sender_id', 'user_id');
+        return $this->belongsTo(User::class, 'sender_id');
     }
 
-    public function logs()
+    public function recipient()
     {
-        return $this->hasMany(MemoLog::class, 'memo_id', 'memo_id');
+        return $this->belongsTo(User::class, 'recipient_id');
     }
 
-    public function acknowledgments()
+    public function creator()
     {
-        return $this->hasMany(MemoAcknowledgment::class, 'memo_id', 'memo_id');
+        return $this->belongsTo(User::class, 'created_by');
+    }
+    
+    public function calendarEvents()
+    {
+        return $this->hasMany(CalendarEvent::class);
     }
 }

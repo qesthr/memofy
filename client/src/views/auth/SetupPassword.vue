@@ -18,6 +18,7 @@ const showPassword = ref(false)
 const showConfirmPassword = ref(false)
 
 const formData = ref({
+  name: '',
   password: '',
   password_confirmation: ''
 })
@@ -65,7 +66,7 @@ const verifyToken = async () => {
 
 const setupPassword = async () => {
   // Validation
-  if (!formData.value.password || !formData.value.password_confirmation) {
+  if (!formData.value.name || !formData.value.password || !formData.value.password_confirmation) {
     Swal.fire({
       icon: 'warning',
       title: 'Incomplete Form',
@@ -100,6 +101,7 @@ const setupPassword = async () => {
   try {
     const response = await api.post('/auth/setup-password', {
       token: token.value,
+      name: formData.value.name,
       password: formData.value.password,
       password_confirmation: formData.value.password_confirmation
     })
@@ -176,8 +178,8 @@ onMounted(() => {
             <div class="flex items-center justify-center mb-4">
               <CheckCircle :size="48" class="text-success" />
             </div>
-            <h2 class="text-2xl font-bold text-base-content mb-2">Welcome, {{ invitationData?.name }}!</h2>
-            <p class="text-base-content/60">Set up your password to access the {{ invitationData?.role }} portal</p>
+            <h2 class="text-2xl font-bold text-base-content mb-2">Welcome!</h2>
+            <p class="text-base-content/60">Set up your account to access the {{ invitationData?.role }} portal</p>
           </div>
 
           <!-- Invitation Info -->
@@ -200,6 +202,19 @@ onMounted(() => {
 
           <!-- Password Form -->
           <form @submit.prevent="setupPassword" class="space-y-4">
+            <!-- Name -->
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text font-medium">Full Name <span class="text-error">*</span></span>
+              </label>
+              <input 
+                v-model="formData.name"
+                type="text"
+                placeholder="Enter your full name" 
+                class="input input-bordered w-full"
+              />
+            </div>
+
             <!-- Password -->
             <div class="form-control">
               <label class="label">

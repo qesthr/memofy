@@ -9,26 +9,26 @@ class UserActivityLog extends Model
 {
     use HasFactory;
 
-    protected $primaryKey = 'activity_id';
-    public $timestamps = false; // Schema has created_at only
-
     protected $fillable = [
-        'user_id',
-        'action',
-        'resource_type',
-        'resource_id',
+        'actor_id',
+        'actor_email',
+        'actor_role',
+        'actor_department',
+        'action', // user_login, memo_created, etc.
+        'target', // Clean human readable target description
+        'target_id', // ID of the target object (optional)
+        'description',
+        'details', // JSON payload with more info
         'ip_address',
-        'user_agent',
-        'details',
-        'created_at'
+        'user_agent'
     ];
 
     protected $casts = [
-        'created_at' => 'datetime',
+        'details' => 'array',
     ];
 
-    public function user()
+    public function actor()
     {
-        return $this->belongsTo(User::class, 'user_id', 'user_id');
+        return $this->belongsTo(User::class, 'actor_id');
     }
 }

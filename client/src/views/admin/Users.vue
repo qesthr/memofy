@@ -1,12 +1,12 @@
 <script setup>
-import { ref, onMounted } from 'vue'
-import { Plus, Search, Pencil, Archive, Filter, X } from 'lucide-vue-next'
+import { ref, onMounted, watch } from 'vue'
+import { Plus, Pencil, Archive, X } from 'lucide-vue-next'
 import api from '../../services/api'
 import Swal from 'sweetalert2'
 
-const activeTab = ref('active')
 const activeFilter = ref('all')
 const users = ref([])
+const currentUser = ref(null)
 const showAddUserModal = ref(false)
 const isLoading = ref(false)
 
@@ -31,25 +31,105 @@ const roles = [
   { value: 'faculty', label: 'Faculty' }
 ]
 
-const tabs = [
-  { id: 'active', label: 'Active Users' },
-  { id: 'archived', label: 'Archived Users (0)' }
-]
-
 const filters = [
-  { id: 'all', label: 'All', count: 0 },
-  { id: 'admin', label: 'Admin', count: 0 },
-  { id: 'secretary', label: 'Secretary', count: 0 },
-  { id: 'faculty', label: 'Faculty', count: 0 }
+  { id: 'all', label: 'All' },
+  { id: 'admin', label: 'Admin' },
+  { id: 'secretary', label: 'Secretary' },
+  { id: 'faculty', label: 'Faculty' }
 ]
 
 const fetchUsers = async () => {
   try {
-    const response = await api.get('/admin/users')
-    users.value = response.data.data
+    const params = {
+      status: 'active'
+    }
+    
+    if (activeFilter.value !== 'all') {
+      params.role = activeFilter.value
+    }
+
+    const response = await api.get('/users', { params })
+    const usersData = response.data.data || response.data
+    
+    // Transform backend data
+    users.value = usersData.map(user => ({
+      ...user,
+      name: user.name || `${user.first_name || ''} ${user.last_name || ''}`.trim(),
+      roleColor: getRoleColor(user.role)
+    }))
   } catch (error) {
     console.error('Error fetching users:', error)
   }
+}
+
+// Watch filters to trigger fetch
+watch(activeFilter, () => {
+  fetchUsers()
+})
+
+const fetchCurrentUser = async () => {
+  try {
+    const response = await api.get('/current-user')
+    currentUser.value = response.data
+  } catch (error) {
+    console.error('Error fetching current user:', error)
+  }
+}
+
+const archiveUser = async (user) => {
+  // Prevent archiving self
+  if (currentUser.value && user.id === currentUser.value.id) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Cannot Archive',
+      text: 'You cannot archive your own account.',
+      confirmButtonColor: '#4285F4'
+    })
+    return
+  }
+
+  const result = await Swal.fire({
+    icon: 'warning',
+    title: 'Archive User?',
+    text: `Are you sure you want to archive ${user.name}? They will be disabled from logging in.`,
+    showCancelButton: true,
+    confirmButtonColor: '#d33',
+    cancelButtonColor: '#3085d6',
+    confirmButtonText: 'Yes, archive user!'
+  })
+
+  if (!result.isConfirmed) return
+
+  try {
+    await api.patch(`/users/${user.id}/toggle-active`)
+    
+    Swal.fire({
+      icon: 'success',
+      title: 'User Archived!',
+      text: `${user.name} has been moved to the archive.`,
+      confirmButtonColor: '#4285F4',
+      timer: 2000
+    })
+    
+    fetchUsers() // Refresh list (user should disappear)
+  } catch (error) {
+    console.error('Error archiving user:', error)
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: error.response?.data?.message || 'Failed to archive user',
+      confirmButtonColor: '#4285F4'
+    })
+  }
+}
+
+const getRoleColor = (role) => {
+  const colors = {
+    'admin': 'bg-primary/10 text-primary',
+    'secretary': 'bg-info/10 text-info',
+    'faculty': 'bg-secondary/10 text-secondary'
+  }
+  return colors[role] || 'bg-base-300 text-base-content'
 }
 
 const validateEmail = (email) => {
@@ -77,7 +157,6 @@ const closeModal = () => {
 }
 
 const sendInvitation = async () => {
-  // Validate email domain
   if (!validateEmail(formData.value.email)) {
     Swal.fire({
       icon: 'error',
@@ -88,7 +167,6 @@ const sendInvitation = async () => {
     return
   }
 
-  // Validate all fields
   if (!formData.value.name || !formData.value.email || !formData.value.department || !formData.value.role) {
     Swal.fire({
       icon: 'warning',
@@ -102,9 +180,8 @@ const sendInvitation = async () => {
   isLoading.value = true
 
   try {
-    const response = await api.post('/admin/invite-user', formData.value)
+    await api.post('/users/invite', formData.value)
 
-    // Success
     await Swal.fire({
       icon: 'success',
       title: 'Invitation Sent!',
@@ -113,7 +190,7 @@ const sendInvitation = async () => {
     })
 
     closeModal()
-    fetchUsers() // Refresh user list
+    fetchUsers()
 
   } catch (error) {
     console.error('Error sending invitation:', error)
@@ -131,6 +208,7 @@ const sendInvitation = async () => {
 }
 
 onMounted(() => {
+  fetchCurrentUser()
   fetchUsers()
 })
 </script>
@@ -146,25 +224,6 @@ onMounted(() => {
       </button>
     </div>
 
-    <!-- Tabs -->
-    <div class="border-b border-base-300 mb-6">
-      <div class="flex gap-8">
-        <button 
-          v-for="tab in tabs" 
-          :key="tab.id"
-          @click="activeTab = tab.id"
-          class="pb-3 text-sm font-medium transition-colors relative"
-          :class="activeTab === tab.id ? 'text-primary' : 'text-base-content/60 hover:text-base-content'"
-        >
-          {{ tab.label }}
-          <div 
-            v-if="activeTab === tab.id"
-            class="absolute bottom-0 left-0 w-full h-0.5 bg-primary"
-          ></div>
-        </button>
-      </div>
-    </div>
-
     <!-- Filters -->
     <div class="flex gap-2 mb-6">
       <button 
@@ -175,7 +234,6 @@ onMounted(() => {
         :class="activeFilter === filter.id ? 'btn-primary text-white' : 'btn-ghost bg-base-100 border border-base-300'"
       >
         {{ filter.label }}
-        <span class="ml-1 opacity-70">{{ filter.count }}</span>
       </button>
     </div>
 
@@ -192,6 +250,11 @@ onMounted(() => {
             </tr>
           </thead>
           <tbody>
+            <tr v-if="users.length === 0">
+              <td colspan="4" class="text-center py-8 text-base-content/60">
+                No active users found.
+              </td>
+            </tr>
             <tr v-for="user in users" :key="user.id" class="hover:bg-base-50/50 border-b border-base-100 last:border-0">
               <td class="py-4 pl-6">
                 <div class="flex items-center gap-3">
@@ -217,7 +280,12 @@ onMounted(() => {
                   <button class="btn btn-ghost btn-sm btn-square text-primary bg-blue-50 hover:bg-blue-100">
                     <Pencil :size="16" />
                   </button>
-                  <button class="btn btn-ghost btn-sm btn-square text-orange-500 bg-orange-50 hover:bg-orange-100">
+                  <button 
+                    v-if="!(currentUser && user.id === currentUser.id)"
+                    @click="archiveUser(user)"
+                    class="btn btn-ghost btn-sm btn-square text-orange-500 bg-orange-50 hover:bg-orange-100"
+                    title="Archive user"
+                  >
                     <Archive :size="16" />
                   </button>
                 </div>
