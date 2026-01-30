@@ -1,11 +1,35 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { Plus, Search, Pencil, Archive, Filter } from 'lucide-vue-next'
+import { Plus, Search, Pencil, Archive, Filter, X } from 'lucide-vue-next'
+import api from '../../services/api'
+import Swal from 'sweetalert2'
 
 const activeTab = ref('active')
 const activeFilter = ref('all')
-
 const users = ref([])
+const showAddUserModal = ref(false)
+const isLoading = ref(false)
+
+// Form data
+const formData = ref({
+  name: '',
+  email: '',
+  department: '',
+  role: ''
+})
+
+const departments = [
+  'Food Technology',
+  'Automotive Technology',
+  'Electronics Technology',
+  'Information Technology/EMC'
+]
+
+const roles = [
+  { value: 'admin', label: 'Admin' },
+  { value: 'secretary', label: 'Secretary' },
+  { value: 'faculty', label: 'Faculty' }
+]
 
 const tabs = [
   { id: 'active', label: 'Active Users' },
@@ -19,15 +43,90 @@ const filters = [
   { id: 'faculty', label: 'Faculty', count: 0 }
 ]
 
-import api from '../../services/api'
-
 const fetchUsers = async () => {
   try {
     const response = await api.get('/admin/users')
-    // Assuming API returns paginated response, getting data array
     users.value = response.data.data
   } catch (error) {
     console.error('Error fetching users:', error)
+  }
+}
+
+const validateEmail = (email) => {
+  const regex = /^[\w\.\-]+@(student\.)?buksu\.edu\.ph$/
+  return regex.test(email)
+}
+
+const resetForm = () => {
+  formData.value = {
+    name: '',
+    email: '',
+    department: '',
+    role: ''
+  }
+}
+
+const openModal = () => {
+  resetForm()
+  showAddUserModal.value = true
+}
+
+const closeModal = () => {
+  showAddUserModal.value = false
+  resetForm()
+}
+
+const sendInvitation = async () => {
+  // Validate email domain
+  if (!validateEmail(formData.value.email)) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Invalid Email',
+      text: 'Only @buksu.edu.ph and @student.buksu.edu.ph email addresses are allowed.',
+      confirmButtonColor: '#4285F4'
+    })
+    return
+  }
+
+  // Validate all fields
+  if (!formData.value.name || !formData.value.email || !formData.value.department || !formData.value.role) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Incomplete Form',
+      text: 'Please fill in all fields',
+      confirmButtonColor: '#4285F4'
+    })
+    return
+  }
+
+  isLoading.value = true
+
+  try {
+    const response = await api.post('/admin/invite-user', formData.value)
+
+    // Success
+    await Swal.fire({
+      icon: 'success',
+      title: 'Invitation Sent!',
+      text: `An invitation has been sent to ${formData.value.email}`,
+      confirmButtonColor: '#4285F4'
+    })
+
+    closeModal()
+    fetchUsers() // Refresh user list
+
+  } catch (error) {
+    console.error('Error sending invitation:', error)
+    const errorMessage = error.response?.data?.message || error.response?.data?.errors?.email?.[0] || 'Failed to send invitation'
+    
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: errorMessage,
+      confirmButtonColor: '#4285F4'
+    })
+  } finally {
+    isLoading.value = false
   }
 }
 
@@ -41,7 +140,7 @@ onMounted(() => {
     <!-- Header -->
     <div class="flex items-center justify-between mb-8">
       <h1 class="text-2xl font-bold">Manage Users</h1>
-      <button class="btn btn-primary gap-2 text-white">
+      <button @click="openModal" class="btn btn-primary gap-2 text-white">
         <Plus :size="20" />
         Add user
       </button>
@@ -98,7 +197,7 @@ onMounted(() => {
                 <div class="flex items-center gap-3">
                   <div class="avatar placeholder">
                     <div class="bg-primary text-primary-content rounded-full w-10">
-                      <span class="text-xs">{{ user.name.charAt(0) }}</span>
+                      <span class="text-xs">{{ user.name?.charAt(0) }}</span>
                     </div>
                   </div>
                   <div>
@@ -128,6 +227,91 @@ onMounted(() => {
         </table>
       </div>
     </div>
+
+    <!-- Add User Modal -->
+    <div v-if="showAddUserModal" class="modal modal-open">
+      <div class="modal-box max-w-md">
+        <!-- Modal Header -->
+        <div class="flex items-center justify-between mb-6">
+          <h3 class="font-bold text-xl">Add New User</h3>
+          <button @click="closeModal" class="btn btn-sm btn-circle btn-ghost">
+            <X :size="20" />
+          </button>
+        </div>
+
+        <!-- Form -->
+        <div class="space-y-4">
+          <!-- Name -->
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Name <span class="text-error">*</span></span>
+            </label>
+            <input 
+              v-model="formData.name"
+              type="text" 
+              placeholder="Enter full name" 
+              class="input input-bordered w-full"
+            />
+          </div>
+
+          <!-- Email -->
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Email <span class="text-error">*</span></span>
+            </label>
+            <input 
+              v-model="formData.email"
+              type="email" 
+              placeholder="user@buksu.edu.ph" 
+              class="input input-bordered w-full"
+            />
+            <label class="label">
+              <span class="label-text-alt text-base-content/60">Only @buksu.edu.ph and @student.buksu.edu.ph allowed</span>
+            </label>
+          </div>
+
+          <!-- Department -->
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Department <span class="text-error">*</span></span>
+            </label>
+            <select v-model="formData.department" class="select select-bordered w-full">
+              <option value="" disabled>Select department</option>
+              <option v-for="dept in departments" :key="dept" :value="dept">
+                {{ dept }}
+              </option>
+            </select>
+          </div>
+
+          <!-- Role -->
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Role <span class="text-error">*</span></span>
+            </label>
+            <select v-model="formData.role" class="select select-bordered w-full">
+              <option value="" disabled>Select role</option>
+              <option v-for="role in roles" :key="role.value" :value="role.value">
+                {{ role.label }}
+              </option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Modal Actions -->
+        <div class="modal-action mt-6">
+          <button @click="closeModal" class="btn btn-ghost">Cancel</button>
+          <button 
+            @click="sendInvitation" 
+            class="btn btn-primary text-white"
+            :disabled="isLoading"
+          >
+            <span v-if="isLoading" class="loading loading-spinner loading-sm"></span>
+            <span v-else>Send Invitation</span>
+          </button>
+        </div>
+      </div>
+      <div class="modal-backdrop" @click="closeModal"></div>
+    </div>
   </div>
 </template>
 
@@ -135,6 +319,10 @@ onMounted(() => {
 @reference "../../style.css";
 
 .view-container {
-  @apply p-0; /* Content padding handled by layout */
+  @apply p-0;
+}
+
+.modal-backdrop {
+  @apply bg-black/50;
 }
 </style>

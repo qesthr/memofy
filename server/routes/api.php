@@ -19,6 +19,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/users', [\App\Http\Controllers\Api\AdminController::class, 'users']);
         Route::get('/activity-logs', [\App\Http\Controllers\Api\AdminController::class, 'activityLogs']);
         Route::get('/calendar-events', [\App\Http\Controllers\Api\AdminController::class, 'calendarEvents']);
+        Route::post('/invite-user', [\App\Http\Controllers\Api\AdminController::class, 'inviteUser']);
     });
 });
 
+// Public routes for password setup
+Route::post('/auth/setup-password', [AuthController::class, 'setupPassword']);
+Route::get('/auth/verify-token/{token}', [AuthController::class, 'verifyInvitationToken']);

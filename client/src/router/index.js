@@ -10,6 +10,11 @@ const routes = [
     component: Login
   },
   {
+    path: '/auth/setup-password',
+    name: 'SetupPassword',
+    component: () => import('../views/auth/SetupPassword.vue')
+  },
+  {
     path: '/unauthorized',
     name: 'Unauthorized',
     component: () => import('../views/unauthorized.vue')

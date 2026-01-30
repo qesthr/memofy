@@ -7,6 +7,11 @@ use App\Models\Memo;
 use App\Models\User;
 use App\Models\UserActivityLog;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
+use App\Mail\UserInvitation;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 
 class AdminController extends Controller
 {
@@ -91,5 +96,113 @@ class AdminController extends Controller
         // Mock data or fetch from Memo/Event models if they exist
         // For now returning empty or formatted empty structure
         return response()->json([]);
+    }
+
+    /**
+     * Send invitation email to new user
+     */
+    public function inviteUser(Request $request)
+    {
+        // Validate request
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:255',
+            'email' => [
+                'required',
+                'email',
+                'unique:users,email',
+                'regex:/^[\w\.\-]+@(student\.)?buksu\.edu\.ph$/'
+            ],
+            'department' => 'required|string|in:Food Technology,Automotive Technology,Electronics Technology,Information Technology/EMC',
+            'role' => 'required|string|in:admin,secretary,faculty'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            // Check if invitation already exists
+            $existingInvitation = DB::table('user_invitations')
+                ->where('email', $request->email)
+                ->where('used', false)
+                ->where('expires_at', '>', now())
+                ->first();
+
+            if ($existingInvitation) {
+                return response()->json([
+                    'message' => 'An active invitation already exists for this email'
+                ], 409);
+            }
+
+            // Generate username from email
+            $emailUsername = explode('@', $request->email)[0];
+            $username = strtolower($emailUsername);
+            
+            // Ensure username is unique
+            $originalUsername = $username;
+            $counter = 1;
+            while (User::where('username', $username)->exists()) {
+                $username = $originalUsername . $counter;
+                $counter++;
+            }
+
+            // Create user immediately WITHOUT password
+            $user = User::create([
+                'username' => $username,
+                'full_name' => $request->name,
+                'email' => $request->email,
+                'password_hash' => null, // No password yet
+                'role' => $request->role,
+                'department' => $request->department,
+                'is_active' => false // Not active until password is set
+            ]);
+
+            // Generate unique token
+            $token = Str::random(64);
+            
+            // Store invitation in database
+            DB::table('user_invitations')->insert([
+                'user_id' => $user->user_id, // Link to the newly created user
+                'email' => $request->email,
+                'name' => $request->name,
+                'department' => $request->department,
+                'role' => $request->role,
+                'token' => $token,
+                'expires_at' => now()->addHours(48),
+                'created_by' => $request->user()->user_id,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
+            // Generate setup URL
+            $setupUrl = config('app.frontend_url', 'http://localhost:5174') . '/auth/setup-password?token=' . $token;
+
+            // Get inviter name
+            $invitedBy = $request->user()->full_name;
+
+            // Send email
+            Mail::to($request->email)->send(
+                new UserInvitation($request->name, $request->role, $setupUrl, $invitedBy)
+            );
+
+            return response()->json([
+                'message' => 'Invitation sent successfully',
+                'data' => [
+                    'email' => $request->email,
+                    'name' => $request->name,
+                    'role' => $request->role
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            \Log::error('User invitation error: ' . $e->getMessage());
+            return response()->json([
+                'message' => 'Failed to send invitation',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 }

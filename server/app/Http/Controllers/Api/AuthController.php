@@ -160,4 +160,109 @@ class AuthController extends Controller
             return view('auth.google-error', ['error' => $e->getMessage()]);
         }
     }
+
+    /**
+     * Verify invitation token
+     */
+    public function verifyInvitationToken($token)
+    {
+        $invitation = DB::table('user_invitations')
+            ->where('token', $token)
+            ->where('used', false)
+            ->where('expires_at', '>', now())
+            ->first();
+
+        if (!$invitation) {
+            return response()->json([
+                'valid' => false,
+                'message' => 'Invalid or expired token'
+            ], 404);
+        }
+
+        return response()->json([
+            'valid' => true,
+            'data' => [
+                'name' => $invitation->name,
+                'email' => $invitation->email,
+                'role' => $invitation->role,
+                'department' => $invitation->department
+            ]
+        ]);
+    }
+
+    /**
+     * Setup password for invited user
+     */
+    public function setupPassword(Request $request)
+    {
+        $request->validate([
+            'token' => 'required|string',
+            'password' => 'required|string|min:8|confirmed'
+        ]);
+
+        try {
+            // Verify invitation
+            $invitation = DB::table('user_invitations')
+                ->where('token', $request->token)
+                ->where('used', false)
+                ->where('expires_at', '>', now())
+                ->first();
+
+            if (!$invitation) {
+                return response()->json([
+                    'message' => 'Invalid or expired invitation token'
+                ], 404);
+            }
+
+            // Find the existing user by email
+            $user = User::where('email', $invitation->email)->first();
+
+            if (!$user) {
+                return response()->json([
+                    'message' => 'User not found. Please contact administrator.'
+                ], 404);
+            }
+
+            // Check if user already has a password set
+            if ($user->password_hash) {
+                return response()->json([
+                    'message' => 'Password already set for this account'
+                ], 409);
+            }
+
+            // Update user with password and activate account
+            $user->password_hash = bcrypt($request->password);
+            $user->is_active = true;
+            $user->save();
+
+            // Mark invitation as used
+            DB::table('user_invitations')
+                ->where('token', $request->token)
+                ->update(['used' => true]);
+
+            // Create token for auto-login
+            $token = $user->createToken('auth-token')->plainTextToken;
+
+            return response()->json([
+                'message' => 'Password set successfully',
+                'data' => [
+                    'token' => $token,
+                    'user' => [
+                        'id' => $user->user_id,
+                        'name' => $user->full_name,
+                        'email' => $user->email,
+                        'username' => $user->username,
+                    ],
+                    'role' => $user->role
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            \Log::error('Password setup error: ' . $e->getMessage());
+            return response()->json([
+                'message' => 'Failed to setup account',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }
