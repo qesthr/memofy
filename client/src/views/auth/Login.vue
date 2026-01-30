@@ -1,8 +1,14 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
-import api from '../../services/api'
 import { Eye, EyeOff } from 'lucide-vue-next'
+import api from '@/services/api'
+
+// Make recaptcha site key available globally in instance
+const app = getCurrentInstance()
+if (app) {
+  app.appContext.config.globalProperties.$recaptchaSiteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY
+}
 
 const router = useRouter()
 const email = ref('')
@@ -11,19 +17,27 @@ const showPassword = ref(false)
 const isLoading = ref(false)
 const error = ref('')
 const rememberMe = ref(false)
+const recaptchaVerified = ref(false)
+const recaptchaToken = ref('')
 
 const togglePassword = () => {
   showPassword.value = !showPassword.value
 }
 
 const handleLogin = async () => {
+  if (!recaptchaVerified.value) {
+    error.value = 'Please complete the reCAPTCHA verification'
+    return
+  }
+
   isLoading.value = true
   error.value = ''
   
   try {
     const response = await api.post('/login', {
       email: email.value,
-      password: password.value
+      password: password.value,
+      recaptcha_token: recaptchaToken.value
     })
 
     const { token, user, role } = response.data.data
@@ -47,9 +61,14 @@ const handleLogin = async () => {
 }
 
 // Google Sign-In Logic
-const googleLoginUrl = `${import.meta.env.VITE_API_BASE_URL || '/api'}/auth/google` // Adjust based on actual backend route
+const googleLoginUrl = `${import.meta.env.VITE_API_BASE_URL || '/api'}/auth/google`
 
 const openGoogleLogin = () => {
+  if (!recaptchaVerified.value) {
+    error.value = 'Please complete the reCAPTCHA verification'
+    return
+  }
+
   const width = 500
   const height = 600
   const left = (window.screen.width / 2) - (width / 2)
@@ -64,9 +83,6 @@ const openGoogleLogin = () => {
 
 // Listen for messages from popup
 const handleMessage = (event) => {
-  // Validate origin if possible, though strict validation might be tricky in dev
-  // if (event.origin !== window.location.origin) return; 
-
   if (event.data.type === 'GOOGLE_LOGIN_SUCCESS') {
     const { token, user, role } = event.data.payload
     
@@ -84,12 +100,40 @@ const handleMessage = (event) => {
   }
 }
 
+// reCAPTCHA callback
+const onRecaptchaVerify = (token) => {
+  recaptchaVerified.value = true
+  recaptchaToken.value = token
+  error.value = ''
+}
+
+const onRecaptchaExpired = () => {
+  recaptchaVerified.value = false
+  recaptchaToken.value = ''
+}
+
+// Load reCAPTCHA script
+const loadRecaptchaScript = () => {
+  const script = document.createElement('script')
+  script.src = 'https://www.google.com/recaptcha/api.js'
+  script.async = true
+  script.defer = true
+  document.head.appendChild(script)
+}
+
 onMounted(() => {
   window.addEventListener('message', handleMessage)
+  loadRecaptchaScript()
+  
+  // Make callbacks available globally for reCAPTCHA
+  window.onRecaptchaVerify = onRecaptchaVerify
+  window.onRecaptchaExpired = onRecaptchaExpired
 })
 
 onUnmounted(() => {
   window.removeEventListener('message', handleMessage)
+  delete window.onRecaptchaVerify
+  delete window.onRecaptchaExpired
 })
 </script>
 
@@ -178,8 +222,8 @@ onUnmounted(() => {
            <!-- Custom Login Button -->
            <button 
             type="submit" 
-            class="w-full bg-[#4285F4] hover:bg-[#3367D6] text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
-            :disabled="isLoading"
+            class="w-full bg-[#4285F4] hover:bg-[#3367D6] text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            :disabled="isLoading || !recaptchaVerified"
           >
             <span v-if="isLoading" class="loading loading-spinner loading-sm"></span>
             <span v-else>Login</span>
@@ -202,27 +246,21 @@ onUnmounted(() => {
           <button
             type="button"
             @click="openGoogleLogin"
-            class="w-full btn btn-outline border-gray-300 hover:bg-gray-50 hover:border-gray-400 normal-case text-base font-medium text-gray-700 space-x-2"
+            class="w-full btn btn-outline border-gray-300 hover:bg-gray-50 hover:border-gray-400 normal-case text-base font-medium text-gray-700 space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            :disabled="!recaptchaVerified"
           >
             <img src="../../assets/images/images/google.png" alt="Google" class="w-5 h-5" />
             <span>Sign in with Google</span>
           </button>
 
-          <!-- Recaptcha Placeholder -->
+          <!-- Real Google reCAPTCHA -->
           <div class="flex justify-center mt-6">
-            <div class="bg-[#f9f9f9] border border-[#d3d3d3] rounded shadow-sm p-3 w-full max-w-[300px] flex items-center justify-between">
-               <div class="flex items-center gap-3">
-                 <input type="checkbox" class="checkbox checkbox-sm rounded-sm border-gray-400" />
-                 <span class="text-sm text-gray-700 font-medium">I'm not a robot</span>
-               </div>
-               <div class="flex flex-col items-center">
-                 <img src="https://www.gstatic.com/recaptcha/api2/logo_48.png" class="w-8 opacity-70" alt="reCAPTCHA" />
-                 <span class="text-[10px] text-gray-500">reCAPTCHA</span>
-                 <div class="text-[8px] text-gray-400 flex gap-1">
-                   <span>Privacy</span> - <span>Terms</span>
-                 </div>
-               </div>
-            </div>
+            <div 
+              class="g-recaptcha" 
+              data-sitekey="6LeBIdwrAAAAAOIONOkF3vk31VJTzoN1ElEUOhBV"
+              data-callback="onRecaptchaVerify"
+              data-expired-callback="onRecaptchaExpired"
+            ></div>
           </div>
         </form>
         

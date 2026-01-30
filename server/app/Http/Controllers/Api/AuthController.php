@@ -115,32 +115,49 @@ class AuthController extends Controller
         try {
             $googleUser = Socialite::driver('google')->stateless()->user();
             
+            // Generate unique username from email
+            $emailUsername = explode('@', $googleUser->getEmail())[0];
+            $username = strtolower($emailUsername);
+            
+            // Ensure username is unique
+            $originalUsername = $username;
+            $counter = 1;
+            while (User::where('username', $username)->exists()) {
+                $username = $originalUsername . $counter;
+                $counter++;
+            }
+            
             // Find or create user
-            $user = User::firstOrCreate(
+            $user = User::updateOrCreate(
                 ['email' => $googleUser->getEmail()],
                 [
                     'full_name' => $googleUser->getName(),
-                    'username' => strtolower(str_replace(' ', '.', $googleUser->getName())), // temporary username logic
+                    'username' => $username,
                     'role' => 'faculty', // Default role for new users
-                    'password_hash' => bcrypt(Str::random(16)), // Random password for file uploads/etc if needed
+                    'password_hash' => bcrypt(Str::random(16)),
                     'is_active' => true,
+                    'department' => '', // Admin check will clear this anyway if role is admin
                 ]
             );
 
-            // Login user
-            Auth::login($user);
+            // Create Sanctum token
             $token = $user->createToken('auth-token')->plainTextToken;
 
             // Return HTML with script to communicate with opener
-            // This is crucial for the "Popup" experience requested
             return view('auth.google-callback', [
                 'token' => $token,
-                'user' => $user,
+                'user' => [
+                    'id' => $user->user_id,
+                    'name' => $user->full_name,
+                    'email' => $user->email,
+                    'username' => $user->username,
+                ],
                 'role' => $user->role
             ]);
 
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Google Login Failed'], 500);
+            \Log::error('Google Login Error: ' . $e->getMessage());
+            return view('auth.google-error', ['error' => $e->getMessage()]);
         }
     }
 }
