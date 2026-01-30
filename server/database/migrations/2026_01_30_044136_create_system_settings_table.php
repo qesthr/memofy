@@ -11,22 +11,24 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('system_settings', function (Blueprint $table) {
-            $table->id();
-            
-            // Setting key-value
-            $table->string('key')->unique();
-            $table->json('value'); // Store any type of value as JSON
-            $table->text('description')->nullable();
-            
-            // Audit
-            $table->foreignId('updated_by')->nullable()->constrained('users')->onDelete('set null');
-            
-            $table->timestamps();
-            
-            // Indexes
-            $table->index('key');
-        });
+        if (!Schema::hasTable('system_settings')) {
+            Schema::create('system_settings', function (Blueprint $table) {
+                $table->id();
+                
+                // Setting key-value
+                $table->string('key')->unique();
+                $table->json('value'); // Store any type of value as JSON
+                $table->text('description')->nullable();
+                
+                // Audit
+                $table->unsignedBigInteger('updated_by')->nullable();
+                
+                $table->timestamps();
+                
+                // Indexes
+                $table->index('key');
+            });
+        }
     }
 
     /**
