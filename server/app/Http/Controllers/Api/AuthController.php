@@ -6,6 +6,9 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
+use Laravel\Socialite\Facades\Socialite; // Ensure Socialite is installed or use this placeholder
+use App\Models\User;
+use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
@@ -36,15 +39,18 @@ class AuthController extends Controller
         // 4. Create a Sanctum token
         $token = $user->createToken('auth-token')->plainTextToken;
 
+
+
         // 5. Return user + role + token to Vue
         return response()->json([
             'success' => true,
             'message' => 'Login successful',
             'data' => [
                 'user' => [
-                    'id' => $user->id,
-                    'name' => $user->name,
+                    'id' => $user->user_id,
+                    'name' => $user->full_name,
                     'email' => $user->email,
+                    'username' => $user->username,
                 ],
                 'role' => $user->role,
                 'token' => $token,
@@ -83,12 +89,75 @@ class AuthController extends Controller
             'success' => true,
             'data' => [
                 'user' => [
-                    'id' => $user->id,
-                    'name' => $user->name,
+                    'id' => $user->user_id,
+                    'name' => $user->full_name,
                     'email' => $user->email,
+                    'username' => $user->username,
                 ],
                 'role' => $user->role,
             ]
         ], 200);
+    }
+
+    /**
+     * Redirect to Google
+     */
+    public function redirectToGoogle()
+    {
+        return Socialite::driver('google')->stateless()->redirect();
+    }
+
+    /**
+     * Handle Google Callback
+     */
+    public function handleGoogleCallback()
+    {
+        try {
+            $googleUser = Socialite::driver('google')->stateless()->user();
+            
+            // Generate unique username from email
+            $emailUsername = explode('@', $googleUser->getEmail())[0];
+            $username = strtolower($emailUsername);
+            
+            // Ensure username is unique
+            $originalUsername = $username;
+            $counter = 1;
+            while (User::where('username', $username)->exists()) {
+                $username = $originalUsername . $counter;
+                $counter++;
+            }
+            
+            // Find or create user
+            $user = User::updateOrCreate(
+                ['email' => $googleUser->getEmail()],
+                [
+                    'full_name' => $googleUser->getName(),
+                    'username' => $username,
+                    'role' => 'faculty', // Default role for new users
+                    'password_hash' => bcrypt(Str::random(16)),
+                    'is_active' => true,
+                    'department' => '', // Admin check will clear this anyway if role is admin
+                ]
+            );
+
+            // Create Sanctum token
+            $token = $user->createToken('auth-token')->plainTextToken;
+
+            // Return HTML with script to communicate with opener
+            return view('auth.google-callback', [
+                'token' => $token,
+                'user' => [
+                    'id' => $user->user_id,
+                    'name' => $user->full_name,
+                    'email' => $user->email,
+                    'username' => $user->username,
+                ],
+                'role' => $user->role
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Google Login Error: ' . $e->getMessage());
+            return view('auth.google-error', ['error' => $e->getMessage()]);
+        }
     }
 }
