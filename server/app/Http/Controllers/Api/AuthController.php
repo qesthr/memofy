@@ -6,6 +6,9 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
+use Laravel\Socialite\Facades\Socialite; // Ensure Socialite is installed or use this placeholder
+use App\Models\User;
+use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
@@ -36,15 +39,18 @@ class AuthController extends Controller
         // 4. Create a Sanctum token
         $token = $user->createToken('auth-token')->plainTextToken;
 
+
+
         // 5. Return user + role + token to Vue
         return response()->json([
             'success' => true,
             'message' => 'Login successful',
             'data' => [
                 'user' => [
-                    'id' => $user->id,
-                    'name' => $user->name,
+                    'id' => $user->user_id,
+                    'name' => $user->full_name,
                     'email' => $user->email,
+                    'username' => $user->username,
                 ],
                 'role' => $user->role,
                 'token' => $token,
@@ -83,12 +89,58 @@ class AuthController extends Controller
             'success' => true,
             'data' => [
                 'user' => [
-                    'id' => $user->id,
-                    'name' => $user->name,
+                    'id' => $user->user_id,
+                    'name' => $user->full_name,
                     'email' => $user->email,
+                    'username' => $user->username,
                 ],
                 'role' => $user->role,
             ]
         ], 200);
+    }
+
+    /**
+     * Redirect to Google
+     */
+    public function redirectToGoogle()
+    {
+        return Socialite::driver('google')->stateless()->redirect();
+    }
+
+    /**
+     * Handle Google Callback
+     */
+    public function handleGoogleCallback()
+    {
+        try {
+            $googleUser = Socialite::driver('google')->stateless()->user();
+            
+            // Find or create user
+            $user = User::firstOrCreate(
+                ['email' => $googleUser->getEmail()],
+                [
+                    'full_name' => $googleUser->getName(),
+                    'username' => strtolower(str_replace(' ', '.', $googleUser->getName())), // temporary username logic
+                    'role' => 'faculty', // Default role for new users
+                    'password_hash' => bcrypt(Str::random(16)), // Random password for file uploads/etc if needed
+                    'is_active' => true,
+                ]
+            );
+
+            // Login user
+            Auth::login($user);
+            $token = $user->createToken('auth-token')->plainTextToken;
+
+            // Return HTML with script to communicate with opener
+            // This is crucial for the "Popup" experience requested
+            return view('auth.google-callback', [
+                'token' => $token,
+                'user' => $user,
+                'role' => $user->role
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Google Login Failed'], 500);
+        }
     }
 }
