@@ -34,10 +34,15 @@ Route::get('/auth/google/callback', [AuthController::class, 'handleGoogleCallbac
 
 // Google Calendar Integration
 Route::middleware('auth:sanctum')->prefix('calendar')->group(function () {
-    Route::post('/connect', [App\Http\Controllers\Api\GoogleCalendarController::class, 'connect']); // Returns URL
+    Route::post('/connect', [App\Http\Controllers\Api\GoogleCalendarController::class, 'connect']);
     Route::post('/disconnect', [App\Http\Controllers\Api\GoogleCalendarController::class, 'disconnect']);
-    Route::get('/events', [App\Http\Controllers\Api\GoogleCalendarController::class, 'listEvents']);
-    Route::get('/local-events', [App\Http\Controllers\Api\CalendarEventController::class, 'index']);
+    
+    // Unified Calendar Events
+    Route::get('/events', [App\Http\Controllers\Api\CalendarController::class, 'index']);
+    Route::post('/events', [App\Http\Controllers\Api\CalendarController::class, 'store']);
+    Route::put('/events/{event}', [App\Http\Controllers\Api\CalendarController::class, 'update']);
+    Route::delete('/events/{event}', [App\Http\Controllers\Api\CalendarController::class, 'destroy']);
+    Route::post('/events/{event}/respond', [App\Http\Controllers\Api\CalendarController::class, 'respond']);
 });
 
 // OAuth Callback (must be public as Google redirects here without auth headers)

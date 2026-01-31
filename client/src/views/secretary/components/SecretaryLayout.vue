@@ -22,6 +22,7 @@ import SecretaryNavbar from './SecretaryNavbar.vue'
 
 .main-content {
   @apply ml-64 mt-16 p-8;
-  min-height: calc(100vh - 4rem);
+  height: calc(100vh - 4rem);
+  overflow: hidden;
 }
 </style>

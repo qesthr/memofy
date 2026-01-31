@@ -137,4 +137,9 @@ class User extends Authenticatable
     {
         return $this->hasMany(UserActivityLog::class, 'actor_id');
     }
+
+    public function eventInvitations()
+    {
+        return $this->hasMany(CalendarEventParticipant::class);
+    }
 }

@@ -16,18 +16,17 @@ class CalendarEvent extends Model
         'all_day',
         'category',
         'description',
-        'participants',
         'memo_id',
         'created_by',
         'status',
-        'google_calendar_event_ids'
+        'google_calendar_event_ids',
+        'source'
     ];
 
     protected $casts = [
         'start' => 'datetime',
         'end' => 'datetime',
         'all_day' => 'boolean',
-        'participants' => 'array',
         'google_calendar_event_ids' => 'array',
     ];
 
@@ -39,5 +38,21 @@ class CalendarEvent extends Model
     public function memo()
     {
         return $this->belongsTo(Memo::class);
+    }
+
+    public function participants()
+    {
+        return $this->hasMany(CalendarEventParticipant::class, 'calendar_event_id');
+    }
+
+    /**
+     * Prepare a date for array / JSON serialization.
+     *
+     * @param  \DateTimeInterface  $date
+     * @return string
+     */
+    protected function serializeDate(\DateTimeInterface $date)
+    {
+        return $date->format('Y-m-d\TH:i:s');
     }
 }

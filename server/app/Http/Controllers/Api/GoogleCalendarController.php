@@ -24,7 +24,7 @@ class GoogleCalendarController extends Controller
         
         $url = Socialite::buildProvider(\Laravel\Socialite\Two\GoogleProvider::class, $config)
             ->scopes([
-                'https://www.googleapis.com/auth/calendar.readonly',
+                'https://www.googleapis.com/auth/calendar',
                 'https://www.googleapis.com/auth/userinfo.email',
                 'https://www.googleapis.com/auth/userinfo.profile',
             ])
@@ -158,31 +158,127 @@ class GoogleCalendarController extends Controller
             foreach ($results->getItems() as $event) {
                 if ($event->status === 'cancelled') continue;
 
-                $start = $event->start->dateTime ?? $event->start->date;
-                $end = $event->end->dateTime ?? $event->end->date;
+                $startDateTime = $event->start->dateTime ?? $event->start->date;
+                $endDateTime = $event->end->dateTime ?? $event->end->date;
                 $allDay = !isset($event->start->dateTime);
+                
+                // Enforce GMT+08 (Asia/Manila)
+                $start = \Carbon\Carbon::parse($startDateTime)->setTimezone('Asia/Manila')->toIso8601String();
+                $end = \Carbon\Carbon::parse($endDateTime)->setTimezone('Asia/Manila')->toIso8601String();
                 
                 $events[] = [
                     'id' => $event->id,
                     'title' => $event->summary,
                     'start' => $start,
                     'end' => $end,
-                    'is_google' => true,
-                    'allDay' => $allDay,
+                    'all_day' => $allDay,
+                    'source' => 'GOOGLE',
+                    'is_google' => true, // Frontend legacy support
                     'color' => '#4285F4',
-                    'editable' => false,
+                    'is_editable' => false,
                     'description' => $event->description
                 ];
             }
             
             return response()->json($events);
-
         } catch (\Throwable $e) {
             \Log::error('Google Calendar Fatal Error: ' . $e->getMessage(), [
                 'exception' => $e,
                 'user_id' => $user->id
             ]);
             return response()->json(['error' => 'Google Calendar Error: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function syncEvent(User $user, $memofyEvent, $action = 'create')
+    {
+        if (!$user->google_calendar_token) return null;
+
+        try {
+            $client = $this->getClient();
+            $client->setAccessToken($user->google_calendar_token);
+
+            if ($client->isAccessTokenExpired()) {
+                if ($user->google_calendar_refresh_token) {
+                    $payload = $client->fetchAccessTokenWithRefreshToken($user->google_calendar_refresh_token);
+                    if (isset($payload['error'])) return null;
+                    $user->update([
+                        'google_calendar_token' => $payload['access_token'],
+                        'google_calendar_token_expires_at' => now()->addSeconds($payload['expires_in'])
+                    ]);
+                    $client->setAccessToken($payload['access_token']);
+                } else {
+                    return null;
+                }
+            }
+
+            $service = new \Google\Service\Calendar($client);
+            
+            $eventData = [
+                'summary' => $memofyEvent->title,
+                'description' => $memofyEvent->description,
+                'start' => [
+                    'dateTime' => \Carbon\Carbon::parse($memofyEvent->start)->toRfc3339String(),
+                    'timeZone' => 'Asia/Manila',
+                ],
+                'end' => [
+                    'dateTime' => \Carbon\Carbon::parse($memofyEvent->end)->toRfc3339String(),
+                    'timeZone' => 'Asia/Manila',
+                ],
+            ];
+
+            $gEvent = new \Google\Service\Calendar\Event($eventData);
+            
+            $googleEventIds = $memofyEvent->google_calendar_event_ids ?: [];
+            $existingId = $googleEventIds[$user->id] ?? null;
+
+            if ($action === 'delete' && $existingId) {
+                try {
+                    $service->events->delete('primary', $existingId);
+                } catch (\Exception $e) {}
+                unset($googleEventIds[$user->id]);
+                $memofyEvent->update(['google_calendar_event_ids' => $googleEventIds]);
+                return true;
+            }
+
+            if ($existingId) {
+                try {
+                    $updatedEvent = $service->events->update('primary', $existingId, $gEvent);
+                    return $updatedEvent->id;
+                } catch (\Exception $e) {
+                    // If event was deleted in Google, create new one
+                    $createdEvent = $service->events->insert('primary', $gEvent);
+                    $googleEventIds[$user->id] = $createdEvent->id;
+                    $memofyEvent->update(['google_calendar_event_ids' => $googleEventIds]);
+                    return $createdEvent->id;
+                }
+            } else {
+                $createdEvent = $service->events->insert('primary', $gEvent);
+                $googleEventIds[$user->id] = $createdEvent->id;
+                $memofyEvent->update(['google_calendar_event_ids' => $googleEventIds]);
+                return $createdEvent->id;
+            }
+
+        } catch (\Exception $e) {
+            \Log::error("Google Calendar Sync Error for user {$user->id}: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    public function syncEventToParticipants($memofyEvent, $action = 'create')
+    {
+        // 1. Sync for creator
+        $creator = User::find($memofyEvent->created_by);
+        if ($creator) {
+            $this->syncEvent($creator, $memofyEvent, $action);
+        }
+
+        // 2. Sync for participants
+        $memofyEvent->load('participants.user');
+        foreach ($memofyEvent->participants as $participant) {
+            if ($participant->user && $participant->user->google_calendar_token) {
+                $this->syncEvent($participant->user, $memofyEvent, $action);
+            }
         }
     }
 
@@ -225,7 +321,7 @@ HTML;
         $client->setClientId(config('services.google_calendar.client_id'));
         $client->setClientSecret(config('services.google_calendar.client_secret'));
         $client->setRedirectUri(config('services.google_calendar.redirect'));
-        $client->addScope(\Google\Service\Calendar::CALENDAR_READONLY);
+        $client->addScope(\Google\Service\Calendar::CALENDAR);
         $client->setAccessType('offline');
         $client->setPrompt('consent');
         return $client;
