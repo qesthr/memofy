@@ -117,7 +117,7 @@ const getInitials = (name) => {
 }
 
 .navbar-content {
-  @apply h-full px-6 flex items-center justify-between;
+  @apply h-full w-full px-6 flex items-center justify-between;
 }
 
 .search-container {
