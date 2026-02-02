@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
 import { Eye, EyeOff } from 'lucide-vue-next'
 import api from '@/services/api'
+import Swal from 'sweetalert2'
 
 // Make recaptcha site key available globally in instance
 const app = getCurrentInstance()
@@ -24,11 +25,23 @@ const togglePassword = () => {
   showPassword.value = !showPassword.value
 }
 
+// ... (existing imports)
+
 const handleLogin = async () => {
   if (!recaptchaVerified.value) {
     error.value = 'Please complete the reCAPTCHA verification'
     return
   }
+
+  // Show Loading Alert
+  Swal.fire({
+    title: 'Logging in...',
+    text: 'Please wait while we verify your credentials.',
+    allowOutsideClick: false,
+    didOpen: () => {
+      Swal.showLoading()
+    }
+  })
 
   isLoading.value = true
   error.value = ''
@@ -40,23 +53,47 @@ const handleLogin = async () => {
       recaptcha_token: recaptchaToken.value
     })
 
-    const { token, user, role } = response.data.data
+    // FIX: Destructure directly from response.data (no extra .data nesting)
+    const { token, user } = response.data
+    const role = user.role // Get role from user object
 
     localStorage.setItem('token', token)
     localStorage.setItem('user', JSON.stringify(user))
     localStorage.setItem('role', role)
 
+    // Show Success Alert
+    await Swal.fire({
+      icon: 'success',
+      title: 'Login Successful',
+      text: `Welcome back, ${user.first_name}!`,
+      timer: 1500,
+      showConfirmButton: false
+    })
+
     if (role === 'admin' || role === 'super_admin') {
        router.push('/admin/dashboard')
+    } else if (role === 'secretary') {
+       router.push('/secretary/dashboard')
+    } else if (role === 'faculty') {
+       router.push('/faculty/dashboard')
     } else {
        router.push('/unauthorized')
     }
 
   } catch (err) {
     console.error('Login error:', err)
-    error.value = err.response?.data?.message || 'Login failed. Please check your credentials.'
+    const errorMsg = err.response?.data?.message || 'Login failed. Please check your credentials.'
+    error.value = errorMsg
+    
+    // Show Error Alert
+    Swal.fire({
+      icon: 'error',
+      title: 'Login Failed',
+      text: errorMsg
+    })
   } finally {
     isLoading.value = false
+    // Note: We don't close loading alert here because success/error alerts replace it
   }
 }
 

@@ -1,37 +1,214 @@
 <script setup>
-import { ref, onMounted } from 'vue'
-import { Plus, Search, Pencil, Archive, Filter } from 'lucide-vue-next'
+import { ref, onMounted, watch } from 'vue'
+import { Plus, Pencil, Archive, X } from 'lucide-vue-next'
+import api from '../../services/api'
+import Swal from 'sweetalert2'
 
-const activeTab = ref('active')
 const activeFilter = ref('all')
-
 const users = ref([])
+const currentUser = ref(null)
+const showAddUserModal = ref(false)
+const isLoading = ref(false)
 
-const tabs = [
-  { id: 'active', label: 'Active Users' },
-  { id: 'archived', label: 'Archived Users (0)' }
+// Form data
+const formData = ref({
+  name: '',
+  email: '',
+  department: '',
+  role: ''
+})
+
+const departments = [
+  'Food Technology',
+  'Automotive Technology',
+  'Electronics Technology',
+  'Information Technology/EMC'
+]
+
+const roles = [
+  { value: 'admin', label: 'Admin' },
+  { value: 'secretary', label: 'Secretary' },
+  { value: 'faculty', label: 'Faculty' }
 ]
 
 const filters = [
-  { id: 'all', label: 'All', count: 0 },
-  { id: 'admin', label: 'Admin', count: 0 },
-  { id: 'secretary', label: 'Secretary', count: 0 },
-  { id: 'faculty', label: 'Faculty', count: 0 }
+  { id: 'all', label: 'All' },
+  { id: 'admin', label: 'Admin' },
+  { id: 'secretary', label: 'Secretary' },
+  { id: 'faculty', label: 'Faculty' }
 ]
-
-import api from '../../services/api'
 
 const fetchUsers = async () => {
   try {
-    const response = await api.get('/admin/users')
-    // Assuming API returns paginated response, getting data array
-    users.value = response.data.data
+    const params = {
+      status: 'active'
+    }
+    
+    if (activeFilter.value !== 'all') {
+      params.role = activeFilter.value
+    }
+
+    const response = await api.get('/users', { params })
+    const usersData = response.data.data || response.data
+    
+    // Transform backend data
+    users.value = usersData.map(user => ({
+      ...user,
+      name: user.name || `${user.first_name || ''} ${user.last_name || ''}`.trim(),
+      roleColor: getRoleColor(user.role)
+    }))
   } catch (error) {
     console.error('Error fetching users:', error)
   }
 }
 
+// Watch filters to trigger fetch
+watch(activeFilter, () => {
+  fetchUsers()
+})
+
+const fetchCurrentUser = async () => {
+  try {
+    const response = await api.get('/current-user')
+    currentUser.value = response.data
+  } catch (error) {
+    console.error('Error fetching current user:', error)
+  }
+}
+
+const archiveUser = async (user) => {
+  // Prevent archiving self
+  if (currentUser.value && user.id === currentUser.value.id) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Cannot Archive',
+      text: 'You cannot archive your own account.',
+      confirmButtonColor: '#4285F4'
+    })
+    return
+  }
+
+  const result = await Swal.fire({
+    icon: 'warning',
+    title: 'Archive User?',
+    text: `Are you sure you want to archive ${user.name}? They will be disabled from logging in.`,
+    showCancelButton: true,
+    confirmButtonColor: '#d33',
+    cancelButtonColor: '#3085d6',
+    confirmButtonText: 'Yes, archive user!'
+  })
+
+  if (!result.isConfirmed) return
+
+  try {
+    await api.patch(`/users/${user.id}/toggle-active`)
+    
+    Swal.fire({
+      icon: 'success',
+      title: 'User Archived!',
+      text: `${user.name} has been moved to the archive.`,
+      confirmButtonColor: '#4285F4',
+      timer: 2000
+    })
+    
+    fetchUsers() // Refresh list (user should disappear)
+  } catch (error) {
+    console.error('Error archiving user:', error)
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: error.response?.data?.message || 'Failed to archive user',
+      confirmButtonColor: '#4285F4'
+    })
+  }
+}
+
+const getRoleColor = (role) => {
+  const colors = {
+    'admin': 'bg-primary/10 text-primary',
+    'secretary': 'bg-info/10 text-info',
+    'faculty': 'bg-secondary/10 text-secondary'
+  }
+  return colors[role] || 'bg-base-300 text-base-content'
+}
+
+const validateEmail = (email) => {
+  const regex = /^[\w\.\-]+@(student\.)?buksu\.edu\.ph$/
+  return regex.test(email)
+}
+
+const resetForm = () => {
+  formData.value = {
+    name: '',
+    email: '',
+    department: '',
+    role: ''
+  }
+}
+
+const openModal = () => {
+  resetForm()
+  showAddUserModal.value = true
+}
+
+const closeModal = () => {
+  showAddUserModal.value = false
+  resetForm()
+}
+
+const sendInvitation = async () => {
+  if (!validateEmail(formData.value.email)) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Invalid Email',
+      text: 'Only @buksu.edu.ph and @student.buksu.edu.ph email addresses are allowed.',
+      confirmButtonColor: '#4285F4'
+    })
+    return
+  }
+
+  if (!formData.value.name || !formData.value.email || !formData.value.department || !formData.value.role) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Incomplete Form',
+      text: 'Please fill in all fields',
+      confirmButtonColor: '#4285F4'
+    })
+    return
+  }
+
+  isLoading.value = true
+
+  try {
+    await api.post('/users/invite', formData.value)
+
+    await Swal.fire({
+      icon: 'success',
+      title: 'Invitation Sent!',
+      text: `An invitation has been sent to ${formData.value.email}`,
+      confirmButtonColor: '#4285F4'
+    })
+
+    closeModal()
+    fetchUsers()
+
+  } catch (error) {
+    console.error('Error sending invitation:', error)
+    const errorMessage = error.response?.data?.message || error.response?.data?.errors?.email?.[0] || 'Failed to send invitation'
+    
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: errorMessage,
+      confirmButtonColor: '#4285F4'
+    })
+  } finally {
+    isLoading.value = false
+  }
+}
+
 onMounted(() => {
+  fetchCurrentUser()
   fetchUsers()
 })
 </script>
@@ -41,29 +218,10 @@ onMounted(() => {
     <!-- Header -->
     <div class="flex items-center justify-between mb-8">
       <h1 class="text-2xl font-bold">Manage Users</h1>
-      <button class="btn btn-primary gap-2 text-white">
+      <button @click="openModal" class="btn btn-primary gap-2 text-white">
         <Plus :size="20" />
         Add user
       </button>
-    </div>
-
-    <!-- Tabs -->
-    <div class="border-b border-base-300 mb-6">
-      <div class="flex gap-8">
-        <button 
-          v-for="tab in tabs" 
-          :key="tab.id"
-          @click="activeTab = tab.id"
-          class="pb-3 text-sm font-medium transition-colors relative"
-          :class="activeTab === tab.id ? 'text-primary' : 'text-base-content/60 hover:text-base-content'"
-        >
-          {{ tab.label }}
-          <div 
-            v-if="activeTab === tab.id"
-            class="absolute bottom-0 left-0 w-full h-0.5 bg-primary"
-          ></div>
-        </button>
-      </div>
     </div>
 
     <!-- Filters -->
@@ -76,7 +234,6 @@ onMounted(() => {
         :class="activeFilter === filter.id ? 'btn-primary text-white' : 'btn-ghost bg-base-100 border border-base-300'"
       >
         {{ filter.label }}
-        <span class="ml-1 opacity-70">{{ filter.count }}</span>
       </button>
     </div>
 
@@ -93,12 +250,17 @@ onMounted(() => {
             </tr>
           </thead>
           <tbody>
+            <tr v-if="users.length === 0">
+              <td colspan="4" class="text-center py-8 text-base-content/60">
+                No active users found.
+              </td>
+            </tr>
             <tr v-for="user in users" :key="user.id" class="hover:bg-base-50/50 border-b border-base-100 last:border-0">
               <td class="py-4 pl-6">
                 <div class="flex items-center gap-3">
                   <div class="avatar placeholder">
                     <div class="bg-primary text-primary-content rounded-full w-10">
-                      <span class="text-xs">{{ user.name.charAt(0) }}</span>
+                      <span class="text-xs">{{ user.name?.charAt(0) }}</span>
                     </div>
                   </div>
                   <div>
@@ -118,7 +280,12 @@ onMounted(() => {
                   <button class="btn btn-ghost btn-sm btn-square text-primary bg-blue-50 hover:bg-blue-100">
                     <Pencil :size="16" />
                   </button>
-                  <button class="btn btn-ghost btn-sm btn-square text-orange-500 bg-orange-50 hover:bg-orange-100">
+                  <button 
+                    v-if="!(currentUser && user.id === currentUser.id)"
+                    @click="archiveUser(user)"
+                    class="btn btn-ghost btn-sm btn-square text-orange-500 bg-orange-50 hover:bg-orange-100"
+                    title="Archive user"
+                  >
                     <Archive :size="16" />
                   </button>
                 </div>
@@ -128,6 +295,91 @@ onMounted(() => {
         </table>
       </div>
     </div>
+
+    <!-- Add User Modal -->
+    <div v-if="showAddUserModal" class="modal modal-open">
+      <div class="modal-box max-w-md">
+        <!-- Modal Header -->
+        <div class="flex items-center justify-between mb-6">
+          <h3 class="font-bold text-xl">Add New User</h3>
+          <button @click="closeModal" class="btn btn-sm btn-circle btn-ghost">
+            <X :size="20" />
+          </button>
+        </div>
+
+        <!-- Form -->
+        <div class="space-y-4">
+          <!-- Name -->
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Name <span class="text-error">*</span></span>
+            </label>
+            <input 
+              v-model="formData.name"
+              type="text" 
+              placeholder="Enter full name" 
+              class="input input-bordered w-full"
+            />
+          </div>
+
+          <!-- Email -->
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Email <span class="text-error">*</span></span>
+            </label>
+            <input 
+              v-model="formData.email"
+              type="email" 
+              placeholder="user@buksu.edu.ph" 
+              class="input input-bordered w-full"
+            />
+            <label class="label">
+              <span class="label-text-alt text-base-content/60">Only @buksu.edu.ph and @student.buksu.edu.ph allowed</span>
+            </label>
+          </div>
+
+          <!-- Department -->
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Department <span class="text-error">*</span></span>
+            </label>
+            <select v-model="formData.department" class="select select-bordered w-full">
+              <option value="" disabled>Select department</option>
+              <option v-for="dept in departments" :key="dept" :value="dept">
+                {{ dept }}
+              </option>
+            </select>
+          </div>
+
+          <!-- Role -->
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Role <span class="text-error">*</span></span>
+            </label>
+            <select v-model="formData.role" class="select select-bordered w-full">
+              <option value="" disabled>Select role</option>
+              <option v-for="role in roles" :key="role.value" :value="role.value">
+                {{ role.label }}
+              </option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Modal Actions -->
+        <div class="modal-action mt-6">
+          <button @click="closeModal" class="btn btn-ghost">Cancel</button>
+          <button 
+            @click="sendInvitation" 
+            class="btn btn-primary text-white"
+            :disabled="isLoading"
+          >
+            <span v-if="isLoading" class="loading loading-spinner loading-sm"></span>
+            <span v-else>Send Invitation</span>
+          </button>
+        </div>
+      </div>
+      <div class="modal-backdrop" @click="closeModal"></div>
+    </div>
   </div>
 </template>
 
@@ -135,6 +387,10 @@ onMounted(() => {
 @reference "../../style.css";
 
 .view-container {
-  @apply p-0; /* Content padding handled by layout */
+  @apply p-0;
+}
+
+.modal-backdrop {
+  @apply bg-black/50;
 }
 </style>
