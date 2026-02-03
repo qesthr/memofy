@@ -11,7 +11,8 @@ import {
   FileBarChart, 
   Activity,
   Settings,
-  LogOut
+  LogOut,
+  Shield
 } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -25,6 +26,7 @@ const userInitial = ref('A')
 const menuItems = [
   { name: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
   { name: 'Users', path: '/admin/users', icon: Users },
+  { name: 'Roles & Permissions', path: '/admin/roles', icon: Shield },
   { name: 'Memos', path: '/admin/memos', icon: FileText },
   { name: 'Archive', path: '/admin/archive', icon: Archive },
   { name: 'Calendar', path: '/admin/calendar', icon: Calendar },

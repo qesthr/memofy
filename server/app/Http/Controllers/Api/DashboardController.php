@@ -16,25 +16,41 @@ class DashboardController extends Controller
         $user = $request->user();
 
         // 1. Stats
-        $stats = [
-            'total_users' => User::count(),
-            'active_users' => User::where('is_active', true)->count(),
-            'total_memos' => Memo::count(),
-            'pending_memos' => Memo::where('status', 'draft')->count(), // Or pending approval logic if exists
-        ];
+        $stats = [];
+        
+        if ($user->hasPermissionTo('faculty.view_all')) {
+            $stats['total_users'] = User::count();
+            $stats['active_users'] = User::where('is_active', true)->count();
+        } else if ($user->hasPermissionTo('faculty.view')) {
+            $stats['total_users'] = User::where('role', 'faculty')->where('department', $user->department)->count();
+            $stats['active_users'] = User::where('role', 'faculty')->where('department', $user->department)->where('is_active', true)->count();
+        }
+
+        if ($user->hasPermissionTo('memo.view_all')) {
+            $stats['total_memos'] = Memo::count();
+            $stats['pending_memos'] = Memo::where('status', 'draft')->count();
+        } else if ($user->hasPermissionTo('memo.view')) {
+            // For general view, count memos where they are sender or recipient or department-wide if authorized
+            $stats['total_memos'] = Memo::where(function($q) use ($user) {
+                $q->where('sender_id', $user->id)
+                  ->orWhere('recipient_id', $user->id);
+            })->count();
+            $stats['pending_memos'] = Memo::where('sender_id', $user->id)->where('status', 'draft')->count();
+        }
 
         // 2. Recent Activities (Global for admin, or filtered)
         // If admin, show system wide. If normal user, show relevant.
         // Legacy dashboard showed logs based on role.
         $logsQuery = UserActivityLog::with('actor');
         
-        if ($user->role !== 'admin') {
-            // Non-admins see pertinent logs or just their own? 
-            // Legacy usually showed department logs.
-            if ($user->department) {
-                // Show logs from same department? 
-                // Or just show nothing for now to be safe.
-                $logsQuery->where('actor_id', $user->id); 
+        if (!$user->hasPermissionTo('activity.view_all')) {
+            if ($user->hasPermissionTo('activity.view_department')) {
+                // Show logs from people in the same department
+                $userIds = User::where('department', $user->department)->pluck('_id');
+                $logsQuery->whereIn('actor_id', $userIds);
+            } else {
+                // Just their own logs
+                $logsQuery->where('actor_id', $user->id);
             }
         }
         

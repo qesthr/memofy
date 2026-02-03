@@ -12,10 +12,21 @@ export const availableThemes = [
 ]
 
 export function useTheme() {
-    const setTheme = (newTheme) => {
+    const setTheme = async (newTheme, sync = true) => {
         theme.value = newTheme
         localStorage.setItem('theme', theme.value)
         document.documentElement.setAttribute('data-theme', theme.value)
+
+        // Sync with backend if logged in
+        const token = localStorage.getItem('token')
+        if (sync && token) {
+            try {
+                const api = (await import('@/services/api')).default
+                await api.put('/me/theme', { theme: newTheme })
+            } catch (err) {
+                console.error('Failed to sync theme to backend:', err)
+            }
+        }
     }
 
     const toggleTheme = () => {
@@ -24,14 +35,31 @@ export function useTheme() {
         setTheme(availableThemes[nextIdx])
     }
 
-    onMounted(() => {
+    // Initialize theme from user data if possible
+    const initTheme = () => {
+        const userStr = localStorage.getItem('user')
+        if (userStr) {
+            try {
+                const user = JSON.parse(userStr)
+                if (user.theme && user.theme !== theme.value) {
+                    setTheme(user.theme, false) // Initial set, don't sync back
+                }
+            } catch (err) {
+                console.error('Failed to parse user for theme init:', err)
+            }
+        }
         document.documentElement.setAttribute('data-theme', theme.value)
+    }
+
+    onMounted(() => {
+        initTheme()
     })
 
     return {
         theme,
         availableThemes,
         setTheme,
-        toggleTheme
+        toggleTheme,
+        initTheme
     }
 }

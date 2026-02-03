@@ -15,19 +15,19 @@ return new class extends Migration
                     $table->dropColumn('user_id');
                 }
                 
-                $table->unsignedBigInteger('actor_id')->nullable()->after('id');
-                $table->string('actor_email')->nullable()->after('actor_id');
-                $table->string('actor_role')->nullable()->after('actor_email');
-                $table->string('actor_department')->nullable()->after('actor_role');
-                $table->string('target')->nullable()->after('action');
-                $table->unsignedBigInteger('target_id')->nullable()->after('target');
+                $table->unsignedBigInteger('actor_id')->nullable();
+                $table->string('actor_email')->nullable();
+                $table->string('actor_role')->nullable();
+                $table->string('actor_department')->nullable();
+                $table->string('target')->nullable();
+                $table->unsignedBigInteger('target_id')->nullable();
                 
                 $table->index('actor_id');
             }
             
             // Ensure details is text for compatibility as per the context
             if (Schema::hasColumn('user_activity_logs', 'details')) {
-                $table->text('details')->nullable()->change();
+                // $table->text('details')->nullable()->change(); // change() not supported in MongoDB
             }
         });
     }

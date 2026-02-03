@@ -4,6 +4,8 @@ import { useRouter } from 'vue-router'
 import { Eye, EyeOff } from 'lucide-vue-next'
 import api from '@/services/api'
 import Swal from 'sweetalert2'
+import { useTheme } from '@/composables/useTheme'
+import { useAuth } from '@/composables/useAuth'
 
 // Make recaptcha site key available globally in instance
 const app = getCurrentInstance()
@@ -20,16 +22,22 @@ const error = ref('')
 const rememberMe = ref(false)
 const recaptchaVerified = ref(false)
 const recaptchaToken = ref('')
+const isDev = import.meta.env.MODE === 'development'
+
+const { user: authUser, token: authTokenRef } = useAuth()
 
 const togglePassword = () => {
   showPassword.value = !showPassword.value
 }
 
-// ... (existing imports)
-
 const handleLogin = async () => {
   if (!recaptchaVerified.value) {
-    error.value = 'Please complete the reCAPTCHA verification'
+    error.value = 'Please verify that you are not a robot before continuing.'
+    Swal.fire({
+      icon: 'error',
+      title: 'Verification Required',
+      text: error.value
+    })
     return
   }
 
@@ -53,15 +61,24 @@ const handleLogin = async () => {
       recaptcha_token: recaptchaToken.value
     })
 
-    // FIX: Destructure directly from response.data (no extra .data nesting)
     const { token, user } = response.data
-    const role = user.role // Get role from user object
+    
+    // Robust role extraction
+    const role = (user.role && typeof user.role === 'object') ? user.role.name : user.role
 
     localStorage.setItem('token', token)
     localStorage.setItem('user', JSON.stringify(user))
     localStorage.setItem('role', role)
 
-    // Show Success Alert
+    // Sync with useAuth global state
+    if (authUser) authUser.value = user
+    if (authTokenRef) authTokenRef.value = token
+
+    if (user.theme) {
+       const { setTheme } = useTheme()
+       await setTheme(user.theme, false)
+    }
+
     await Swal.fire({
       icon: 'success',
       title: 'Login Successful',
@@ -82,59 +99,145 @@ const handleLogin = async () => {
 
   } catch (err) {
     console.error('Login error:', err)
-    const errorMsg = err.response?.data?.message || 'Login failed. Please check your credentials.'
+    
+    // Reset reCAPTCHA on failure
+    if (window.grecaptcha) {
+      window.grecaptcha.reset()
+      recaptchaVerified.value = false
+      recaptchaToken.value = ''
+    }
+
+    let errorMsg = 'An unexpected error occurred. Please try again later.'
+    let errorTitle = 'Error'
+
+    if (err.response) {
+      errorMsg = err.response.data.message || 'Login failed. Please check your credentials.'
+      if (err.response.status === 401) {
+        errorTitle = 'Authentication Failed'
+      } else if (err.response.status === 422) {
+        errorTitle = 'Verification Failed'
+      }
+    } else if (err.request) {
+      errorMsg = 'Cannot connect to the server. Please check your internet connection.'
+    }
+
     error.value = errorMsg
     
-    // Show Error Alert
     Swal.fire({
       icon: 'error',
-      title: 'Login Failed',
+      title: errorTitle,
       text: errorMsg
     })
   } finally {
     isLoading.value = false
-    // Note: We don't close loading alert here because success/error alerts replace it
   }
 }
 
 // Google Sign-In Logic
 const googleLoginUrl = `${import.meta.env.VITE_API_BASE_URL || '/api'}/auth/google`
 
-const openGoogleLogin = () => {
-  if (!recaptchaVerified.value) {
-    error.value = 'Please complete the reCAPTCHA verification'
-    return
-  }
-
-  const width = 500
-  const height = 600
-  const left = (window.screen.width / 2) - (width / 2)
-  const top = (window.screen.height / 2) - (height / 2)
-  
-  window.open(
-    googleLoginUrl, 
-    'google_login_popup', 
-    `width=${width},height=${height},top=${top},left=${left}`
-  )
-}
+const googleLoginSuccess = ref(false)
 
 // Listen for messages from popup
 const handleMessage = (event) => {
   if (event.data.type === 'GOOGLE_LOGIN_SUCCESS') {
-    const { token, user, role } = event.data.payload
+    googleLoginSuccess.value = true
+    const { token, user, role: rawRole } = event.data.payload
+    const role = (rawRole && typeof rawRole === 'object') ? rawRole.name : rawRole
     
     localStorage.setItem('token', token)
     localStorage.setItem('user', JSON.stringify(user))
     localStorage.setItem('role', role)
 
-    if (role === 'admin' || role === 'super_admin') {
-       router.push('/admin/dashboard')
-    } else {
-       router.push('/unauthorized')
+    // Sync with useAuth global state
+    if (authUser) authUser.value = user
+    if (authTokenRef) authTokenRef.value = token
+
+    if (window.googleLoginTimer) {
+      clearInterval(window.googleLoginTimer)
+      window.googleLoginTimer = null
     }
+
+    Swal.fire({
+      icon: 'success',
+      title: 'Login Successful',
+      text: `Welcome back, ${user.first_name}!`,
+      timer: 1500,
+      showConfirmButton: false
+    }).then(() => {
+      if (role === 'admin' || role === 'super_admin') {
+         router.push('/admin/dashboard')
+      } else if (role === 'secretary') {
+         router.push('/secretary/dashboard')
+      } else if (role === 'faculty') {
+         router.push('/faculty/dashboard')
+      } else {
+         router.push('/unauthorized')
+      }
+    })
   } else if (event.data.type === 'GOOGLE_LOGIN_FAILURE') {
-    error.value = event.data.error || 'Google login failed'
+    const errorMsg = event.data.error || 'Google login failed'
+    error.value = errorMsg
+    
+    if (window.grecaptcha) {
+      window.grecaptcha.reset()
+      recaptchaVerified.value = false
+      recaptchaToken.value = ''
+    }
+
+    Swal.fire({
+      icon: 'error',
+      title: 'Google Auth Error',
+      text: errorMsg
+    })
   }
+}
+
+const openGoogleLogin = () => {
+  if (!recaptchaVerified.value) {
+    error.value = 'Please verify that you are not a robot before continuing.'
+    Swal.fire({
+      icon: 'error',
+      title: 'Verification Required',
+      text: error.value
+    })
+    return
+  }
+
+  googleLoginSuccess.value = false
+  const width = 500
+  const height = 600
+  const left = (window.screen.width / 2) - (width / 2)
+  const top = (window.screen.height / 2) - (height / 2)
+  
+  const popup = window.open(
+    googleLoginUrl, 
+    'google_login_popup', 
+    `width=${width},height=${height},top=${top},left=${left}`
+  )
+
+  if (window.googleLoginTimer) clearInterval(window.googleLoginTimer)
+  
+  window.googleLoginTimer = setInterval(() => {
+    if (popup.closed) {
+      clearInterval(window.googleLoginTimer)
+      window.googleLoginTimer = null
+      
+      if (!googleLoginSuccess.value) {
+        if (window.grecaptcha) {
+          window.grecaptcha.reset()
+          recaptchaVerified.value = false
+          recaptchaToken.value = ''
+        }
+
+        Swal.fire({
+          icon: 'error',
+          title: 'Sign-in Cancelled',
+          text: 'Google sign-in was not completed. Please try again.'
+        })
+      }
+    }
+  }, 1000)
 }
 
 // reCAPTCHA callback
@@ -159,6 +262,11 @@ const loadRecaptchaScript = () => {
 }
 
 onMounted(() => {
+  // Clear any existing auth data to ensure clean state
+  localStorage.removeItem('token')
+  localStorage.removeItem('user')
+  localStorage.removeItem('role')
+  
   window.addEventListener('message', handleMessage)
   loadRecaptchaScript()
   
@@ -175,7 +283,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="min-h-screen flex bg-base-100">
+  <div class="min-h-screen flex bg-base-100" data-theme="light">
     <!-- Left Side - Branding -->
     <div class="hidden lg:flex lg:w-1/2 relative bg-[#1e293b] overflow-hidden items-center justify-center">
       <!-- Background Image Overlay -->
@@ -221,7 +329,7 @@ onUnmounted(() => {
                 v-model="email"
                 type="email"
                 required
-                class="input input-bordered w-full pl-10 bg-gray-50"
+                class="input input-bordered w-full pl-10 bg-gray-50 text-gray-900"
                 placeholder="admin@buksu.edu.ph"
               />
             </div>
@@ -235,7 +343,7 @@ onUnmounted(() => {
                 v-model="password"
                 :type="showPassword ? 'text' : 'password'"
                 required
-                class="input input-bordered w-full pl-10 pr-10 bg-gray-50"
+                class="input input-bordered w-full pl-10 pr-10 bg-gray-50 text-gray-900"
                 placeholder="••••••••"
               />
               <button 
@@ -260,14 +368,14 @@ onUnmounted(() => {
            <button 
             type="submit" 
             class="w-full bg-[#4285F4] hover:bg-[#3367D6] text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            :disabled="isLoading || !recaptchaVerified"
+            :disabled="isLoading || (!recaptchaVerified && !isDev)"
           >
             <span v-if="isLoading" class="loading loading-spinner loading-sm"></span>
             <span v-else>Login</span>
           </button>
 
           <div class="flex items-center justify-center">
-             <a href="#" class="text-sm font-medium text-gray-500 hover:text-gray-700">Forgot Password?</a>
+             <router-link to="/forgot-password" class="text-sm font-medium text-gray-500 hover:text-gray-700">Forgot Password?</router-link>
           </div>
 
           <div class="relative my-6">
@@ -284,7 +392,7 @@ onUnmounted(() => {
             type="button"
             @click="openGoogleLogin"
             class="w-full btn btn-outline border-gray-300 hover:bg-gray-50 hover:border-gray-400 normal-case text-base font-medium text-gray-700 space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            :disabled="!recaptchaVerified"
+            :disabled="!recaptchaVerified && !isDev"
           >
             <img src="../../assets/images/images/google.png" alt="Google" class="w-5 h-5" />
             <span>Sign in with Google</span>
@@ -294,7 +402,7 @@ onUnmounted(() => {
           <div class="flex justify-center mt-6">
             <div 
               class="g-recaptcha" 
-              data-sitekey="6LeBIdwrAAAAAOIONOkF3vk31VJTzoN1ElEUOhBV"
+              :data-sitekey="$recaptchaSiteKey || '6LeBIdwrAAAAAOIONOkF3vk31VJTzoN1ElEUOhBV'"
               data-callback="onRecaptchaVerify"
               data-expired-callback="onRecaptchaExpired"
             ></div>

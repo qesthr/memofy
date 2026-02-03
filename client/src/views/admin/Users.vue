@@ -8,6 +8,8 @@ const activeFilter = ref('all')
 const users = ref([])
 const currentUser = ref(null)
 const showAddUserModal = ref(false)
+const isEditing = ref(false)
+const editingUserId = ref(null)
 const isLoading = ref(false)
 
 // Form data
@@ -15,7 +17,8 @@ const formData = ref({
   name: '',
   email: '',
   department: '',
-  role: ''
+  role: '',
+  is_active: true
 })
 
 const departments = [
@@ -81,43 +84,53 @@ const archiveUser = async (user) => {
   if (currentUser.value && user.id === currentUser.value.id) {
     Swal.fire({
       icon: 'error',
-      title: 'Cannot Archive',
-      text: 'You cannot archive your own account.',
+      title: 'Action Denied',
+      text: 'You cannot perform this action on your own account.',
       confirmButtonColor: '#4285F4'
     })
     return
   }
 
+  const isPending = user.display_status === 'pending'
+  
   const result = await Swal.fire({
     icon: 'warning',
-    title: 'Archive User?',
-    text: `Are you sure you want to archive ${user.name}? They will be disabled from logging in.`,
+    title: isPending ? 'Cancel Invitation?' : 'Archive User?',
+    text: isPending 
+      ? `Are you sure you want to cancel the invitation for ${user.email}? This will delete their pending account.`
+      : `Are you sure you want to archive ${user.name}? They will be disabled from logging in.`,
     showCancelButton: true,
     confirmButtonColor: '#d33',
     cancelButtonColor: '#3085d6',
-    confirmButtonText: 'Yes, archive user!'
+    confirmButtonText: isPending ? 'Yes, cancel invitation' : 'Yes, archive user!'
   })
 
   if (!result.isConfirmed) return
 
   try {
-    await api.patch(`/users/${user.id}/toggle-active`)
+    if (isPending) {
+        await api.delete(`/users/${user.id}`)
+    } else {
+        await api.patch(`/users/${user.id}/toggle-active`)
+    }
     
     Swal.fire({
       icon: 'success',
-      title: 'User Archived!',
-      text: `${user.name} has been moved to the archive.`,
+      title: isPending ? 'Invitation Cancelled!' : 'User Archived!',
+      text: isPending 
+        ? `The invitation for ${user.email} has been cancelled.`
+        : `${user.name} has been moved to the archive.`,
       confirmButtonColor: '#4285F4',
       timer: 2000
     })
     
-    fetchUsers() // Refresh list (user should disappear)
+    fetchUsers()
   } catch (error) {
-    console.error('Error archiving user:', error)
+    console.error('Error updating user:', error)
     Swal.fire({
       icon: 'error',
       title: 'Error',
-      text: error.response?.data?.message || 'Failed to archive user',
+      text: error.response?.data?.message || 'Failed to update user',
       confirmButtonColor: '#4285F4'
     })
   }
@@ -132,6 +145,19 @@ const getRoleColor = (role) => {
   return colors[role] || 'bg-base-300 text-base-content'
 }
 
+const getStatusBadge = (status) => {
+  switch (status) {
+    case 'active':
+      return 'badge-success text-white'
+    case 'pending':
+      return 'badge-warning text-white'
+    case 'archived':
+      return 'badge-error text-white'
+    default:
+      return 'badge-ghost'
+  }
+}
+
 const validateEmail = (email) => {
   const regex = /^[\w\.\-]+@(student\.)?buksu\.edu\.ph$/
   return regex.test(email)
@@ -142,21 +168,38 @@ const resetForm = () => {
     name: '',
     email: '',
     department: '',
-    role: ''
+    role: '',
+    is_active: true
   }
 }
 
-const openModal = () => {
-  resetForm()
+const openModal = (user = null) => {
+  if (user) {
+    isEditing.value = true
+    editingUserId.value = user.id
+    formData.value = {
+      name: user.name,
+      email: user.email,
+      department: user.department,
+      role: user.role,
+      is_active: user.is_active
+    }
+  } else {
+    isEditing.value = false
+    editingUserId.value = null
+    resetForm()
+  }
   showAddUserModal.value = true
 }
 
 const closeModal = () => {
   showAddUserModal.value = false
+  isEditing.value = false
+  editingUserId.value = null
   resetForm()
 }
 
-const sendInvitation = async () => {
+const saveUser = async () => {
   if (!validateEmail(formData.value.email)) {
     Swal.fire({
       icon: 'error',
@@ -180,21 +223,33 @@ const sendInvitation = async () => {
   isLoading.value = true
 
   try {
-    await api.post('/users/invite', formData.value)
+    if (isEditing.value) {
+      await api.put(`/users/${editingUserId.value}`, formData.value)
+      
+      await Swal.fire({
+        icon: 'success',
+        title: 'User Updated!',
+        text: `${formData.value.name} has been updated successfully.`,
+        confirmButtonColor: '#4285F4',
+        timer: 2000
+      })
+    } else {
+      await api.post('/users/invite', formData.value)
 
-    await Swal.fire({
-      icon: 'success',
-      title: 'Invitation Sent!',
-      text: `An invitation has been sent to ${formData.value.email}`,
-      confirmButtonColor: '#4285F4'
-    })
+      await Swal.fire({
+        icon: 'success',
+        title: 'Invitation Sent!',
+        text: `An invitation has been sent to ${formData.value.email}`,
+        confirmButtonColor: '#4285F4'
+      })
+    }
 
     closeModal()
     fetchUsers()
 
   } catch (error) {
-    console.error('Error sending invitation:', error)
-    const errorMessage = error.response?.data?.message || error.response?.data?.errors?.email?.[0] || 'Failed to send invitation'
+    console.error('Error saving user:', error)
+    const errorMessage = error.response?.data?.message || 'Failed to save user'
     
     Swal.fire({
       icon: 'error',
@@ -218,7 +273,7 @@ onMounted(() => {
     <!-- Header -->
     <div class="flex items-center justify-between mb-8">
       <h1 class="text-2xl font-bold">Manage Users</h1>
-      <button @click="openModal" class="btn btn-primary gap-2 text-white">
+      <button @click="openModal()" class="btn btn-primary gap-2 text-white">
         <Plus :size="20" />
         Add user
       </button>
@@ -246,6 +301,7 @@ onMounted(() => {
               <th class="py-4 font-semibold pl-6">Name</th>
               <th class="py-4 font-semibold">Department</th>
               <th class="py-4 font-semibold">Role</th>
+              <th class="py-4 font-semibold">Status</th>
               <th class="py-4 font-semibold pr-6 text-right">Actions</th>
             </tr>
           </thead>
@@ -255,7 +311,7 @@ onMounted(() => {
                 No active users found.
               </td>
             </tr>
-            <tr v-for="user in users" :key="user.id" class="hover:bg-base-50/50 border-b border-base-100 last:border-0">
+            <tr v-for="user in users" :key="user.id" class="hover:bg-slate-50/50 border-b border-base-100 last:border-0">
               <td class="py-4 pl-6">
                 <div class="flex items-center gap-3">
                   <div class="avatar placeholder">
@@ -275,9 +331,18 @@ onMounted(() => {
                   {{ user.role }}
                 </span>
               </td>
+              <td class="py-4">
+                <span class="badge badge-sm font-semibold capitalize" :class="getStatusBadge(user.display_status)">
+                  {{ user.display_status }}
+                </span>
+              </td>
               <td class="py-4 pr-6">
                 <div class="flex items-center justify-end gap-2">
-                  <button class="btn btn-ghost btn-sm btn-square text-primary bg-blue-50 hover:bg-blue-100">
+                  <button 
+                    @click="openModal(user)"
+                    class="btn btn-ghost btn-sm btn-square text-primary bg-blue-50 hover:bg-blue-100"
+                    title="Edit user"
+                  >
                     <Pencil :size="16" />
                   </button>
                   <button 
@@ -301,7 +366,7 @@ onMounted(() => {
       <div class="modal-box max-w-md">
         <!-- Modal Header -->
         <div class="flex items-center justify-between mb-6">
-          <h3 class="font-bold text-xl">Add New User</h3>
+          <h3 class="font-bold text-xl">{{ isEditing ? 'Edit User' : 'Add New User' }}</h3>
           <button @click="closeModal" class="btn btn-sm btn-circle btn-ghost">
             <X :size="20" />
           </button>
@@ -363,18 +428,35 @@ onMounted(() => {
               </option>
             </select>
           </div>
+
+          <!-- Status (Only for Editing) -->
+          <div v-if="isEditing" class="form-control">
+            <label class="label">
+              <span class="label-text font-medium">Account Status</span>
+            </label>
+            <div class="flex items-center gap-4 bg-slate-50/50 p-3 rounded-lg border border-base-200">
+                <span class="text-sm" :class="formData.is_active ? 'text-success font-bold' : 'text-error font-bold'">
+                    {{ formData.is_active ? 'Active' : 'Inactive' }}
+                </span>
+                <input 
+                    type="checkbox" 
+                    v-model="formData.is_active" 
+                    class="toggle toggle-primary" 
+                />
+            </div>
+          </div>
         </div>
 
         <!-- Modal Actions -->
         <div class="modal-action mt-6">
           <button @click="closeModal" class="btn btn-ghost">Cancel</button>
           <button 
-            @click="sendInvitation" 
+            @click="saveUser" 
             class="btn btn-primary text-white"
             :disabled="isLoading"
           >
             <span v-if="isLoading" class="loading loading-spinner loading-sm"></span>
-            <span v-else>Send Invitation</span>
+            <span v-else>{{ isEditing ? 'Save Changes' : 'Send Invitation' }}</span>
           </button>
         </div>
       </div>

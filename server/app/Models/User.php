@@ -4,7 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Foundation\Auth\User as Authenticatable;
+use MongoDB\Laravel\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
@@ -37,6 +37,11 @@ class User extends Authenticatable
         'google_calendar_refresh_token',
         'google_calendar_token_expires_at',
         'google_calendar_email',
+        'department_id',
+        'theme',
+        'reset_code',
+        'reset_code_expires_at',
+        'role_id'
     ];
 
     /**
@@ -50,9 +55,14 @@ class User extends Authenticatable
     ];
 
     /**
-     * The attributes that should be cast.
+     * The attributes that should be cast for serialization.
      *
      * @var array<string, string>
+     */
+    protected $appends = ['permissions'];
+
+    /**
+     * The attributes that should be cast.
      */
     protected $casts = [
         'email_verified_at' => 'datetime',
@@ -61,6 +71,8 @@ class User extends Authenticatable
         'last_failed_login' => 'datetime',
         'lock_until' => 'datetime',
         'password' => 'hashed',
+        'department_id' => 'string',
+        'reset_code_expires_at' => 'datetime',
     ];
 
     /**
@@ -69,6 +81,16 @@ class User extends Authenticatable
     public function getFullNameAttribute()
     {
         return "{$this->first_name} {$this->last_name}";
+    }
+
+    public function assignedRole()
+    {
+        return $this->belongsTo(Role::class, 'role_id');
+    }
+
+    public function departmentModel()
+    {
+        return $this->belongsTo(Department::class, 'department_id');
     }
 
     /**
@@ -141,5 +163,44 @@ class User extends Authenticatable
     public function eventInvitations()
     {
         return $this->hasMany(CalendarEventParticipant::class);
+    }
+
+    /**
+     * Check if user has a specific permission
+     */
+    public function hasPermissionTo($permissionName)
+    {
+        $permissions = $this->permissions;
+        return is_array($permissions) && in_array($permissionName, $permissions);
+    }
+
+    /**
+     * Get permission names for the user
+     */
+    public function getPermissionsAttribute()
+    {
+        // 1. Determine effective role name (case-insensitive)
+        $roleField = strtolower($this->getAttribute('role') ?? '');
+        $roleModel = $this->assignedRole;
+        $roleNameFromModel = $roleModel ? strtolower($roleModel->name ?? '') : '';
+
+        // 2. Admin master override
+        if ($roleField === 'admin' || $roleNameFromModel === 'admin' || $roleField === 'super_admin') {
+            return \App\Models\Permission::pluck('name')->toArray();
+        }
+
+        // 3. Resolve Role Model if not loaded
+        if (!$roleModel && $roleField) {
+            $roleModel = Role::where('name', 'i-like', $roleField)->first();
+        }
+        
+        if (!$roleModel || !$roleModel->permission_ids) {
+            return [];
+        }
+
+        // 4. Fetch permission names based on IDs
+        return \App\Models\Permission::whereIn('_id', $roleModel->permission_ids)
+                         ->pluck('name')
+                         ->toArray();
     }
 }

@@ -185,7 +185,7 @@ onMounted(() => {
                 </div>
               </td>
             </tr>
-            <tr v-for="user in users" :key="user.id" class="hover:bg-base-50/50 border-b border-base-100 last:border-0">
+            <tr v-for="user in users" :key="user.id" class="hover:bg-slate-50/50 border-b border-base-100 last:border-0">
               <td class="py-4 pl-6">
                 <div class="flex items-center gap-3">
                   <div class="opacity-70 avatar placeholder">

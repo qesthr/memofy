@@ -15,6 +15,11 @@ const routes = [
     component: () => import('../views/auth/SetupPassword.vue')
   },
   {
+    path: '/forgot-password',
+    name: 'ForgotPassword',
+    component: () => import('../views/auth/ForgotPassword.vue')
+  },
+  {
     path: '/unauthorized',
     name: 'Unauthorized',
     component: () => import('../views/unauthorized.vue')
@@ -33,6 +38,11 @@ const routes = [
         path: 'users',
         name: 'Users',
         component: () => import('../views/admin/Users.vue')
+      },
+      {
+        path: 'roles',
+        name: 'Roles',
+        component: () => import('../views/admin/Roles.vue')
       },
       {
         path: 'memos',
@@ -84,6 +94,11 @@ const routes = [
         path: 'memos',
         name: 'SecretaryMemos',
         component: () => import('../views/secretary/Memos.vue')
+      },
+      {
+        path: 'faculty',
+        name: 'SecretaryFaculty',
+        component: () => import('../views/secretary/Faculty.vue')
       },
       {
         path: 'archive',
@@ -166,12 +181,15 @@ router.beforeEach((to, from, next) => {
 
     // 2. Check Role permissions
     if (to.meta.role) {
-      // Allow super_admin to access admin routes (or all routes)
-      if (role === 'super_admin' && to.meta.role === 'admin') {
+      const userRole = (role || '').toLowerCase()
+      const requiredRole = to.meta.role.toLowerCase()
+
+      // Allow admin/super_admin to access admin routes
+      if ((userRole === 'admin' || userRole === 'super_admin') && requiredRole === 'admin') {
         return next()
       }
 
-      if (to.meta.role !== role) {
+      if (requiredRole !== userRole) {
         // Logged in but wrong role
         return next({ name: 'Unauthorized' })
       }

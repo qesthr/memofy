@@ -5,7 +5,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useEvents } from '@/composables/useEvents'
 import api from '@/services/api'
 import Swal from 'sweetalert2'
-import { X, Clock, MapPin, AlignLeft, Users, Trash2, CheckCircle, XCircle } from 'lucide-vue-next'
+import { X, Clock, MapPin, AlignLeft, Users, Trash2, CheckCircle, XCircle, Mail } from 'lucide-vue-next'
 
 const { showEventModal, activeEvent, closeEventModal, selectedDate } = useCalendar()
 const { fetchEvents } = useEvents()
@@ -23,9 +23,12 @@ const form = ref({
   invited_users: []
 })
 
+
 const isEditMode = computed(() => !!activeEvent.value?.is_editable && !!activeEvent.value?.id)
 const isViewMode = computed(() => !!activeEvent.value && !activeEvent.value.is_editable)
 const isCreateFromGrid = computed(() => !!activeEvent.value && activeEvent.value.is_editable && !activeEvent.value.id)
+const isMemoEvent = computed(() => activeEvent.value?.source === 'MEMO' && activeEvent.value?.memo_id)
+
 
 const otherUsers = computed(() => {
     return users.value.filter(u => u.id !== currentUser.value?.id)
@@ -99,6 +102,20 @@ const saveEvent = async () => {
   try {
     if (activeEvent.value?.id) {
       await api.put(`/calendar/events/${activeEvent.value.id}`, form.value)
+      
+      // If this is a memo event, also update the memo's scheduled_send_at
+      if (isMemoEvent.value) {
+        try {
+          await api.put(`/memos/${activeEvent.value.memo_id}`, {
+            scheduled_send_at: form.value.start,
+            schedule_end_at: form.value.end,
+            all_day_event: form.value.all_day
+          })
+        } catch (err) {
+          console.error('Failed to sync memo schedule:', err)
+        }
+      }
+      
       Swal.fire('Updated!', 'Event has been updated.', 'success')
     } else {
       await api.post('/calendar/events', form.value)
@@ -152,9 +169,15 @@ const respondToInvitation = async (status) => {
     <div class="bg-base-100 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
       <!-- Header -->
       <div class="flex items-center justify-between p-4 border-b border-base-200">
-        <h3 class="text-lg font-bold">
-            {{ activeEvent?.id ? (activeEvent.is_editable ? 'Edit Event' : 'Event Details') : 'Create Event' }}
-        </h3>
+        <div class="flex items-center gap-3">
+          <h3 class="text-lg font-bold">
+              {{ activeEvent?.id ? (activeEvent.is_editable ? 'Edit Event' : 'Event Details') : 'Create Event' }}
+          </h3>
+          <span v-if="isMemoEvent" class="badge badge-success gap-2 text-white">
+            <Mail :size="14" />
+            Scheduled Memo
+          </span>
+        </div>
         <button @click="closeEventModal" class="btn btn-sm btn-ghost btn-circle">
           <X :size="20" />
         </button>

@@ -3,7 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
+use MongoDB\Laravel\Eloquent\Model;
 
 class Memo extends Model
 {
@@ -20,13 +20,15 @@ class Memo extends Model
         'attachments',
         'version',
         'is_draft',
-        'user_id'
+        'user_id',
+        'scheduled_send_at'
     ];
 
     protected $casts = [
         'attachments' => 'array',
         'is_draft' => 'boolean',
         'version' => 'integer',
+        'scheduled_send_at' => 'datetime',
     ];
 
     // Relationships

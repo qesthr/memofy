@@ -1,11 +1,46 @@
 <script setup>
 import { ref } from 'vue'
-import { Plus, Search, ChevronDown, Calendar, X } from 'lucide-vue-next'
+import { Plus, Search, ChevronDown, Calendar, X, Settings2 } from 'lucide-vue-next'
+import ComposeMemoModal from '@/components/memos/ComposeMemoModal.vue'
+import CustomizeMemoModal from '@/components/memos/CustomizeMemoModal.vue'
+import Swal from 'sweetalert2'
 
 const departmentFilter = ref('All Departments')
 const priorityFilter = ref('All Priorities')
 const sortFilter = ref('Newest')
 const dateFilter = ref('mm/dd/yyyy')
+
+const showComposeModal = ref(false)
+const showCustomizeModal = ref(false)
+const templateData = ref(null)
+
+const handleTemplateApply = (data) => {
+  templateData.value = data
+  showCustomizeModal.value = false
+  showComposeModal.value = true
+}
+
+const handleSendMemo = async (memoData) => {
+  // Logic to send memo to API
+  try {
+    // Mocking API call for now
+    console.log('Sending Memo:', memoData)
+    
+    await Swal.fire({
+      title: 'Success!',
+      text: 'Memo has been sent successfully.',
+      icon: 'success',
+      confirmButtonText: 'OK',
+      customClass: {
+        confirmButton: 'btn btn-primary'
+      }
+    })
+    
+    showComposeModal.value = false
+  } catch (error) {
+    Swal.fire('Error', 'Failed to send memo', 'error')
+  }
+}
 </script>
 
 <template>
@@ -55,10 +90,30 @@ const dateFilter = ref('mm/dd/yyyy')
       </div>
 
       <!-- Action -->
-      <button class="btn btn-primary btn-sm text-white px-6">
-        <span class="mr-1">✎</span> Compose
-      </button>
+      <div class="flex gap-2">
+        <button @click="showCustomizeModal = true" class="btn btn-ghost btn-sm border border-base-300 px-4 hover:bg-base-200">
+          <Settings2 :size="16" class="mr-2" /> Template
+        </button>
+        <button @click="showComposeModal = true; templateData = null" class="btn btn-primary btn-sm text-white px-6">
+          <span class="mr-1">✎</span> Compose
+        </button>
+      </div>
     </div>
+
+    <!-- Customize Memo Modal -->
+    <CustomizeMemoModal
+      :is-open="showCustomizeModal"
+      @close="showCustomizeModal = false"
+      @apply="handleTemplateApply"
+    />
+
+    <!-- Compose Memo Modal -->
+    <ComposeMemoModal 
+      :is-open="showComposeModal"
+      :initial-data="templateData"
+      @close="showComposeModal = false"
+      @send="handleSendMemo"
+    />
 
     <!-- Empty State -->
     <div class="flex flex-col items-center justify-center py-20">

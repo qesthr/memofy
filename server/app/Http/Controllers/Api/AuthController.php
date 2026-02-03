@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\PasswordResetMail;
 use Laravel\Socialite\Facades\Socialite;
 use App\Models\User;
 use App\Models\UserInvitation;
@@ -29,16 +31,35 @@ class AuthController extends Controller
         $request->validate([
             'email' => 'required|email',
             'password' => 'required',
-            // 'recaptcha_token' => 'required' // Uncomment when ready
+            'recaptcha_token' => 'required'
         ]);
+
+        // reCAPTCHA Validation
+        $response = \Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
+            'secret' => env('RECAPTCHA_SECRET'),
+            'response' => $request->recaptcha_token,
+            'remoteip' => $request->ip(),
+        ]);
+
+        if (!$response->json('success')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'reCAPTCHA verification failed. Please try again.'
+            ], 422);
+        }
 
         $user = User::where('email', $request->email)->first();
 
-        // 1. Check existence
-        if (!$user) {
+        // 1. Check existence or verification (treated as same for security UX)
+        if (!$user || !$user->password || !Hash::check($request->password, $user->password)) {
+            if ($user) {
+                $user->incrementLoginAttempts();
+                $this->activityLogger->logAuthAction($user, 'login_failed', 'Failed login attempt', $this->activityLogger->extractRequestInfo($request));
+            }
+            
             return response()->json([
                 'success' => false,
-                'message' => 'This account has not been added by an administrator.'
+                'message' => 'Incorrect username or password.'
             ], 401);
         }
 
@@ -59,29 +80,7 @@ class AuthController extends Controller
             ], 423);
         }
 
-        // 4. Verify password
-        if (!$user->password || !Hash::check($request->password, $user->password)) {
-            $user->incrementLoginAttempts();
-            
-            $attemptsRemaining = 5 - $user->login_attempts;
-            $message = "Invalid credentials.";
-            
-            if ($attemptsRemaining > 0) {
-                $message .= " {$attemptsRemaining} attempts remaining.";
-            } else {
-                $message .= " Account locked for 5 minutes.";
-            }
-
-            $this->activityLogger->logAuthAction($user, 'login_failed', 'Failed login attempt', $this->activityLogger->extractRequestInfo($request));
-
-            return response()->json([
-                'success' => false,
-                'message' => $message,
-                'attempts_remaining' => max(0, $attemptsRemaining)
-            ], 401);
-        }
-
-        // 5. Success
+        // 4. Success
         $user->resetLoginAttempts();
         $user->update(['last_login' => now()]);
         
@@ -95,6 +94,135 @@ class AuthController extends Controller
             'user' => $user,
             'token' => $token
         ]);
+    }
+
+    public function forgotPassword(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'recaptcha_token' => 'required'
+        ]);
+
+        // reCAPTCHA Validation
+        $response = \Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
+            'secret' => env('RECAPTCHA_SECRET'),
+            'response' => $request->recaptcha_token,
+            'remoteip' => $request->ip(),
+        ]);
+
+        if (!$response->json('success')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'reCAPTCHA verification failed. Please try again.'
+            ], 422);
+        }
+
+        $user = User::where('email', $request->email)->first();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No account is associated with this email address.'
+            ], 404);
+        }
+
+        // Check if it's a Google account
+        if ($user->google_id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This account uses Google Sign-In. Password reset is not available.'
+            ], 422);
+        }
+
+        // Generate 6-digit code
+        $code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+
+        // Update User
+        $user->update([
+            'reset_code' => $code,
+            'reset_code_expires_at' => now()->addMinutes(15)
+        ]);
+
+        try {
+            Mail::to($user->email)->send(new PasswordResetMail($user, $code));
+            
+            $this->activityLogger->logAuthAction($user, 'forgot_password_request', 'Password reset code requested', $this->activityLogger->extractRequestInfo($request));
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Password reset code has been sent to your email.'
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Password reset email failed: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to send reset code. Please try again later.'
+            ], 500);
+        }
+    }
+
+    public function resetPassword(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'code' => 'required|string|size:6',
+            'password' => 'required|min:8|confirmed',
+            'recaptcha_token' => 'required'
+        ]);
+
+        // reCAPTCHA Validation
+        $response = \Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
+            'secret' => env('RECAPTCHA_SECRET'),
+            'response' => $request->recaptcha_token,
+            'remoteip' => $request->ip(),
+        ]);
+
+        if (!$response->json('success')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'reCAPTCHA verification failed. Please try again.'
+            ], 422);
+        }
+
+        $user = User::where('email', $request->email)
+                    ->where('reset_code', $request->code)
+                    ->first();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'The reset code is invalid or has expired.'
+            ], 422);
+        }
+
+        // Check expiration
+        if (!$user->reset_code_expires_at || $user->reset_code_expires_at->isPast()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'The reset code is invalid or has expired.'
+            ], 422);
+        }
+
+        try {
+            // Update Password
+            $user->update([
+                'password' => Hash::make($request->password),
+                'reset_code' => null,
+                'reset_code_expires_at' => null
+            ]);
+
+            $this->activityLogger->logAuthAction($user, 'password_reset_success', 'Password successfully reset', $this->activityLogger->extractRequestInfo($request));
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Your password has been reset successfully.'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to reset password. Please try again.'
+            ], 500);
+        }
     }
 
     /**
@@ -210,20 +338,25 @@ class AuthController extends Controller
     public function verifyInvitationToken($token)
     {
         $invitation = UserInvitation::where('token', $token)
-            ->where('used', false)
+            ->where('used', '!=', true)
             ->where('expires_at', '>', now())
             ->first();
 
         if (!$invitation) {
             return response()->json([
                 'success' => false,
-                'message' => 'Invalid or expired invitation token.'
-            ], 404);
+                'message' => 'This invitation link is invalid or has expired.'
+            ], 422);
         }
 
+        $user = User::find($invitation->user_id);
+        
         return response()->json([
             'success' => true,
-            'data' => $invitation
+            'data' => [
+                'invitation' => $invitation,
+                'user_name' => $user ? $user->full_name : ''
+            ]
         ]);
     }
 
@@ -231,52 +364,90 @@ class AuthController extends Controller
     {
         $request->validate([
             'token' => 'required',
-            'name' => 'required|string',
-            'password' => 'required|min:8|confirmed'
+            'name' => 'required|string|min:2',
+            'password' => 'required|min:8|confirmed',
+            'recaptcha_token' => 'required'
         ]);
 
+        // reCAPTCHA Validation
+        $response = \Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
+            'secret' => env('RECAPTCHA_SECRET'),
+            'response' => $request->recaptcha_token,
+            'remoteip' => $request->ip(),
+        ]);
+
+        if (!$response->json('success')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'reCAPTCHA verification failed. Please try again.'
+            ], 422);
+        }
+
         $invitation = UserInvitation::where('token', $request->token)
-            ->where('used', false)
+            ->where('used', '!=', true)
             ->where('expires_at', '>', now())
             ->first();
 
         if (!$invitation) {
-            return response()->json(['message' => 'Invalid or expired token'], 404);
+            return response()->json([
+                'success' => false,
+                'message' => 'This invitation link is invalid or has expired.'
+            ], 422);
         }
 
-        // Split name
+        // Find user by linked ID or fallback to email
+        $user = User::find($invitation->user_id);
+        
+        if (!$user) {
+            $user = User::where('email', $invitation->email)->first();
+        }
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'The associated user account could not be found.'
+            ], 404);
+        }
+
+        // 1. Split name if provided (user might want to confirm/update their name)
         $parts = explode(' ', trim($request->name), 2);
         $firstName = $parts[0];
         $lastName = $parts[1] ?? '';
 
-        // Create User
-        $user = User::create([
-            'email' => $invitation->email,
-            'first_name' => $firstName,
-            'last_name' => $lastName,
-            'password' => Hash::make($request->password),
-            'role' => $invitation->role,
-            'department' => $invitation->department,
-            'is_active' => true,
-        ]);
-        
-        // Mark used
-        $invitation->update(['used' => true]);
-        
-        // Login
-        $token = $user->createToken('auth_token')->plainTextToken;
-        
-        $this->activityLogger->logAuthAction($user, 'account_setup', 'User setup account via invitation', $this->activityLogger->extractRequestInfo($request));
+        try {
+            // 2. Update User
+            $user->update([
+                'first_name' => $firstName,
+                'last_name' => $lastName,
+                'password' => Hash::make($request->password),
+                'is_active' => true,
+            ]);
+            
+            // 3. Mark invitation used
+            $invitation->update(['used' => true, 'status' => 'accepted']);
+            
+            // 4. Create Login Token
+            $token = $user->createToken('auth_token')->plainTextToken;
+            
+            $this->activityLogger->logAuthAction($user, 'account_setup', 'User activated account via invitation', $this->activityLogger->extractRequestInfo($request));
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Account created successfully',
-            'data' => [
-                'user' => $user,
-                'token' => $token,
-                'role' => $user->role
-            ]
-        ]);
+            return response()->json([
+                'success' => true,
+                'message' => 'Your account has been activated successfully.',
+                'data' => [
+                    'user' => $user,
+                    'token' => $token,
+                    'role' => $user->role
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Setup password error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to activate account. Please try again later.'
+            ], 500);
+        }
     }
 
     public function redirectToGoogle()
@@ -336,6 +507,35 @@ class AuthController extends Controller
         return $this->renderPopupHtml($payload);
     }
     
+    public function updateTheme(Request $request)
+    {
+        $request->validate([
+            'theme' => 'required|string'
+        ]);
+
+        $user = $request->user();
+        $user->update(['theme' => $request->theme]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Theme updated successfully',
+            'theme' => $user->theme
+        ]);
+    }
+
+    public function updateMe(Request $request)
+    {
+        $user = $request->user();
+        $user->update($request->only(['first_name', 'last_name']));
+        return response()->json(['success' => true, 'user' => $user]);
+    }
+
+    public function uploadMyProfilePicture(Request $request)
+    {
+        // Placeholder for future logic
+        return response()->json(['success' => true, 'message' => 'Profile picture upload logic placeholder']);
+    }
+
     private function renderPopupHtml($data)
     {
         $json = json_encode($data);

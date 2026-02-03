@@ -100,7 +100,7 @@ onMounted(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="log in logs" :key="log.id" class="hover:bg-base-50/50 border-b border-base-100 last:border-0 text-sm">
+            <tr v-for="log in logs" :key="log.id" class="hover:bg-slate-50/50 border-b border-base-100 last:border-0 text-sm">
               <td class="py-4 pl-6 text-base-content/60 font-mono text-xs">{{ log.timestamp }}</td>
               <td class="py-4">
                 <div class="flex items-center gap-3">

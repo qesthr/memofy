@@ -42,11 +42,24 @@ const getEventStyle = (event) => {
   const top = (startMinutes / 60) * 60 
   const height = Math.max((duration / 60) * 60, 20) // min 20px
   
+  // Visual distinction for different sources
+  let bgColor, borderColor
+  if (event.source === 'MEMO') {
+    bgColor = '#10b981' // green for memos
+    borderColor = '#059669'
+  } else if (event.source === 'GOOGLE') {
+    bgColor = '#4285F4'
+    borderColor = '#1a73e8'
+  } else {
+    bgColor = '#3b82f6'
+    borderColor = '#1d4ed8'
+  }
+  
   return {
     top: `${top}px`,
     height: `${height}px`,
-    backgroundColor: event.source === 'GOOGLE' ? '#4285F4' : '#3b82f6',
-    borderLeft: `5px solid ${event.source === 'GOOGLE' ? '#1a73e8' : '#1d4ed8'}`
+    backgroundColor: bgColor,
+    borderLeft: `5px solid ${borderColor}`
   }
 }
 

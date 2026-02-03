@@ -16,7 +16,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $loader = require base_path('vendor/autoload.php');
+        $loader->addPsr4('MongoDB\\Laravel\\', base_path('vendor/mongodb/laravel-mongodb/src'));
+        $loader->addPsr4('MongoDB\\', base_path('vendor/mongodb/mongodb/src'));
     }
 
     /**
@@ -24,6 +26,13 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        \Illuminate\Support\Facades\DB::extend('mongodb', function ($config, $name) {
+            $config['name'] = $name;
+            return new \MongoDB\Laravel\Connection($config);
+        });
+
+        \Laravel\Sanctum\Sanctum::usePersonalAccessTokenModel(\App\Models\PersonalAccessToken::class);
+
         Route::middleware('api')
             ->prefix('api')
             ->group(base_path('routes/api.php'));
