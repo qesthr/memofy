@@ -54,10 +54,15 @@ const generateCalendar = () => {
     calendarDays.value = days
 }
 
+const user = ref(null)
+
 const fetchDashboardData = async () => {
   try {
     const response = await api.get('/dashboard')
-    const { user_stats, stats: globalStats } = response.data
+    const { user_stats, stats: globalStats, user: userData } = response.data
+    
+    // Set user data if returned from dashboard
+    user.value = userData || JSON.parse(localStorage.getItem('user'))
     
     // Map backend data to UI
     stats.value[0].value = user_stats.sent_memos || 0
@@ -83,7 +88,9 @@ onMounted(() => {
       <div class="relative w-full overflow-hidden bg-[#0f172a] rounded-3xl p-8 lg:p-12 text-white">
         <div class="relative z-10 max-w-lg">
           <h1 class="text-4xl font-bold mb-2">Secretary Dashboard</h1>
-          <p class="text-white/80 text-lg">Welcome back, Department Secretary!</p>
+          <p class="text-white/80 text-lg">
+            Welcome back, <span class="font-bold text-blue-400">{{ user?.department || '' }}</span> Secretary!
+          </p>
         </div>
         
         <!-- Illustration Placeholder (Right side) -->

@@ -3,7 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
+use MongoDB\Laravel\Eloquent\Model;
 
 class UserInvitation extends Model
 {
@@ -16,6 +16,7 @@ class UserInvitation extends Model
         'token',
         'expires_at',
         'invited_by',
+        'user_id',
         'status' // pending, accepted, expired
     ];
 

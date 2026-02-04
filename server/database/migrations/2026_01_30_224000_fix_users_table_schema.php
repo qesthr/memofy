@@ -10,18 +10,18 @@ return new class extends Migration
     {
         Schema::table('users', function (Blueprint $table) {
             if (!Schema::hasColumn('users', 'remember_token')) {
-                $table->rememberToken()->after('violation_count');
+                $table->rememberToken();
             }
             
             // Fixed columns from previous session if they are missing
             if (!Schema::hasColumn('users', 'google_calendar_token')) {
-                $table->text('google_calendar_token')->nullable()->after('remember_token');
+                $table->text('google_calendar_token')->nullable();
             }
             if (!Schema::hasColumn('users', 'google_calendar_refresh_token')) {
-                $table->text('google_calendar_refresh_token')->nullable()->after('google_calendar_token');
+                $table->text('google_calendar_refresh_token')->nullable();
             }
             if (!Schema::hasColumn('users', 'google_calendar_token_expires_at')) {
-                $table->timestamp('google_calendar_token_expires_at')->nullable()->after('google_calendar_refresh_token');
+                $table->timestamp('google_calendar_token_expires_at')->nullable();
             }
         });
     }

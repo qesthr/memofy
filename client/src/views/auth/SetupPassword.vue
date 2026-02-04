@@ -1,7 +1,7 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted, getCurrentInstance } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Eye, EyeOff, CheckCircle } from 'lucide-vue-next'
+import { Eye, EyeOff, CheckCircle, KeyRound, User } from 'lucide-vue-next'
 import api from '@/services/api'
 import Swal from 'sweetalert2'
 
@@ -13,6 +13,8 @@ const invitationData = ref(null)
 const isVerifying = ref(true)
 const isValid = ref(false)
 const isLoading = ref(false)
+const recaptchaVerified = ref(false)
+const recaptchaToken = ref('')
 
 const showPassword = ref(false)
 const showConfirmPassword = ref(false)
@@ -31,6 +33,33 @@ const toggleConfirmPassword = () => {
   showConfirmPassword.value = !showConfirmPassword.value
 }
 
+// reCAPTCHA Logic
+const loadRecaptchaScript = () => {
+  const script = document.createElement('script')
+  script.src = 'https://www.google.com/recaptcha/api.js'
+  script.async = true
+  script.defer = true
+  document.head.appendChild(script)
+}
+
+const onRecaptchaVerify = (t) => {
+  recaptchaVerified.value = true
+  recaptchaToken.value = t
+}
+
+const onRecaptchaExpired = () => {
+  recaptchaVerified.value = false
+  recaptchaToken.value = ''
+}
+
+const resetRecaptcha = () => {
+  if (window.grecaptcha) {
+    window.grecaptcha.reset()
+    recaptchaVerified.value = false
+    recaptchaToken.value = ''
+  }
+}
+
 const verifyToken = async () => {
   token.value = route.query.token
   
@@ -38,26 +67,27 @@ const verifyToken = async () => {
     Swal.fire({
       icon: 'error',
       title: 'Invalid Link',
-      text: 'No invitation token found in the link',
-      confirmButtonColor: '#4285F4'
+      text: 'No invitation token found in the link'
     }).then(() => {
-      router.push('/')
+      router.push('/login')
     })
     return
   }
 
   try {
     const response = await api.get(`/auth/verify-token/${token.value}`)
-    invitationData.value = response.data.data
+    const { invitation, user_name } = response.data.data
+    invitationData.value = invitation
+    formData.value.name = user_name || invitation.email.split('@')[0]
     isValid.value = true
   } catch (error) {
+    console.error('Verify token error:', error)
     Swal.fire({
       icon: 'error',
       title: 'Invalid or Expired Link',
-      text: 'This invitation link is invalid or has expired',
-      confirmButtonColor: '#4285F4'
+      text: error.response?.data?.message || 'This invitation link is invalid or has expired'
     }).then(() => {
-      router.push('/')
+      router.push('/login')
     })
   } finally {
     isVerifying.value = false
@@ -65,13 +95,22 @@ const verifyToken = async () => {
 }
 
 const setupPassword = async () => {
+  // reCAPTCHA validation
+  if (!recaptchaVerified.value) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Verification Required',
+      text: 'Please verify that you are not a robot.'
+    })
+    return
+  }
+
   // Validation
   if (!formData.value.name || !formData.value.password || !formData.value.password_confirmation) {
     Swal.fire({
       icon: 'warning',
       title: 'Incomplete Form',
-      text: 'Please fill in all fields',
-      confirmButtonColor: '#4285F4'
+      text: 'Please fill in all fields'
     })
     return
   }
@@ -80,8 +119,7 @@ const setupPassword = async () => {
     Swal.fire({
       icon: 'warning',
       title: 'Password Too Short',
-      text: 'Password must be at least 8 characters long',
-      confirmButtonColor: '#4285F4'
+      text: 'Password must be at least 8 characters long'
     })
     return
   }
@@ -90,8 +128,7 @@ const setupPassword = async () => {
     Swal.fire({
       icon: 'error',
       title: 'Passwords Do Not Match',
-      text: 'Please make sure both passwords match',
-      confirmButtonColor: '#4285F4'
+      text: 'Please make sure both passwords match'
     })
     return
   }
@@ -103,21 +140,20 @@ const setupPassword = async () => {
       token: token.value,
       name: formData.value.name,
       password: formData.value.password,
-      password_confirmation: formData.value.password_confirmation
+      password_confirmation: formData.value.password_confirmation,
+      recaptcha_token: recaptchaToken.value
     })
 
     const { token: authToken, user, role } = response.data.data
 
-    // Store auth data
     localStorage.setItem('token', authToken)
     localStorage.setItem('user', JSON.stringify(user))
     localStorage.setItem('role', role)
 
-    // Success message
     await Swal.fire({
       icon: 'success',
-      title: 'Account Created!',
-      text: 'Your password has been set successfully. Redirecting to dashboard...',
+      title: 'Account Activated!',
+      text: 'Your password has been set successfully.',
       timer: 2000,
       showConfirmButton: false
     })
@@ -133,149 +169,175 @@ const setupPassword = async () => {
 
   } catch (error) {
     console.error('Password setup error:', error)
+    resetRecaptcha()
     const errorMessage = error.response?.data?.message || 'Failed to setup password'
     
     Swal.fire({
       icon: 'error',
-      title: 'Error',
-      text: errorMessage,
-      confirmButtonColor: '#4285F4'
+      title: 'Activation Failed',
+      text: errorMessage
     })
   } finally {
     isLoading.value = false
   }
 }
 
+const app = getCurrentInstance()
 onMounted(() => {
+  if (app) {
+    app.appContext.config.globalProperties.$recaptchaSiteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY || '6LeBIdwrAAAAAOIONOkF3vk31VJTzoN1ElEUOhBV'
+  }
+  loadRecaptchaScript()
+  window.onRecaptchaVerify = onRecaptchaVerify
+  window.onRecaptchaExpired = onRecaptchaExpired
   verifyToken()
+})
+
+onUnmounted(() => {
+  delete window.onRecaptchaVerify
+  delete window.onRecaptchaExpired
 })
 </script>
 
 <template>
-  <div class="min-h-screen flex bg-base-100">
+  <div class="min-h-screen flex bg-base-100" data-theme="light">
     <!-- Left Side - Branding -->
     <div class="hidden lg:flex lg:w-1/2 relative bg-[#1e293b] overflow-hidden items-center justify-center">
-      <div class="relative z-10 text-center px-12">
-        <img src="../../assets/images/images/Buksu-Logo.png" alt="BukSU Logo" class="w-32 h-32 mx-auto mb-6" />
-        <h1 class="text-4xl font-bold text-white mb-3">BUKSU</h1>
-        <p class="text-[#FFD700] text-xl font-semibold tracking-wide">EDUCATE. INNOVATE. LEAD.</p>
+      <div 
+        class="absolute inset-0 bg-cover bg-center opacity-20"
+        style="background-image: url('/src/assets/images/images/UNI.jpg')"
+      ></div>
+      <div class="relative z-10 flex flex-col items-center justify-center text-center p-12">
+        <img src="../../assets/images/images/Buksu-Logo.png" alt="BukSU Logo" class="w-64 mb-8 drop-shadow-xl" />
+        <h1 class="text-4xl font-bold text-white tracking-wide mb-2 uppercase">BukSU</h1>
+        <p class="text-yellow-400 font-semibold text-lg tracking-wider uppercase">Educate. Innovate. Lead.</p>
       </div>
+      <div class="absolute right-0 top-0 bottom-0 w-24 bg-[#0ea5e9] skew-x-[-10deg] translate-x-12"></div>
+      <div class="absolute right-0 top-0 bottom-0 w-24 bg-[#0284c7] skew-x-[-10deg] translate-x-6 z-0"></div>
     </div>
 
     <!-- Right Side - Setup Form -->
-    <div class="w-full lg:w-1/2 flex items-center justify-center p-8">
-      <div class="w-full max-w-md">
+    <div class="w-full lg:w-1/2 flex items-center justify-center p-8 lg:p-16 bg-white relative">
+      <div class="absolute left-0 top-0 bottom-0 w-4 bg-[#0ea5e9] lg:block hidden"></div>
+      
+      <div class="w-full max-w-md space-y-8">
         <!-- Loading State -->
         <div v-if="isVerifying" class="text-center">
-          <div class="loading loading-spinner loading-lg text-primary"></div>
-          <p class="mt-4 text-base-content/60">Verifying invitation...</p>
+          <span class="loading loading-spinner loading-lg text-blue-600"></span>
+          <p class="mt-4 text-gray-500">Verifying invitation...</p>
         </div>
 
         <!-- Setup Form -->
         <div v-else-if="isValid" class="space-y-6">
-          <!-- Header -->
-          <div class="text-center mb-8">
-            <div class="flex items-center justify-center mb-4">
-              <CheckCircle :size="48" class="text-success" />
+          <div class="text-center">
+            <div class="flex justify-center mb-4">
+               <div class="p-3 bg-green-100 rounded-full">
+                  <CheckCircle class="w-8 h-8 text-green-600" />
+               </div>
             </div>
-            <h2 class="text-2xl font-bold text-base-content mb-2">Welcome!</h2>
-            <p class="text-base-content/60">Set up your account to access the {{ invitationData?.role }} portal</p>
+            <h2 class="text-3xl font-bold text-gray-900">Activate Account</h2>
+            <p class="mt-2 text-sm text-gray-500">
+              Welcome! Set up your password to access the {{ invitationData?.role }} portal.
+            </p>
           </div>
 
-          <!-- Invitation Info -->
-          <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-            <div class="space-y-2 text-sm">
-              <div class="flex justify-between">
-                <span class="text-base-content/60">Email:</span>
-                <span class="font-medium">{{ invitationData?.email }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-base-content/60">Department:</span>
-                <span class="font-medium">{{ invitationData?.department }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-base-content/60">Role:</span>
-                <span class="badge badge-primary">{{ invitationData?.role }}</span>
-              </div>
+          <!-- Invitation Info Badge -->
+          <div class="bg-gray-50 rounded-xl p-5 border border-gray-100 space-y-3">
+            <div class="flex justify-between items-center text-sm">
+              <span class="text-gray-500">Email Address</span>
+              <span class="font-semibold text-gray-900">{{ invitationData?.email }}</span>
+            </div>
+            <div class="flex justify-between items-center text-sm">
+              <span class="text-gray-500">Department</span>
+              <span class="font-semibold text-gray-900">{{ invitationData?.department }}</span>
+            </div>
+            <div class="flex justify-between items-center text-sm">
+              <span class="text-gray-500">Assigned Role</span>
+              <span class="badge badge-primary px-4 py-3 capitalize">{{ invitationData?.role }}</span>
             </div>
           </div>
 
-          <!-- Password Form -->
-          <form @submit.prevent="setupPassword" class="space-y-4">
+          <form @submit.prevent="setupPassword" class="space-y-5">
             <!-- Name -->
-            <div class="form-control">
-              <label class="label">
-                <span class="label-text font-medium">Full Name <span class="text-error">*</span></span>
-              </label>
+            <div class="relative">
+              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <User class="h-5 w-5 text-gray-400" />
+              </div>
               <input 
                 v-model="formData.name"
                 type="text"
-                placeholder="Enter your full name" 
-                class="input input-bordered w-full"
+                required
+                class="input input-bordered w-full pl-10 bg-gray-50 text-gray-900 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                placeholder="Confirm your full name"
               />
             </div>
 
             <!-- Password -->
-            <div class="form-control">
-              <label class="label">
-                <span class="label-text font-medium">Password <span class="text-error">*</span></span>
-              </label>
-              <div class="relative">
-                <input 
-                  v-model="formData.password"
-                  :type="showPassword ? 'text' : 'password'"
-                  placeholder="Enter your password" 
-                  class="input input-bordered w-full pr-10"
-                />
-                <button
-                  type="button"
-                  @click="togglePassword"
-                  class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer"
-                >
-                  <component :is="showPassword ? EyeOff : Eye" :size="18" />
-                </button>
+            <div class="relative">
+              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <KeyRound class="h-5 w-5 text-gray-400" />
               </div>
-              <label class="label">
-                <span class="label-text-alt text-base-content/60">Minimum 8 characters</span>
-              </label>
+              <input 
+                v-model="formData.password"
+                :type="showPassword ? 'text' : 'password'"
+                required
+                class="input input-bordered w-full pl-10 pr-10 bg-gray-50 text-gray-900 border-gray-200"
+                placeholder="Initial Password (min 8 characters)"
+              />
+              <button
+                type="button"
+                @click="togglePassword"
+                class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+              >
+                <component :is="showPassword ? EyeOff : Eye" size="18" />
+              </button>
             </div>
 
             <!-- Confirm Password -->
-            <div class="form-control">
-              <label class="label">
-                <span class="label-text font-medium">Confirm Password <span class="text-error">*</span></span>
-              </label>
-              <div class="relative">
-                <input 
-                  v-model="formData.password_confirmation"
-                  :type="showConfirmPassword ? 'text' : 'password'"
-                  placeholder="Confirm your password" 
-                  class="input input-bordered w-full pr-10"
-                />
-                <button
-                  type="button"
-                  @click="toggleConfirmPassword"
-                  class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer"
-                >
-                  <component :is="showConfirmPassword ? EyeOff : Eye" :size="18" />
-                </button>
+            <div class="relative">
+              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <KeyRound class="h-5 w-5 text-gray-400" />
               </div>
+              <input 
+                v-model="formData.password_confirmation"
+                :type="showConfirmPassword ? 'text' : 'password'"
+                required
+                class="input input-bordered w-full pl-10 pr-10 bg-gray-50 text-gray-900 border-gray-200"
+                placeholder="Confirm Password"
+              />
+              <button
+                type="button"
+                @click="toggleConfirmPassword"
+                class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+              >
+                <component :is="showConfirmPassword ? EyeOff : Eye" size="18" />
+              </button>
+            </div>
+
+            <!-- reCAPTCHA -->
+            <div class="flex justify-center py-2">
+              <div 
+                class="g-recaptcha" 
+                :data-sitekey="$recaptchaSiteKey"
+                data-callback="onRecaptchaVerify"
+                data-expired-callback="onRecaptchaExpired"
+              ></div>
             </div>
 
             <!-- Submit Button -->
             <button 
               type="submit"
-              class="w-full bg-[#4285F4] hover:bg-[#3367D6] text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              :disabled="isLoading"
+              class="btn btn-primary w-full bg-blue-600 hover:bg-blue-700 border-none text-white font-bold h-12 shadow-lg shadow-blue-200 disabled:opacity-50"
+              :disabled="isLoading || !recaptchaVerified"
             >
               <span v-if="isLoading" class="loading loading-spinner loading-sm"></span>
-              <span v-else>Create Account</span>
+              <span v-else>Activate & Continue</span>
             </button>
           </form>
 
-          <div class="text-center text-sm text-base-content/60 mt-6">
-            <p>Your email will be used as your username for future logins</p>
-          </div>
+          <p class="text-center text-xs text-gray-400 pt-4">
+            By activating your account, you agree to the BukSU Memofy Portal terms and conditions.
+          </p>
         </div>
       </div>
     </div>
@@ -283,5 +345,9 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* No additional styles needed */
+@reference "../../style.css";
+
+.input:focus {
+  @apply ring-2 ring-blue-500/20 border-blue-500;
+}
 </style>

@@ -2,30 +2,39 @@
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useLogout } from '@/composables/useLogout'
+import { useAuth } from '@/composables/useAuth'
 import { 
   LayoutDashboard, 
   FileText, 
   Archive, 
   Calendar, 
   Settings,
-  LogOut
+  LogOut,
+  User
 } from 'lucide-vue-next'
 
 const router = useRouter()
 const route = useRoute()
 const { logout } = useLogout()
+const { can } = useAuth()
 
 const userName = ref('--')
 const userRole = ref('Department Secretary')
 const userInitial = ref('S')
 const userEmail = ref('secretary@buksu.edu.ph')
+const userDept = ref('')
 
 const menuItems = [
   { name: 'Dashboard', path: '/secretary/dashboard', icon: LayoutDashboard },
-  { name: 'Memos', path: '/secretary/memos', icon: FileText },
-  { name: 'Archive', path: '/secretary/archive', icon: Archive },
-  { name: 'Calendar', path: '/secretary/calendar', icon: Calendar }
+  { name: 'Memos', path: '/secretary/memos', icon: FileText, permission: 'memo.view' },
+  { name: 'Faculty', path: '/secretary/faculty', icon: User, permission: 'faculty.view' },
+  { name: 'Archive', path: '/secretary/archive', icon: Archive, permission: 'archive.view' }, // Note: archive.view or faculty.view?
+  { name: 'Calendar', path: '/secretary/calendar', icon: Calendar, permission: 'calendar.view' }
 ]
+// Filter menu items based on permissions
+const filteredMenuItems = computed(() => {
+  return menuItems.filter(item => !item.permission || can(item.permission))
+})
 
 const bottomItems = [
   { name: 'Settings', path: '/secretary/settings', icon: Settings },
@@ -44,6 +53,7 @@ onMounted(() => {
     userRole.value = 'Department Secretary' 
     userInitial.value = user.first_name.charAt(0)
     userEmail.value = user.email
+    userDept.value = user.department || ''
   }
 })
 </script>
@@ -61,7 +71,7 @@ onMounted(() => {
     <!-- Main Navigation -->
     <nav class="nav-section">
       <ul class="menu-list">
-        <li v-for="item in menuItems" :key="item.path">
+        <li v-for="item in filteredMenuItems" :key="item.path">
           <router-link 
             :to="item.path" 
             class="menu-item"
@@ -107,7 +117,9 @@ onMounted(() => {
               </div>
             </div>
             <div class="profile-info">
-              <p class="font-bold text-sm text-base-content leading-tight">Secretary</p>
+              <p class="font-bold text-sm text-base-content leading-tight">
+                {{ userDept ? userDept + ' Secretary' : 'Secretary' }}
+              </p>
               <p class="text-xs text-base-content/60 truncate w-32" :title="userEmail">{{ userEmail }}</p>
             </div>
         </div>

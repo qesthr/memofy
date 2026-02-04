@@ -2,24 +2,14 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
+use MongoDB\Laravel\Eloquent\Model;
 
 class Permission extends Model
 {
-    use HasFactory;
-
-    protected $primaryKey = 'permission_id';
-
-    protected $fillable = [
-        'permission_name',
-        'category',
-        'description',
-    ];
+    protected $fillable = ['name', 'label', 'description'];
 
     public function roles()
     {
-        return $this->belongsToMany(Role::class, 'role_permissions', 'permission_id', 'role_id')
-                    ->withPivot('granted_at');
+        return $this->belongsToMany(Role::class, null, 'permission_ids', 'role_ids');
     }
 }

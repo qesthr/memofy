@@ -29,7 +29,6 @@ return new class extends Migration
             $table->timestamps();
             
             // Indexes
-            $table->index('role_title');
             $table->index('is_active');
             $table->index('order');
         });

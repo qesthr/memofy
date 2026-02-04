@@ -24,9 +24,6 @@ return new class extends Migration
                 $table->unsignedBigInteger('updated_by')->nullable();
                 
                 $table->timestamps();
-                
-                // Indexes
-                $table->index('key');
             });
         }
     }

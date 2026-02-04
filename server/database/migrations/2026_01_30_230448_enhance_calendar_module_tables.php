@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::table('calendar_events', function (Blueprint $table) {
             if (!Schema::hasColumn('calendar_events', 'source')) {
-                $table->string('source')->default('MEMOFY')->after('status'); // MEMOFY, GOOGLE
+                $table->string('source')->default('MEMOFY'); // MEMOFY, GOOGLE
             }
             if (Schema::hasColumn('calendar_events', 'participants')) {
                 $table->dropColumn('participants');

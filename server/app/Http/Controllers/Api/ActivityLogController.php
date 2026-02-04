@@ -10,7 +10,20 @@ class ActivityLogController extends Controller
 {
     public function index(Request $request)
     {
+        $user = $request->user();
         $query = UserActivityLog::with('actor');
+
+        // RBAC Scoping
+        if (!$user->hasPermissionTo('activity.view_all')) {
+            if ($user->hasPermissionTo('activity.view_department')) {
+                // Show logs from people in the same department
+                $userIds = \App\Models\User::where('department', $user->department)->pluck('_id');
+                $query->whereIn('actor_id', $userIds);
+            } else {
+                // Just their own logs
+                $query->where('actor_id', $user->id);
+            }
+        }
 
         // Filters
         if ($request->search) {
@@ -41,6 +54,20 @@ class ActivityLogController extends Controller
     public function show($id)
     {
         $log = UserActivityLog::with('actor')->findOrFail($id);
+        $user = auth()->user();
+
+        // RBAC Check for single log
+        if (!$user->hasPermissionTo('activity.view_all')) {
+            if ($user->hasPermissionTo('activity.view_department')) {
+                $targetUser = \App\Models\User::find($log->actor_id);
+                if (!$targetUser || $targetUser->department !== $user->department) {
+                    return response()->json(['message' => 'Unauthorized'], 403);
+                }
+            } else if ($log->actor_id !== $user->id) {
+                return response()->json(['message' => 'Unauthorized'], 403);
+            }
+        }
+
         return response()->json($log);
     }
 }
