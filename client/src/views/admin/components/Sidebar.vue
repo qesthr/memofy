@@ -1,14 +1,15 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useLogout } from '@/composables/useLogout'
-import { 
-  LayoutDashboard, 
-  Users, 
-  FileText, 
-  Archive, 
-  Calendar, 
-  FileBarChart, 
+import { useAuth } from '@/composables/useAuth'
+import {
+  LayoutDashboard,
+  Users,
+  FileText,
+  Archive,
+  Calendar,
+  FileBarChart,
   Activity,
   Settings,
   LogOut,
@@ -18,6 +19,7 @@ import {
 const router = useRouter()
 const route = useRoute()
 const { logout } = useLogout()
+const { can } = useAuth()
 
 const userName = ref('--')
 const userRole = ref('Administrator')
@@ -25,19 +27,27 @@ const userInitial = ref('A')
 
 const menuItems = [
   { name: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
-  { name: 'Users', path: '/admin/users', icon: Users },
-  { name: 'Roles & Permissions', path: '/admin/roles', icon: Shield },
-  { name: 'Memos', path: '/admin/memos', icon: FileText },
-  { name: 'Archive', path: '/admin/archive', icon: Archive },
-  { name: 'Calendar', path: '/admin/calendar', icon: Calendar },
-  { name: 'Report', path: '/admin/report', icon: FileBarChart },
-  { name: 'Activity Logs', path: '/admin/activity-logs', icon: Activity }
+  { name: 'Users', path: '/admin/users', icon: Users, permission: 'nav.users' },
+  { name: 'Roles & Permissions', path: '/admin/roles', icon: Shield, permission: 'nav.roles' },
+  { name: 'Memos', path: '/admin/memos', icon: FileText, permission: 'nav.memos' },
+  { name: 'Archive', path: '/admin/archive', icon: Archive, permission: 'nav.archive' },
+  { name: 'Calendar', path: '/admin/calendar', icon: Calendar, permission: 'nav.calendar' },
+  { name: 'Report', path: '/admin/report', icon: FileBarChart, permission: 'nav.reports' },
+  { name: 'Activity Logs', path: '/admin/activity-logs', icon: Activity, permission: 'nav.activity_logs' }
 ]
 
+const filteredMenuItems = computed(() => {
+  return menuItems.filter(item => !item.permission || can(item.permission))
+})
+
 const bottomItems = [
-  { name: 'Settings', path: '/admin/settings', icon: Settings },
+  { name: 'Settings', path: '/admin/settings', icon: Settings, permission: 'nav.settings' },
   { name: 'Logout', path: '/logout', icon: LogOut }
 ]
+
+const filteredBottomItems = computed(() => {
+  return bottomItems.filter(item => !item.permission || can(item.permission))
+})
 
 const handleLogout = () => {
   logout()
@@ -66,9 +76,9 @@ onMounted(() => {
     <!-- Main Navigation -->
     <nav class="nav-section">
       <ul class="menu-list">
-        <li v-for="item in menuItems" :key="item.path">
-          <router-link 
-            :to="item.path" 
+        <li v-for="item in filteredMenuItems" :key="item.path">
+          <router-link
+            :to="item.path"
             class="menu-item"
             :class="{ 'active': route.path === item.path }"
           >
@@ -82,17 +92,17 @@ onMounted(() => {
     <!-- Bottom Section -->
     <div class="bottom-section">
       <ul class="menu-list">
-        <li v-for="item in bottomItems" :key="item.path">
-          <router-link 
+        <li v-for="item in filteredBottomItems" :key="item.path">
+          <router-link
             v-if="item.name !== 'Logout'"
-            :to="item.path" 
+            :to="item.path"
             class="menu-item"
             :class="{ 'active': route.path === item.path }"
           >
             <component :is="item.icon" :size="20" :stroke-width="2" />
             <span>{{ item.name }}</span>
           </router-link>
-          <button 
+          <button
             v-else
             @click="handleLogout"
             class="menu-item logout-btn"
@@ -125,7 +135,7 @@ onMounted(() => {
 .sidebar {
   @apply fixed left-0 top-0 h-screen w-64 bg-base-100 border-r border-base-300;
   @apply flex flex-col;
-  overflow: hidden; /* Prevent scrolling */
+  overflow: hidden;
 }
 
 .logo-section {
@@ -135,7 +145,7 @@ onMounted(() => {
 
 .nav-section {
   @apply flex-1 py-4;
-  overflow-y: auto; /* Allow scrolling only for navigation items if needed */
+  overflow-y: auto;
   scrollbar-width: thin;
 }
 

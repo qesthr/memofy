@@ -8,6 +8,10 @@ import DayView from './DayView.vue'
 import EventModal from './EventModal.vue'
 import { ChevronLeft, ChevronRight, ChevronDown, Search, Settings, Calendar as CalendarIcon, Plus } from 'lucide-vue-next'
 import GoogleCalendarConnect from '@/components/GoogleCalendarConnect.vue'
+import { useAuth } from '@/composables/useAuth'
+import Swal from 'sweetalert2'
+
+const { can } = useAuth()
 
 const { 
   selectedDate, 
@@ -95,7 +99,17 @@ const currentTitle = computed(() => {
     <div class="flex-1 flex overflow-hidden border-t border-black/20 dark:border-white/20">
       <!-- Sidebar -->
       <aside class="w-64 flex-shrink-0 border-r border-black/20 dark:border-white/20 p-4 flex flex-col gap-6 hidden md:flex overflow-y-auto custom-scrollbar">
-        <button @click="openEventModal()" class="btn btn-primary text-white gap-2 w-full rounded-full shadow-md hover:shadow-lg transition-all mb-2">
+        <button @click="() => {
+          if (can('calendar.add_event')) {
+            openEventModal()
+          } else {
+            Swal.fire({
+              icon: 'error',
+              title: 'Permission Denied',
+              text: 'You do not have permission to add events.'
+            })
+          }
+        }" class="btn btn-primary text-white gap-2 w-full rounded-full shadow-md hover:shadow-lg transition-all mb-2">
           <Plus :size="20" />
           <span class="font-bold">Add Event</span>
         </button>

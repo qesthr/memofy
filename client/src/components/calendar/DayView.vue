@@ -2,9 +2,12 @@
 import { computed } from 'vue'
 import { useCalendar } from '@/composables/useCalendar'
 import { useEvents } from '@/composables/useEvents'
+import { useAuth } from '@/composables/useAuth'
+import Swal from 'sweetalert2'
 
 const { selectedDate, openEventModal, formattedDate } = useCalendar()
 const { events, isLoading } = useEvents()
+const { can } = useAuth()
 
 const currentDay = computed(() => {
   return {
@@ -99,7 +102,17 @@ const allDayEvents = computed(() => {
       </div>
       <div class="flex-1 p-2 flex flex-wrap gap-2">
         <div v-for="event in allDayEvents" :key="event.id"
-             @click="openEventModal(event)"
+             @click="() => {
+               if (can('calendar.edit_event')) {
+                 openEventModal(event)
+               } else {
+                 Swal.fire({
+                   icon: 'error',
+                   title: 'Permission Denied',
+                   text: 'You do not have permission to edit events.'
+                 })
+               }
+             }"
              class="bg-primary/20 text-primary text-xs font-medium px-3 py-1.5 rounded truncate border-l-4 border-primary shadow-sm min-w-[150px] cursor-pointer hover:bg-primary/30 transition-colors">
           {{ event.title }}
         </div>
@@ -129,21 +142,41 @@ const allDayEvents = computed(() => {
           <div class="flex-1 relative">
              <!-- Clickable Slots for New Events (30 min slots) -->
              <div v-for="slot in timeSlots" :key="`${slot.hour}-${slot.minute}`" 
-                  @click="openEventModal({ 
-                    start: `${currentDay.fullDate}T${slot.hour.toString().padStart(2, '0')}:${slot.minute.toString().padStart(2, '0')}`,
-                    end: (() => {
-                      let h = slot.hour; let m = slot.minute + 30;
-                      if (m >= 60) { h++; m = 0; }
-                      return `${currentDay.fullDate}T${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-                    })(),
-                    is_editable: true 
-                  })"
+                  @click="() => {
+                    if (can('calendar.add_event')) {
+                      openEventModal({ 
+                        start: `${currentDay.fullDate}T${slot.hour.toString().padStart(2, '0')}:${slot.minute.toString().padStart(2, '0')}`,
+                        end: (() => {
+                          let h = slot.hour; let m = slot.minute + 30;
+                          if (m >= 60) { h++; m = 0; }
+                          return `${currentDay.fullDate}T${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+                        })(),
+                        is_editable: true 
+                      })
+                    } else {
+                      Swal.fire({
+                        icon: 'error',
+                        title: 'Permission Denied',
+                        text: 'You do not have permission to add events.'
+                      })
+                    }
+                  }"
                   class="h-[30px] hover:bg-base-200/50 cursor-pointer transition-colors border-b border-black/10 dark:border-white/10 last:border-none">
              </div>
 
              <!-- Events Overlay -->
              <div v-for="event in dayEvents" :key="event.id"
-                  @click.stop="openEventModal(event)"
+                  @click.stop="() => {
+                    if (can('calendar.edit_event')) {
+                      openEventModal(event)
+                    } else {
+                      Swal.fire({
+                        icon: 'error',
+                        title: 'Permission Denied',
+                        text: 'You do not have permission to edit events.'
+                      })
+                    }
+                  }"
                   class="absolute left-2 right-2 rounded-lg p-3 shadow-md overflow-hidden z-10 cursor-pointer hover:scale-[1.01] transition-all text-white border border-white/20"
                   :style="getEventStyle(event)">
                 <div class="text-sm font-bold truncate">{{ event.title }}</div>

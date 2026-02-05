@@ -6,7 +6,7 @@ use MongoDB\Laravel\Eloquent\Model;
 
 class Permission extends Model
 {
-    protected $fillable = ['name', 'label', 'description'];
+    protected $fillable = ['name', 'label', 'description', 'category'];
 
     public function roles()
     {

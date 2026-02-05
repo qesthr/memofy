@@ -179,28 +179,22 @@ class User extends Authenticatable
      */
     public function getPermissionsAttribute()
     {
-        // 1. Determine effective role name (case-insensitive)
-        $roleField = strtolower($this->getAttribute('role') ?? '');
+        // 1. Determine effective role
         $roleModel = $this->assignedRole;
-        $roleNameFromModel = $roleModel ? strtolower($roleModel->name ?? '') : '';
 
-        // 2. Admin master override
-        if ($roleField === 'admin' || $roleNameFromModel === 'admin' || $roleField === 'super_admin') {
-            return \App\Models\Permission::pluck('name')->toArray();
-        }
-
-        // 3. Resolve Role Model if not loaded
-        if (!$roleModel && $roleField) {
-            $roleModel = Role::where('name', 'i-like', $roleField)->first();
+        // 2. Resolve Role Model if not loaded (fallback for legacy role field)
+        if (!$roleModel) {
+            $roleField = strtolower($this->getAttribute('role') ?? '');
+            if ($roleField) {
+                $roleModel = Role::where('name', 'i-like', $roleField)->first();
+            }
         }
         
+        // 3. Return permission names (permission_ids stores names in this system)
         if (!$roleModel || !$roleModel->permission_ids) {
             return [];
         }
 
-        // 4. Fetch permission names based on IDs
-        return \App\Models\Permission::whereIn('_id', $roleModel->permission_ids)
-                         ->pluck('name')
-                         ->toArray();
+        return $roleModel->permission_ids;
     }
 }

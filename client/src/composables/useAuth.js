@@ -77,6 +77,29 @@ export function useAuth() {
     }
   }
 
+  const fetchUser = async () => {
+    if (!token.value) return null
+    try {
+      const response = await api.get('/current-user')
+      const refreshedUser = response.data.user
+      user.value = refreshedUser
+      localStorage.setItem('user', JSON.stringify(refreshedUser))
+
+      const roleName = (refreshedUser.role && typeof refreshedUser.role === 'object')
+        ? refreshedUser.role.name
+        : refreshedUser.role
+      localStorage.setItem('role', roleName)
+
+      return refreshedUser
+    } catch (err) {
+      console.error('Fetch user error:', err)
+      if (err.response?.status === 401) {
+        logout()
+      }
+      return null
+    }
+  }
+
   return {
     user,
     token,
@@ -85,6 +108,7 @@ export function useAuth() {
     error,
     can,
     login,
-    logout
+    logout,
+    fetchUser
   }
 }

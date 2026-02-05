@@ -1,12 +1,13 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useLogout } from '@/composables/useLogout'
-import { 
-  LayoutDashboard, 
-  FileText, 
-  Archive, 
-  Calendar, 
+import { useAuth } from '@/composables/useAuth'
+import {
+  LayoutDashboard,
+  FileText,
+  Archive,
+  Calendar,
   Settings,
   LogOut
 } from 'lucide-vue-next'
@@ -14,6 +15,7 @@ import {
 const router = useRouter()
 const route = useRoute()
 const { logout } = useLogout()
+const { can } = useAuth()
 
 const userName = ref('--')
 const userRole = ref('Faculty Member')
@@ -22,15 +24,23 @@ const userEmail = ref('faculty@buksu.edu.ph')
 
 const menuItems = [
   { name: 'Dashboard', path: '/faculty/dashboard', icon: LayoutDashboard },
-  { name: 'Memos', path: '/faculty/memos', icon: FileText },
-  { name: 'Archive', path: '/faculty/archive', icon: Archive },
-  { name: 'Calendar', path: '/faculty/calendar', icon: Calendar }
+  { name: 'Memos', path: '/faculty/memos', icon: FileText, permission: 'nav.memos' },
+  { name: 'Archive', path: '/faculty/archive', icon: Archive, permission: 'nav.archive' },
+  { name: 'Calendar', path: '/faculty/calendar', icon: Calendar, permission: 'nav.calendar' }
 ]
 
+const filteredMenuItems = computed(() => {
+  return menuItems.filter(item => !item.permission || can(item.permission))
+})
+
 const bottomItems = [
-  { name: 'Settings', path: '/faculty/settings', icon: Settings },
+  { name: 'Settings', path: '/faculty/settings', icon: Settings, permission: 'nav.settings' },
   { name: 'Logout', path: '/logout', icon: LogOut }
 ]
+
+const filteredBottomItems = computed(() => {
+  return bottomItems.filter(item => !item.permission || can(item.permission))
+})
 
 const handleLogout = () => {
   logout()
@@ -40,7 +50,7 @@ onMounted(() => {
   const user = JSON.parse(localStorage.getItem('user'))
   if (user) {
     userName.value = user.first_name + ' ' + user.last_name
-    userRole.value = 'Faculty Member' // Fixed label as per design request usually
+    userRole.value = 'Faculty Member'
     userInitial.value = user.first_name.charAt(0)
     userEmail.value = user.email
   }
@@ -60,9 +70,9 @@ onMounted(() => {
     <!-- Main Navigation -->
     <nav class="nav-section">
       <ul class="menu-list">
-        <li v-for="item in menuItems" :key="item.path">
-          <router-link 
-            :to="item.path" 
+        <li v-for="item in filteredMenuItems" :key="item.path">
+          <router-link
+            :to="item.path"
             class="menu-item"
             :class="{ 'active': route.path === item.path }"
           >
@@ -76,17 +86,17 @@ onMounted(() => {
     <!-- Bottom Section -->
     <div class="bottom-section">
       <ul class="menu-list">
-        <li v-for="item in bottomItems" :key="item.path">
-          <router-link 
+        <li v-for="item in filteredBottomItems" :key="item.path">
+          <router-link
             v-if="item.name !== 'Logout'"
-            :to="item.path" 
+            :to="item.path"
             class="menu-item"
             :class="{ 'active': route.path === item.path }"
           >
             <component :is="item.icon" :size="20" :stroke-width="2" />
             <span>{{ item.name }}</span>
           </router-link>
-          <button 
+          <button
             v-else
             @click="handleLogout"
             class="menu-item logout-btn"

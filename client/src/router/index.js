@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useAuth } from '@/composables/useAuth'
 import AdminLayout from '../views/admin/components/AdminLayout.vue'
 import Dashboard from '../views/admin/Dashboard.vue'
 import Login from '../views/auth/Login.vue'
@@ -32,47 +33,56 @@ const routes = [
       {
         path: 'dashboard',
         name: 'Dashboard',
-        component: Dashboard
+        component: Dashboard,
+        meta: {}
       },
       {
         path: 'users',
         name: 'Users',
-        component: () => import('../views/admin/Users.vue')
+        component: () => import('../views/admin/Users.vue'),
+        meta: { permission: 'nav.users' }
       },
       {
         path: 'roles',
         name: 'Roles',
-        component: () => import('../views/admin/Roles.vue')
+        component: () => import('../views/admin/Roles.vue'),
+        meta: { permission: 'nav.roles' }
       },
       {
         path: 'memos',
         name: 'Memos',
-        component: () => import('../views/admin/Memos.vue')
+        component: () => import('../views/admin/Memos.vue'),
+        meta: { permission: 'nav.memos' }
       },
       {
         path: 'archive',
         name: 'Archive',
-        component: () => import('../views/admin/Archive.vue')
+        component: () => import('../views/admin/Archive.vue'),
+        meta: { permission: 'nav.archive' }
       },
       {
         path: 'calendar',
         name: 'Calendar',
-        component: () => import('../views/admin/Calendar.vue')
+        component: () => import('../views/admin/Calendar.vue'),
+        meta: { permission: 'nav.calendar' }
       },
       {
         path: 'report',
         name: 'Report',
-        component: () => import('../views/admin/Report.vue')
+        component: () => import('../views/admin/Report.vue'),
+        meta: { permission: 'nav.reports' }
       },
       {
         path: 'activity-logs',
         name: 'ActivityLogs',
-        component: () => import('../views/admin/ActivityLogs.vue')
+        component: () => import('../views/admin/ActivityLogs.vue'),
+        meta: { permission: 'nav.activity_logs' }
       },
       {
         path: 'settings',
         name: 'Settings',
-        component: () => import('../views/admin/Settings.vue')
+        component: () => import('../views/admin/Settings.vue'),
+        meta: { permission: 'nav.settings' }
       },
       {
         path: '',
@@ -88,32 +98,38 @@ const routes = [
       {
         path: 'dashboard',
         name: 'SecretaryDashboard',
-        component: () => import('../views/secretary/Dashboard.vue')
+        component: () => import('../views/secretary/Dashboard.vue'),
+        meta: {}
       },
       {
         path: 'memos',
         name: 'SecretaryMemos',
-        component: () => import('../views/secretary/Memos.vue')
+        component: () => import('../views/secretary/Memos.vue'),
+        meta: { permission: 'nav.memos' }
       },
       {
         path: 'faculty',
         name: 'SecretaryFaculty',
-        component: () => import('../views/secretary/Faculty.vue')
+        component: () => import('../views/secretary/Faculty.vue'),
+        meta: { permission: 'nav.faculty' }
       },
       {
         path: 'archive',
         name: 'SecretaryArchive',
-        component: () => import('../views/secretary/Archive.vue')
+        component: () => import('../views/secretary/Archive.vue'),
+        meta: { permission: 'nav.archive' }
       },
       {
         path: 'calendar',
         name: 'SecretaryCalendar',
-        component: () => import('../views/secretary/Calendar.vue')
+        component: () => import('../views/secretary/Calendar.vue'),
+        meta: { permission: 'nav.calendar' }
       },
       {
         path: 'settings',
         name: 'SecretarySettings',
-        component: () => import('../views/secretary/Settings.vue')
+        component: () => import('../views/secretary/Settings.vue'),
+        meta: { permission: 'nav.settings' }
       },
       {
         path: '',
@@ -129,27 +145,32 @@ const routes = [
       {
         path: 'dashboard',
         name: 'FacultyDashboard',
-        component: () => import('../views/faculty/Dashboard.vue')
+        component: () => import('../views/faculty/Dashboard.vue'),
+        meta: {}
       },
       {
         path: 'memos',
         name: 'FacultyMemos',
-        component: () => import('../views/faculty/Memos.vue')
+        component: () => import('../views/faculty/Memos.vue'),
+        meta: { permission: 'nav.memos' }
       },
       {
         path: 'archive',
         name: 'FacultyArchive',
-        component: () => import('../views/faculty/Archive.vue')
+        component: () => import('../views/faculty/Archive.vue'),
+        meta: { permission: 'nav.archive' }
       },
       {
         path: 'calendar',
         name: 'FacultyCalendar',
-        component: () => import('../views/faculty/Calendar.vue')
+        component: () => import('../views/faculty/Calendar.vue'),
+        meta: { permission: 'nav.calendar' }
       },
       {
         path: 'settings',
         name: 'FacultySettings',
-        component: () => import('../views/faculty/Settings.vue')
+        component: () => import('../views/faculty/Settings.vue'),
+        meta: { permission: 'nav.settings' }
       },
       {
         path: '',
@@ -168,39 +189,39 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
+  const { fetchUser, can } = useAuth()
+
+  // Refresh user data silently to get latest permissions
   const token = localStorage.getItem('token')
+  if (token) {
+    await fetchUser()
+  }
+
   const role = localStorage.getItem('role')
 
-  // 1. Check if route requires authentication
   if (to.meta.requiresAuth) {
     if (!token) {
-      // Not logged in, redirect into login
       return next({ name: 'Login' })
     }
 
-    // 2. Check Role permissions
     if (to.meta.role) {
       const userRole = (role || '').toLowerCase()
       const requiredRole = to.meta.role.toLowerCase()
 
-      // Allow admin/super_admin to access admin routes
       if ((userRole === 'admin' || userRole === 'super_admin') && requiredRole === 'admin') {
-        return next()
-      }
-
-      if (requiredRole !== userRole) {
-        // Logged in but wrong role
+      } else if (requiredRole !== userRole) {
         return next({ name: 'Unauthorized' })
       }
     }
 
-    // Auth & Role OK
+    if (to.meta.permission && !can(to.meta.permission)) {
+      return next({ name: 'Unauthorized' })
+    }
+
     next()
   } else {
-    // Public route
     if (to.name === 'Login' && token) {
-      // If already logged in and trying to go to login, redirect to their dashboard
       if (role === 'admin') return next('/admin/dashboard')
       if (role === 'secretary') return next('/secretary/dashboard')
       if (role === 'faculty') return next('/faculty/dashboard')

@@ -98,6 +98,16 @@ watch([showEventModal, activeEvent], () => {
 })
 
 const saveEvent = async () => {
+  const permissionNeeded = activeEvent.value?.id ? 'calendar.edit_event' : 'calendar.add_event'
+  if (!can(permissionNeeded)) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Permission Denied',
+      text: `You do not have permission to ${activeEvent.value?.id ? 'edit' : 'add'} events.`
+    })
+    return
+  }
+
   isSaving.value = true
   try {
     if (activeEvent.value?.id) {
@@ -131,6 +141,15 @@ const saveEvent = async () => {
 }
 
 const deleteEvent = async () => {
+  if (!can('calendar.delete_event')) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Permission Denied',
+      text: 'You do not have permission to delete events.'
+    })
+    return
+  }
+
   const result = await Swal.fire({
     title: 'Delete Event?',
     text: "This action cannot be undone.",

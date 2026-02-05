@@ -6,12 +6,20 @@ use App\Http\Controllers\Controller;
 use App\Models\CalendarEvent;
 use App\Models\CalendarEventParticipant;
 use App\Models\User;
+use App\Services\ActivityLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Api\GoogleCalendarController;
 
 class CalendarController extends Controller
 {
+    protected $activityLogger;
+
+    public function __construct(ActivityLogger $activityLogger)
+    {
+        $this->activityLogger = $activityLogger;
+    }
     /**
      * Display a listing of the resource.
      */
@@ -116,6 +124,8 @@ class CalendarController extends Controller
                 'source' => 'MEMOFY'
             ]);
 
+            $this->activityLogger->logUserAction($request->user(), 'create_calendar_event', $event, $this->activityLogger->extractRequestInfo($request));
+
             // Add participants
             if (!empty($validated['invited_users'])) {
                 foreach ($validated['invited_users'] as $userId) {
@@ -168,6 +178,8 @@ class CalendarController extends Controller
         return DB::transaction(function () use ($validated, $event, $request) {
             $event->update($validated);
 
+            $this->activityLogger->logUserAction($request->user(), 'update_calendar_event', $event, $this->activityLogger->extractRequestInfo($request));
+
             // Sync participants if provided
             if (isset($validated['invited_users'])) {
                 // Delete removed participants
@@ -212,6 +224,8 @@ class CalendarController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
+        $this->activityLogger->logUserAction($request->user(), 'delete_calendar_event', $event, $this->activityLogger->extractRequestInfo($request));
+
         // Sync to Google (Delete)
         try {
             $googleController = new GoogleCalendarController();
@@ -240,6 +254,11 @@ class CalendarController extends Controller
 
         $participant->update([
             'status' => $validated['status']
+        ]);
+
+        $this->activityLogger->logUserAction($request->user(), 'respond_calendar_invitation', $event, [
+            'response' => $validated['status'],
+            ...$this->activityLogger->extractRequestInfo($request)
         ]);
 
         return response()->json([

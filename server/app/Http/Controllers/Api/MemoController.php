@@ -264,4 +264,20 @@ class MemoController extends Controller
 
         return response()->json(['message' => 'Memo deleted successfully']);
     }
+
+    public function acknowledge(Request $request, $id)
+    {
+        $memo = Memo::findOrFail($id);
+        $user = $request->user();
+
+        if ($memo->recipient_id !== $user->id) {
+            return response()->json(['message' => 'Unauthorized to acknowledge this memo'], 403);
+        }
+
+        $memo->update(['status' => 'read']);
+
+        $this->activityLogger->logUserAction($user, 'acknowledge_memo', $memo, $this->activityLogger->extractRequestInfo($request));
+
+        return response()->json(['message' => 'Memo acknowledged successfully', 'memo' => $memo]);
+    }
 }

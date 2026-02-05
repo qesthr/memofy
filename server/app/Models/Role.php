@@ -6,7 +6,10 @@ use MongoDB\Laravel\Eloquent\Model;
 
 class Role extends Model
 {
-    protected $fillable = ['name', 'label', 'description', 'status'];
+    protected $fillable = ['name', 'label', 'description', 'status', 'permission_ids', 'department'];
+
+    protected $casts = [
+    ];
 
     public function permissions()
     {
@@ -16,5 +19,13 @@ class Role extends Model
     public function users()
     {
         return $this->hasMany(User::class);
+    }
+
+    public function hasPermission($permissionName)
+    {
+        if (empty($this->permission_ids)) {
+            return false;
+        }
+        return in_array($permissionName, $this->permission_ids);
     }
 }

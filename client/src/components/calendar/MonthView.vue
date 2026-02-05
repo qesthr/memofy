@@ -2,9 +2,12 @@
 import { computed } from 'vue'
 import { useCalendar } from '@/composables/useCalendar'
 import { useEvents } from '@/composables/useEvents'
+import { useAuth } from '@/composables/useAuth'
+import Swal from 'sweetalert2'
 
 const { selectedDate, setSelectedDate, openEventModal, formattedDate } = useCalendar()
 const { events } = useEvents()
+const { can } = useAuth()
 
 
 const days = computed(() => {
@@ -61,6 +64,14 @@ const getDayEvents = (fullDate) => {
 
 const selectDate = (day) => {
   if (selectedDate.value.toDateString() === day.date.toDateString()) {
+    if (!can('calendar.add_event')) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Permission Denied',
+        text: 'You do not have permission to add events.'
+      })
+      return
+    }
     openEventModal({ 
       start: `${day.fullDate}T09:00`, 
       end: `${day.fullDate}T09:30`,
@@ -104,7 +115,17 @@ const selectDate = (day) => {
          <!-- Event Indicators (max 3-4 labels) -->
          <div class="flex flex-col gap-1 mt-2 overflow-hidden px-1">
             <div v-for="event in getDayEvents(day.fullDate).slice(0, 4)" :key="event.id"
-                 @click.stop="openEventModal(event)"
+                 @click.stop="() => {
+                   if (can('calendar.edit_event')) {
+                     openEventModal(event)
+                   } else {
+                     Swal.fire({
+                       icon: 'error',
+                       title: 'Permission Denied',
+                       text: 'You do not have permission to edit events.'
+                     })
+                   }
+                 }"
                  class="px-1.5 py-0.5 rounded text-[10px] font-medium truncate cursor-pointer hover:brightness-110 transition-all"
                  :style="{ 
                    backgroundColor: event.source === 'GOOGLE' ? '#4285F4' : '#3b82f6',

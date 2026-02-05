@@ -1,6 +1,6 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
-import { Plus, Pencil, Archive, X } from 'lucide-vue-next'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { Plus, Pencil, Archive, X, Lock, Unlock, Clock, Users } from 'lucide-vue-next'
 import api from '../../services/api'
 import Swal from 'sweetalert2'
 
@@ -11,8 +11,23 @@ const showAddUserModal = ref(false)
 const isEditing = ref(false)
 const editingUserId = ref(null)
 const isLoading = ref(false)
+const isCheckingLock = ref(false)
+const lockTooltipVisible = ref(false)
+const hoveredUserId = ref(null)
+const currentSessionExpiresAt = ref(null)
 
-// Form data
+const lockSettings = ref({
+  minutes: 1,
+  seconds: 50
+})
+
+const userLocks = ref({})
+let heartbeatInterval = null
+let lockCheckInterval = null
+
+const HEARTBEAT_INTERVAL = 30000
+const LOCK_CHECK_INTERVAL = 1000
+
 const formData = ref({
   name: '',
   email: '',
@@ -43,10 +58,7 @@ const filters = [
 
 const fetchUsers = async () => {
   try {
-    const params = {
-      status: 'active'
-    }
-    
+    const params = { status: 'active' }
     if (activeFilter.value !== 'all') {
       params.role = activeFilter.value
     }
@@ -54,7 +66,6 @@ const fetchUsers = async () => {
     const response = await api.get('/users', { params })
     const usersData = response.data.data || response.data
     
-    // Transform backend data
     users.value = usersData.map(user => ({
       ...user,
       name: user.name || `${user.first_name || ''} ${user.last_name || ''}`.trim(),
@@ -65,10 +76,36 @@ const fetchUsers = async () => {
   }
 }
 
-// Watch filters to trigger fetch
-watch(activeFilter, () => {
-  fetchUsers()
-})
+const fetchLockSettings = async () => {
+  try {
+    const response = await api.get('/locks/settings')
+    lockSettings.value = response.data.lock_duration
+  } catch (error) {
+    console.error('Error fetching lock settings:', error)
+    lockSettings.value = { minutes: 1, seconds: 50 }
+  }
+}
+
+const checkAllLocks = async () => {
+  try {
+    const response = await api.get('/locks/all-locks')
+    const locks = response.data.locks || []
+    
+    userLocks.value = {}
+    locks.forEach(lock => {
+      if (lock.resource_type === 'user') {
+        userLocks.value[lock.resource_id] = {
+          locked: true,
+          locked_by: lock.locked_by,
+          expires_at: new Date(lock.expires_at),
+          seconds_remaining: lock.seconds_remaining
+        }
+      }
+    })
+  } catch (error) {
+    console.error('Error checking locks:', error)
+  }
+}
 
 const fetchCurrentUser = async () => {
   try {
@@ -79,62 +116,9 @@ const fetchCurrentUser = async () => {
   }
 }
 
-const archiveUser = async (user) => {
-  // Prevent archiving self
-  if (currentUser.value && user.id === currentUser.value.id) {
-    Swal.fire({
-      icon: 'error',
-      title: 'Action Denied',
-      text: 'You cannot perform this action on your own account.',
-      confirmButtonColor: '#4285F4'
-    })
-    return
-  }
-
-  const isPending = user.display_status === 'pending'
-  
-  const result = await Swal.fire({
-    icon: 'warning',
-    title: isPending ? 'Cancel Invitation?' : 'Archive User?',
-    text: isPending 
-      ? `Are you sure you want to cancel the invitation for ${user.email}? This will delete their pending account.`
-      : `Are you sure you want to archive ${user.name}? They will be disabled from logging in.`,
-    showCancelButton: true,
-    confirmButtonColor: '#d33',
-    cancelButtonColor: '#3085d6',
-    confirmButtonText: isPending ? 'Yes, cancel invitation' : 'Yes, archive user!'
-  })
-
-  if (!result.isConfirmed) return
-
-  try {
-    if (isPending) {
-        await api.delete(`/users/${user.id}`)
-    } else {
-        await api.patch(`/users/${user.id}/toggle-active`)
-    }
-    
-    Swal.fire({
-      icon: 'success',
-      title: isPending ? 'Invitation Cancelled!' : 'User Archived!',
-      text: isPending 
-        ? `The invitation for ${user.email} has been cancelled.`
-        : `${user.name} has been moved to the archive.`,
-      confirmButtonColor: '#4285F4',
-      timer: 2000
-    })
-    
-    fetchUsers()
-  } catch (error) {
-    console.error('Error updating user:', error)
-    Swal.fire({
-      icon: 'error',
-      title: 'Error',
-      text: error.response?.data?.message || 'Failed to update user',
-      confirmButtonColor: '#4285F4'
-    })
-  }
-}
+watch(activeFilter, () => {
+  fetchUsers()
+})
 
 const getRoleColor = (role) => {
   const colors = {
@@ -173,10 +157,142 @@ const resetForm = () => {
   }
 }
 
+const computeSecondsRemaining = (expiresAt) => {
+  if (!expiresAt) return 0
+  const expires = new Date(expiresAt)
+  const now = new Date()
+  const remaining = Math.floor((expires - now) / 1000)
+  return remaining > 0 ? remaining : 0
+}
+
+const formatSecondsRemaining = (expiresAt) => {
+  const seconds = computeSecondsRemaining(expiresAt)
+  if (seconds <= 0) return '00:00'
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+}
+
+const formatLockDuration = () => {
+  const mins = String(lockSettings.value.minutes || 0).padStart(2, '0')
+  const secs = String(lockSettings.value.seconds || 0).padStart(2, '0')
+  return `${mins}:${secs}`
+}
+
+const isUserLocked = (userId) => {
+  const lock = userLocks.value[userId]
+  if (!lock) return false
+  const seconds = computeSecondsRemaining(lock.expires_at)
+  return lock.locked && seconds > 0
+}
+
+const isLockedByMe = (userId) => {
+  const lock = userLocks.value[userId]
+  if (!lock) return false
+  const seconds = computeSecondsRemaining(lock.expires_at)
+  return lock.locked_by?.id === currentUser.value?.id && seconds > 0
+}
+
+const getLockInfo = (userId) => {
+  return userLocks.value[userId]
+}
+
+const tryAcquireLock = async (userId) => {
+  try {
+    const response = await api.post('/locks/acquire', {
+      resource_type: 'user',
+      resource_id: userId
+    })
+    return response.data
+  } catch (error) {
+    console.error('Error acquiring lock:', error)
+    return { success: false, message: 'Failed to acquire lock' }
+  }
+}
+
+const releaseLock = async (userId) => {
+  try {
+    await api.post('/locks/release', {
+      resource_type: 'user',
+      resource_id: userId
+    })
+  } catch (error) {
+    console.error('Error releasing lock:', error)
+  }
+}
+
+const heartbeat = async () => {
+  if (!editingUserId.value) return
+  
+  try {
+    const response = await api.post('/locks/heartbeat', {
+      resource_type: 'user',
+      resource_id: editingUserId.value
+    })
+    
+    if (response.data.success) {
+      currentSessionExpiresAt.value = new Date(response.data.expires_at)
+    }
+  } catch (error) {
+    console.error('Heartbeat failed:', error)
+  }
+}
+
 const openModal = (user = null) => {
-  if (user) {
-    isEditing.value = true
+  if (user && user.id) {
+    openEditModal(user)
+  } else {
+    openAddUserModal()
+  }
+}
+
+const openAddUserModal = () => {
+  isEditing.value = false
+  editingUserId.value = null
+  resetForm()
+  showAddUserModal.value = true
+}
+
+const openEditModal = async (user) => {
+  isCheckingLock.value = true
+  
+  try {
+    const result = await tryAcquireLock(user.id)
+    
+    if (!result.success) {
+      if (result.locked) {
+        await Swal.fire({
+          icon: 'warning',
+          title: 'User Currently Being Edited',
+          html: `
+            <div class="text-left">
+              <p class="mb-2">This user is currently being edited by another administrator:</p>
+              <div class="bg-base-200 p-3 rounded-lg">
+                <p><strong>Name:</strong> ${result.locked_by?.name || 'Unknown'}</p>
+                <p><strong>Email:</strong> ${result.locked_by?.email || 'Unknown'}</p>
+              </div>
+              <p class="mt-3 text-sm text-base-content/60">
+                Please wait until the lock expires or contact the other administrator.
+              </p>
+            </div>
+          `,
+          confirmButtonText: 'OK',
+          confirmButtonColor: '#4285F4'
+        })
+      } else {
+        await Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: result.message || 'Failed to acquire lock',
+          confirmButtonColor: '#4285F4'
+        })
+      }
+      isCheckingLock.value = false
+      return
+    }
+
     editingUserId.value = user.id
+    isEditing.value = true
     formData.value = {
       name: user.name,
       email: user.email,
@@ -184,19 +300,57 @@ const openModal = (user = null) => {
       role: user.role,
       is_active: user.is_active
     }
-  } else {
-    isEditing.value = false
-    editingUserId.value = null
-    resetForm()
+    currentSessionExpiresAt.value = new Date(result.expires_at)
+    showAddUserModal.value = true
+    
+    heartbeatInterval = setInterval(heartbeat, HEARTBEAT_INTERVAL)
+    
+  } catch (error) {
+    console.error('Error in openEditModal:', error)
+    await Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: 'An unexpected error occurred',
+      confirmButtonColor: '#4285F4'
+    })
+  } finally {
+    isCheckingLock.value = false
   }
-  showAddUserModal.value = true
 }
 
-const closeModal = () => {
+const closeModal = async () => {
+  if (editingUserId.value) {
+    await releaseLock(editingUserId.value)
+    editingUserId.value = null
+  }
+  
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval)
+    heartbeatInterval = null
+  }
+  
+  currentSessionExpiresAt.value = null
   showAddUserModal.value = false
   isEditing.value = false
-  editingUserId.value = null
   resetForm()
+}
+
+const checkLockExpiration = () => {
+  if (!showAddUserModal.value || !currentSessionExpiresAt.value || !isEditing.value) return
+  
+  const seconds = computeSecondsRemaining(currentSessionExpiresAt.value)
+  
+  if (seconds <= 0) {
+    closeModal()
+    Swal.fire({
+      icon: 'warning',
+      title: 'Session Ended',
+      text: 'Your edit session has ended due to inactivity. Please try again.',
+      confirmButtonColor: '#4285F4',
+      timer: 4000,
+      timerProgressBar: true
+    })
+  }
 }
 
 const saveUser = async () => {
@@ -244,7 +398,7 @@ const saveUser = async () => {
       })
     }
 
-    closeModal()
+    await closeModal()
     fetchUsers()
 
   } catch (error) {
@@ -262,15 +416,97 @@ const saveUser = async () => {
   }
 }
 
+const archiveUser = async (user) => {
+  if (currentUser.value && user.id === currentUser.value.id) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Action Denied',
+      text: 'You cannot perform this action on your own account.',
+      confirmButtonColor: '#4285F4'
+    })
+    return
+  }
+
+  const isPending = user.display_status === 'pending'
+  
+  const result = await Swal.fire({
+    icon: 'warning',
+    title: isPending ? 'Cancel Invitation?' : 'Archive User?',
+    text: isPending 
+      ? `Are you sure you want to cancel the invitation for ${user.email}? This will delete their pending account.`
+      : `Are you sure you want to archive ${user.name}? They will be disabled from logging in.`,
+    showCancelButton: true,
+    confirmButtonColor: '#d33',
+    cancelButtonColor: '#3085d6',
+    confirmButtonText: isPending ? 'Yes, cancel invitation' : 'Yes, archive user!'
+  })
+
+  if (!result.isConfirmed) return
+
+  try {
+    if (isPending) {
+      await api.delete(`/users/${user.id}`)
+    } else {
+      await api.patch(`/users/${user.id}/toggle-active`)
+    }
+    
+    Swal.fire({
+      icon: 'success',
+      title: isPending ? 'Invitation Cancelled!' : 'User Archived!',
+      text: isPending 
+        ? `The invitation for ${user.email} has been cancelled.`
+        : `${user.name} has been moved to the archive.`,
+      confirmButtonColor: '#4285F4',
+      timer: 2000
+    })
+    
+    fetchUsers()
+  } catch (error) {
+    console.error('Error updating user:', error)
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: error.response?.data?.message || 'Failed to update user',
+      confirmButtonColor: '#4285F4'
+    })
+  }
+}
+
+const onMouseEnterEdit = (user) => {
+  if (isUserLocked(user.id) && !isLockedByMe(user.id)) {
+    hoveredUserId.value = user.id
+    lockTooltipVisible.value = true
+  }
+}
+
+const onMouseLeaveEdit = () => {
+  hoveredUserId.value = null
+  lockTooltipVisible.value = false
+}
+
 onMounted(() => {
   fetchCurrentUser()
   fetchUsers()
+  fetchLockSettings()
+  
+  lockCheckInterval = setInterval(() => {
+    checkAllLocks()
+    checkLockExpiration()
+  }, LOCK_CHECK_INTERVAL)
+})
+
+onUnmounted(() => {
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval)
+  }
+  if (lockCheckInterval) {
+    clearInterval(lockCheckInterval)
+  }
 })
 </script>
 
 <template>
   <div class="view-container">
-    <!-- Header -->
     <div class="flex items-center justify-between mb-8">
       <h1 class="text-2xl font-bold">Manage Users</h1>
       <button @click="openModal()" class="btn btn-primary gap-2 text-white">
@@ -279,7 +515,6 @@ onMounted(() => {
       </button>
     </div>
 
-    <!-- Filters -->
     <div class="flex gap-2 mb-6">
       <button 
         v-for="filter in filters" 
@@ -292,7 +527,6 @@ onMounted(() => {
       </button>
     </div>
 
-    <!-- Users Table -->
     <div class="bg-base-100 rounded-xl border border-base-300 overflow-hidden shadow-sm">
       <div class="overflow-x-auto">
         <table class="table w-full">
@@ -307,11 +541,11 @@ onMounted(() => {
           </thead>
           <tbody>
             <tr v-if="users.length === 0">
-              <td colspan="4" class="text-center py-8 text-base-content/60">
+              <td colspan="5" class="text-center py-8 text-base-content/60">
                 No active users found.
               </td>
             </tr>
-            <tr v-for="user in users" :key="user.id" class="hover:bg-slate-50/50 border-b border-base-100 last:border-0">
+            <tr v-for="user in users" :key="user.id" class="hover:bg-slate-50/50 border-b border-base-100 last:border-0 relative">
               <td class="py-4 pl-6">
                 <div class="flex items-center gap-3">
                   <div class="avatar placeholder">
@@ -338,13 +572,41 @@ onMounted(() => {
               </td>
               <td class="py-4 pr-6">
                 <div class="flex items-center justify-end gap-2">
-                  <button 
-                    @click="openModal(user)"
-                    class="btn btn-ghost btn-sm btn-square text-primary bg-blue-50 hover:bg-blue-100"
-                    title="Edit user"
-                  >
-                    <Pencil :size="16" />
-                  </button>
+                  <div class="relative">
+                    <button 
+                      @click="openEditModal(user)"
+                      class="btn btn-ghost btn-sm btn-square"
+                      :class="[
+                        isUserLocked(user.id) && !isLockedByMe(user.id)
+                          ? 'opacity-50 cursor-not-allowed bg-gray-100'
+                          : 'text-primary bg-blue-50 hover:bg-blue-100'
+                      ]"
+                      title="Edit user"
+                      :disabled="isCheckingLock"
+                      @mouseenter="onMouseEnterEdit(user)"
+                      @mouseleave="onMouseLeaveEdit"
+                    >
+                      <Pencil v-if="!isCheckingLock" :size="16" />
+                      <span v-else class="loading loading-spinner loading-sm"></span>
+                    </button>
+                    
+                    <div 
+                      v-if="isUserLocked(user.id) && !isLockedByMe(user.id) && lockTooltipVisible && hoveredUserId === user.id"
+                      class="absolute z-50 bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-64 bg-gray-900 text-white text-xs rounded-lg shadow-lg p-3"
+                    >
+                      <div class="flex items-start gap-2">
+                        <Lock class="text-yellow-400 mt-0.5 flex-shrink-0" :size="14" />
+                        <div>
+                          <p class="font-semibold mb-1">Currently Being Edited</p>
+                          <p class="text-gray-300">By: {{ getLockInfo(user.id)?.locked_by?.name || 'Unknown' }}</p>
+                          <p class="text-gray-300">Email: {{ getLockInfo(user.id)?.locked_by?.email || 'Unknown' }}</p>
+                          <p class="text-yellow-400 mt-1">Expires: {{ formatSecondsRemaining(getLockInfo(user.id)?.expires_at) }}</p>
+                        </div>
+                      </div>
+                      <div class="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
+                    </div>
+                  </div>
+                  
                   <button 
                     v-if="!(currentUser && user.id === currentUser.id)"
                     @click="archiveUser(user)"
@@ -361,20 +623,29 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Add User Modal -->
     <div v-if="showAddUserModal" class="modal modal-open">
       <div class="modal-box max-w-md">
-        <!-- Modal Header -->
         <div class="flex items-center justify-between mb-6">
-          <h3 class="font-bold text-xl">{{ isEditing ? 'Edit User' : 'Add New User' }}</h3>
+          <h3 class="font-bold text-xl flex items-center gap-2">
+            <Lock v-if="isEditing" class="text-warning" :size="20" />
+            {{ isEditing ? 'Edit User' : 'Add New User' }}
+          </h3>
           <button @click="closeModal" class="btn btn-sm btn-circle btn-ghost">
             <X :size="20" />
           </button>
         </div>
 
-        <!-- Form -->
+        <div v-if="isEditing" class="mb-4 p-3 bg-warning/10 border border-warning/20 rounded-lg">
+          <div class="flex items-center gap-2 text-warning">
+            <Clock :size="16" />
+            <span class="text-sm font-medium">Edit Session Active</span>
+          </div>
+          <p class="text-xs text-base-content/60 mt-1">
+            Session expires in: <span class="font-mono font-bold text-warning">{{ formatSecondsRemaining(currentSessionExpiresAt) }}</span>
+          </p>
+        </div>
+
         <div class="space-y-4">
-          <!-- Name -->
           <div class="form-control">
             <label class="label">
               <span class="label-text font-medium">Name <span class="text-error">*</span></span>
@@ -387,7 +658,6 @@ onMounted(() => {
             />
           </div>
 
-          <!-- Email -->
           <div class="form-control">
             <label class="label">
               <span class="label-text font-medium">Email <span class="text-error">*</span></span>
@@ -403,7 +673,6 @@ onMounted(() => {
             </label>
           </div>
 
-          <!-- Department -->
           <div class="form-control">
             <label class="label">
               <span class="label-text font-medium">Department <span class="text-error">*</span></span>
@@ -416,7 +685,6 @@ onMounted(() => {
             </select>
           </div>
 
-          <!-- Role -->
           <div class="form-control">
             <label class="label">
               <span class="label-text font-medium">Role <span class="text-error">*</span></span>
@@ -429,7 +697,6 @@ onMounted(() => {
             </select>
           </div>
 
-          <!-- Status (Only for Editing) -->
           <div v-if="isEditing" class="form-control">
             <label class="label">
               <span class="label-text font-medium">Account Status</span>
@@ -447,7 +714,6 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- Modal Actions -->
         <div class="modal-action mt-6">
           <button @click="closeModal" class="btn btn-ghost">Cancel</button>
           <button 

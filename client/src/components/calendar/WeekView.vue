@@ -2,9 +2,12 @@
 import { computed } from 'vue'
 import { useCalendar } from '@/composables/useCalendar'
 import { useEvents } from '@/composables/useEvents'
+import { useAuth } from '@/composables/useAuth'
+import Swal from 'sweetalert2'
 
 const { selectedDate, weekRange, openEventModal, formattedDate } = useCalendar()
 const { events, isLoading } = useEvents()
+const { can } = useAuth()
 
 const weekDays = computed(() => {
   const curr = new Date(selectedDate.value)
@@ -105,7 +108,17 @@ const allDayEventsForDay = (fullDate) => {
       </div>
       <div v-for="day in weekDays" :key="day.fullDate" class="flex-1 border-r border-black/20 dark:border-white/20 last:border-r-0 p-1 flex flex-col gap-1">
         <div v-for="event in allDayEventsForDay(day.fullDate)" :key="event.id"
-             @click="openEventModal(event)"
+             @click="() => {
+               if (can('calendar.edit_event')) {
+                 openEventModal(event)
+               } else {
+                 Swal.fire({
+                   icon: 'error',
+                   title: 'Permission Denied',
+                   text: 'You do not have permission to edit events.'
+                 })
+               }
+             }"
              class="bg-primary/20 text-primary text-[10px] font-medium px-2 py-1 rounded truncate border-l-2 border-primary cursor-pointer hover:bg-primary/30 transition-colors">
           {{ event.title }}
         </div>
@@ -135,21 +148,41 @@ const allDayEventsForDay = (fullDate) => {
           <div v-for="day in weekDays" :key="day.fullDate" class="flex-1 border-r border-black/20 dark:border-white/20 last:border-r-0 relative">
              <!-- Clickable Slots for New Events (30 min slots) -->
              <div v-for="slot in timeSlots" :key="`${slot.hour}-${slot.minute}`" 
-                  @click="openEventModal({ 
-                    start: `${day.fullDate}T${slot.hour.toString().padStart(2, '0')}:${slot.minute.toString().padStart(2, '0')}`,
-                    end: (() => {
-                      let h = slot.hour; let m = slot.minute + 30;
-                      if (m >= 60) { h++; m = 0; }
-                      return `${day.fullDate}T${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-                    })(),
-                    is_editable: true 
-                  })"
+                  @click="() => {
+                    if (can('calendar.add_event')) {
+                      openEventModal({ 
+                        start: `${day.fullDate}T${slot.hour.toString().padStart(2, '0')}:${slot.minute.toString().padStart(2, '0')}`,
+                        end: (() => {
+                          let h = slot.hour; let m = slot.minute + 30;
+                          if (m >= 60) { h++; m = 0; }
+                          return `${day.fullDate}T${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+                        })(),
+                        is_editable: true 
+                      })
+                    } else {
+                      Swal.fire({
+                        icon: 'error',
+                        title: 'Permission Denied',
+                        text: 'You do not have permission to add events.'
+                      })
+                    }
+                  }"
                   class="h-[30px] hover:bg-base-200/50 cursor-pointer transition-colors border-b border-black/5 dark:border-white/5 last:border-none">
              </div>
 
              <!-- Events for this day (Overlay) -->
              <div v-for="event in getDayEvents(day.fullDate)" :key="event.id"
-                  @click.stop="openEventModal(event)"
+                  @click.stop="() => {
+                    if (can('calendar.edit_event')) {
+                      openEventModal(event)
+                    } else {
+                      Swal.fire({
+                        icon: 'error',
+                        title: 'Permission Denied',
+                        text: 'You do not have permission to edit events.'
+                      })
+                    }
+                  }"
                   class="absolute left-1 right-1 rounded p-1 shadow-sm overflow-hidden z-10 cursor-pointer hover:shadow-md transition-all text-white"
                   :style="getEventStyle(event)">
                 <div class="text-[10px] font-bold leading-tight">{{ event.title }}</div>

@@ -10,6 +10,9 @@ use App\Http\Controllers\Api\DepartmentController;
 use App\Http\Controllers\Api\UserSignatureController;
 use App\Http\Controllers\Api\MemoTemplateController;
 use App\Http\Controllers\Api\FileController;
+use App\Http\Controllers\Api\ReportController;
+use App\Http\Controllers\Api\LockController;
+use App\Http\Controllers\Api\ArchiveController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -69,13 +72,53 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::get('/dashboard', [DashboardController::class, 'index']);
     });
 
+    // Reports & Analytics
+    Route::middleware('throttle:dashboard')->group(function () {
+        Route::get('/reports', [ReportController::class, 'index']);
+    });
+
+    // Lock Management (Concurrency Control)
+    Route::prefix('locks')->middleware('auth:sanctum')->group(function () {
+        Route::post('/acquire', [LockController::class, 'acquire']);
+        Route::post('/release', [LockController::class, 'release']);
+        Route::post('/force-release', [LockController::class, 'forceRelease']);
+        Route::get('/status', [LockController::class, 'status']);
+        Route::post('/heartbeat', [LockController::class, 'heartbeat']);
+        Route::get('/my-locks', [LockController::class, 'myLocks']);
+        Route::get('/all-locks', [LockController::class, 'allLocks']);
+        Route::get('/settings', [LockController::class, 'getSettings']);
+        Route::put('/settings', [LockController::class, 'updateSettings']);
+    });
+
+    // Archive Management
+    Route::prefix('archive')->middleware('auth:sanctum')->group(function () {
+        Route::get('/', [ArchiveController::class, 'index']);
+        Route::post('/restore-all', [ArchiveController::class, 'restoreAll']);
+        
+        Route::prefix('users')->group(function () {
+            Route::post('/restore/{id}', [ArchiveController::class, 'restoreUser']);
+            Route::delete('/force-delete/{id}', [ArchiveController::class, 'forceDeleteUser']);
+        });
+        
+        Route::prefix('memos')->group(function () {
+            Route::post('/restore/{id}', [ArchiveController::class, 'restoreMemo']);
+            Route::delete('/force-delete/{id}', [ArchiveController::class, 'forceDeleteMemo']);
+        });
+        
+        Route::prefix('events')->group(function () {
+            Route::post('/restore/{id}', [ArchiveController::class, 'restoreEvent']);
+            Route::delete('/force-delete/{id}', [ArchiveController::class, 'forceDeleteEvent']);
+        });
+    });
+
     // Memos
     Route::get('/memos', [MemoController::class, 'index'])->middleware('can:memo.view');
     Route::post('/memos', [MemoController::class, 'store'])->middleware('can:memo.create');
     Route::get('/memos/{memo}', [MemoController::class, 'show'])->middleware('can:memo.view');
-    Route::put('/memos/{memo}', [MemoController::class, 'update'])->middleware('can:memo.edit'); // Assuming memo.edit or just use create
+    Route::put('/memos/{memo}', [MemoController::class, 'update'])->middleware('can:memo.edit');
     Route::delete('/memos/{memo}', [MemoController::class, 'destroy'])->middleware('can:memo.archive');
     Route::post('/memos/{id}/rollback', [MemoController::class, 'rollback'])->middleware('can:memo.unarchive');
+    Route::post('/memos/{id}/acknowledge', [MemoController::class, 'acknowledge'])->middleware('can:memo.view');
 
     // Activity Logs
     Route::get('/activity-logs', [ActivityLogController::class, 'index']);
@@ -109,6 +152,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     // Roles & Permissions
     Route::get('/roles', [RoleController::class, 'index']);
     Route::get('/roles/{id}', [RoleController::class, 'show']);
+    Route::post('/roles', [RoleController::class, 'store']);
+    Route::put('/roles/{id}', [RoleController::class, 'update']);
+    Route::delete('/roles/{id}', [RoleController::class, 'destroy']);
+    Route::get('/roles/{id}/permissions', [RoleController::class, 'getRolePermissions']);
+    Route::put('/roles/{id}/permissions', [RoleController::class, 'updatePermissions']);
+    Route::post('/roles/assign', [RoleController::class, 'assignRole']);
     Route::get('/permissions', [RoleController::class, 'permissions']);
     Route::put('/roles/{id}/permissions', [RoleController::class, 'updatePermissions']);
     

@@ -1,6 +1,10 @@
 <script setup>
-import { ref, onMounted } from 'vue'
-import { Plus, Pencil, Shield, X, Check, Search } from 'lucide-vue-next'
+import { ref, onMounted, computed } from 'vue'
+import { 
+  Plus, Pencil, Shield, X, Check, Search, Trash2, 
+  Users, FileText, Calendar, BarChart3, Archive, 
+  Settings, ShieldCheck, Eye, EyeOff, ChevronDown, ChevronRight
+} from 'lucide-vue-next'
 import api from '../../services/api'
 import Swal from 'sweetalert2'
 
@@ -9,28 +13,66 @@ const permissions = ref({})
 const isLoading = ref(false)
 const showRoleModal = ref(false)
 const isEditing = ref(false)
-const selectedRole = ref(null)
+const selectedRoleId = ref('')
+const expandedCategories = ref({})
+const editingPermissionIds = ref([])
 
 const roleForm = ref({
   name: '',
   label: '',
   description: '',
   status: 'active',
-  permission_ids: []
+  department: ''
 })
 
+const categoryIcons = {
+  dashboard: Shield,
+  faculty: Users,
+  roles: ShieldCheck,
+  activity: FileText,
+  memo: FileText,
+  calendar: Calendar,
+  reports: BarChart3,
+  archive: Archive,
+  settings: Settings,
+  navigation: Eye,
+  admin: Shield
+}
+
+const categoryColors = {
+  dashboard: 'bg-blue-100 text-blue-600',
+  faculty: 'bg-purple-100 text-purple-600',
+  roles: 'bg-indigo-100 text-indigo-600',
+  activity: 'bg-yellow-100 text-yellow-600',
+  memo: 'bg-orange-100 text-orange-600',
+  calendar: 'bg-green-100 text-green-600',
+  reports: 'bg-cyan-100 text-cyan-600',
+  archive: 'bg-red-100 text-red-600',
+  settings: 'bg-gray-100 text-gray-600',
+  navigation: 'bg-pink-100 text-pink-600',
+  admin: 'bg-red-100 text-red-600'
+}
+
+const defaultRoles = ['admin', 'secretary', 'faculty']
+
 const fetchRoles = async () => {
+  isLoading.value = true
   try {
     const response = await api.get('/roles')
     roles.value = response.data
+    if (roles.value.length > 0 && !selectedRoleId.value) {
+      selectRole(roles.value[0])
+    }
   } catch (error) {
     console.error('Error fetching roles:', error)
     Swal.fire({
       icon: 'error',
       title: 'Failed to Load Roles',
-      text: 'We could not retrieve the system roles. Please check your connection or try again later.',
+      text: 'Could not retrieve system roles',
       confirmButtonColor: '#3b82f6'
     })
+  } finally {
+    isLoading.value = false
   }
 }
 
@@ -38,38 +80,43 @@ const fetchPermissions = async () => {
   try {
     const response = await api.get('/permissions')
     permissions.value = response.data
+    Object.keys(permissions.value).forEach(cat => {
+      expandedCategories.value[cat] = true
+    })
   } catch (error) {
     console.error('Error fetching permissions:', error)
-    Swal.fire({
-      icon: 'error',
-      title: 'Failed to Load Permissions',
-      text: 'System permissions could not be loaded. Some management features may be unavailable.',
-      confirmButtonColor: '#3b82f6'
-    })
   }
 }
 
-const openModal = (role = null) => {
+const selectRole = (role) => {
+  if (!role) return
+  selectedRoleId.value = role.id || role._id
+  roleForm.value = {
+    name: role.name,
+    label: role.label || role.name,
+    description: role.description || '',
+    status: role.status || 'active',
+    department: role.department || ''
+  }
+  editingPermissionIds.value = [...(role.permission_ids || [])]
+}
+
+const handleRoleSwitch = (event) => {
+  const roleId = event.target.value
+  const role = roles.value.find(r => (r.id || r._id) === roleId)
   if (role) {
-    isEditing.value = true
-    selectedRole.value = role
-    roleForm.value = {
-      name: role.name,
-      label: role.label,
-      description: role.description,
-      status: role.status || 'active',
-      permission_ids: [...(role.permission_ids || [])]
-    }
-  } else {
-    isEditing.value = false
-    selectedRole.value = null
-    roleForm.value = {
-      name: '',
-      label: '',
-      description: '',
-      status: 'active',
-      permission_ids: []
-    }
+    selectRole(role)
+  }
+}
+
+const openAddModal = () => {
+  isEditing.value = false
+  roleForm.value = {
+    name: '',
+    label: '',
+    description: '',
+    status: 'active',
+    department: ''
   }
   showRoleModal.value = true
 }
@@ -78,65 +125,89 @@ const closeModal = () => {
   showRoleModal.value = false
 }
 
-const togglePermission = (id) => {
-  const index = roleForm.value.permission_ids.indexOf(id)
+const togglePermission = (permissionId) => {
+  const index = editingPermissionIds.value.indexOf(permissionId)
   if (index === -1) {
-    roleForm.value.permission_ids.push(id)
+    editingPermissionIds.value.push(permissionId)
   } else {
-    roleForm.value.permission_ids.splice(index, 1)
+    editingPermissionIds.value.splice(index, 1)
   }
 }
 
-const toggleCategory = (category, permissionsList) => {
-  const allInCat = permissionsList.every(p => roleForm.value.permission_ids.includes(p.id))
+const toggleCategoryPermissions = (category, permissionsList) => {
+  const allSelected = permissionsList.every(p => editingPermissionIds.value.includes(p.id))
   
-  if (allInCat) {
-    // Remove all
-    const idsToRemove = permissionsList.map(p => p.id)
-    roleForm.value.permission_ids = roleForm.value.permission_ids.filter(id => !idsToRemove.includes(id))
+  if (allSelected) {
+    editingPermissionIds.value = editingPermissionIds.value.filter(
+      id => !permissionsList.some(p => p.id === id)
+    )
   } else {
-    // Add missing
     permissionsList.forEach(p => {
-      if (!roleForm.value.permission_ids.includes(p.id)) {
-        roleForm.value.permission_ids.push(p.id)
+      if (!editingPermissionIds.value.includes(p.id)) {
+        editingPermissionIds.value.push(p.id)
       }
     })
   }
 }
 
-const isCategoryFull = (permissionsList) => {
-    return permissionsList.length > 0 && permissionsList.every(p => roleForm.value.permission_ids.includes(p.id))
+const isCategoryFullySelected = (permissionsList) => {
+  return permissionsList.length > 0 && 
+         permissionsList.every(p => editingPermissionIds.value.includes(p.id))
 }
 
-const saveRolePermissions = async () => {
-  if (!selectedRole.value) return
-  
-  // Show loading state or confirm if you want, but user asked for SweetAlert success/error
+const toggleExpanded = (category) => {
+  expandedCategories.value[category] = !expandedCategories.value[category]
+}
+
+const formatCategoryName = (cat) => {
+  return cat.split('_').map(word => 
+    word.charAt(0).toUpperCase() + word.slice(1)
+  ).join(' ')
+}
+
+const isDefaultRole = (roleName) => {
+  return defaultRoles.includes(roleName)
+}
+
+const createRole = async () => {
+  if (!roleForm.value.label) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Missing Information',
+      text: 'Please provide a role label',
+      confirmButtonColor: '#3b82f6'
+    })
+    return
+  }
+
   isLoading.value = true
   try {
-    const roleId = selectedRole.value.id || selectedRole.value._id
-    await api.put(`/roles/${roleId}/permissions`, {
-      permission_ids: roleForm.value.permission_ids
-    })
-    
+    const roleData = {
+      ...roleForm.value,
+      name: roleForm.value.name || roleForm.value.label.toLowerCase().replace(/\s+/g, '_'),
+      permission_ids: []
+    }
+    const response = await api.post('/roles', roleData)
     await Swal.fire({
       icon: 'success',
-      title: 'Permissions Saved!',
-      text: `System permissions for ${roleForm.value.label} have been updated.`,
+      title: 'Role Created!',
+      text: 'New role has been created successfully',
       timer: 2000,
-      showConfirmButton: false,
-      position: 'top-end',
-      toast: true
+      showConfirmButton: false
     })
     
     await fetchRoles()
+    // Select the newly created role
+    if (response.data.role) {
+      selectRole(response.data.role)
+    }
     closeModal()
   } catch (error) {
-    console.error('Error saving permissions:', error)
+    console.error('Error creating role:', error)
     Swal.fire({
       icon: 'error',
       title: 'Action Failed',
-      text: error.response?.data?.message || 'We could not save the permission changes. Please try again.',
+      text: error.response?.data?.message || 'Could not create role',
       confirmButtonColor: '#3b82f6'
     })
   } finally {
@@ -144,8 +215,85 @@ const saveRolePermissions = async () => {
   }
 }
 
-const formatCategoryName = (cat) => {
-    return cat.charAt(0).toUpperCase() + cat.slice(1)
+const updateCurrentRole = async () => {
+  if (!selectedRoleId.value) return
+
+  isLoading.value = true
+  try {
+    // 1. Update role details
+    await api.put(`/roles/${selectedRoleId.value}`, {
+      ...roleForm.value,
+      permission_ids: editingPermissionIds.value
+    })
+
+    await Swal.fire({
+      icon: 'success',
+      title: 'Role Updated!',
+      text: 'Changes saved successfully',
+      timer: 2000,
+      showConfirmButton: false
+    })
+    
+    await fetchRoles()
+  } catch (error) {
+    console.error('Error updating role:', error)
+    Swal.fire({
+      icon: 'error',
+      title: 'Action Failed',
+      text: error.response?.data?.message || 'Could not save changes',
+      confirmButtonColor: '#3b82f6'
+    })
+  } finally {
+    isLoading.value = false
+  }
+}
+
+const deleteCurrentRole = async () => {
+  const currentRole = roles.value.find(r => (r.id || r._id) === selectedRoleId.value)
+  if (!currentRole) return
+
+  if (isDefaultRole(currentRole.name)) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Cannot Delete',
+      text: 'Default system roles cannot be deleted',
+      confirmButtonColor: '#3b82f6'
+    })
+    return
+  }
+
+  const result = await Swal.fire({
+    icon: 'warning',
+    title: 'Delete Role?',
+    text: `Are you sure you want to delete "${currentRole.label}"? This action cannot be undone.`,
+    showCancelButton: true,
+    confirmButtonColor: '#d33',
+    cancelButtonColor: '#3b82f6',
+    confirmButtonText: 'Yes, delete!'
+  })
+
+  if (!result.isConfirmed) return
+
+  try {
+    await api.delete(`/roles/${selectedRoleId.value}`)
+    await Swal.fire({
+      icon: 'success',
+      title: 'Role Deleted!',
+      text: 'Role has been deleted successfully',
+      timer: 2000,
+      showConfirmButton: false
+    })
+    selectedRoleId.value = ''
+    await fetchRoles()
+  } catch (error) {
+    console.error('Error deleting role:', error)
+    Swal.fire({
+      icon: 'error',
+      title: 'Action Failed',
+      text: error.response?.data?.message || 'Could not delete role',
+      confirmButtonColor: '#3b82f6'
+    })
+  }
 }
 
 onMounted(() => {
@@ -157,130 +305,264 @@ onMounted(() => {
 <template>
   <div class="view-container">
     <!-- Header -->
-    <div class="flex items-center justify-between mb-8">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
       <div>
         <h1 class="text-2xl font-bold text-base-content">Roles & Permissions</h1>
         <p class="text-base-content/60 mt-1">Manage user roles and their associated system permissions.</p>
       </div>
+      <button @click="openAddModal" class="btn btn-primary gap-2 text-white">
+        <Plus :size="18" />
+        New Role
+      </button>
     </div>
 
-    <!-- Roles Grid -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-      <div v-for="role in roles" :key="role.id" class="card bg-base-100 border border-base-300 hover:shadow-md transition-all group">
-        <div class="card-body p-6">
-          <div class="flex items-start justify-between mb-4">
-            <div class="p-3 rounded-xl bg-primary/10 text-primary">
-              <Shield :size="24" />
-            </div>
-            <div :class="['badge badge-sm font-semibold uppercase', role.status === 'active' ? 'badge-success text-white' : 'badge-ghost']">
-              {{ role.status || 'active' }}
-            </div>
-          </div>
-          
-          <h3 class="text-lg font-bold">{{ role.label }}</h3>
-          <p class="text-sm text-base-content/60 mb-6 line-clamp-2 h-10">{{ role.description }}</p>
-          
-          <div class="flex items-center justify-between mt-auto pt-4 border-t border-base-100">
-            <span class="text-xs font-medium text-base-content/40">
-              {{ role.permission_ids?.length || 0 }} Permissions Assigned
-            </span>
-            <button 
-                @click="openModal(role)"
-                class="btn btn-sm btn-ghost gap-2 text-primary hover:bg-primary/5"
-            >
-              <Pencil :size="14" />
-              Manage Permissions
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Permissions Modal -->
-    <div v-if="showRoleModal" class="modal modal-open">
-      <div class="modal-box max-w-5xl bg-base-100 p-0 overflow-hidden rounded-2xl">
-        <!-- Modal Header -->
-        <div class="px-8 py-6 border-b border-base-200 flex items-center justify-between bg-slate-50/50">
-          <div>
-            <h3 class="font-bold text-xl flex items-center gap-2">
-              <Shield class="text-primary" :size="24" />
-              {{ isEditing ? 'Edit Role Permissions' : 'Role Details' }}
-            </h3>
-            <p class="text-sm text-base-content/60 mt-1">Configure what users with the <strong>{{ roleForm.label }}</strong> role can do.</p>
-          </div>
-          <button @click="closeModal" class="btn btn-sm btn-circle btn-ghost">
-            <X :size="20" />
-          </button>
-        </div>
-
-        <div class="max-h-[70vh] overflow-y-auto">
-          <!-- Role Basic Info (Read Only for now) -->
-          <div class="px-8 py-6 grid grid-cols-1 md:grid-cols-3 gap-6 bg-base-100">
-            <div class="form-control">
-                <label class="label py-1"><span class="label-text font-bold text-xs uppercase tracking-wider text-base-content/50">Role Name</span></label>
-                <input v-model="roleForm.name" type="text" class="input input-sm bg-base-200/50 border-none cursor-not-allowed" readonly />
-            </div>
-            <div class="form-control col-span-2">
-                <label class="label py-1"><span class="label-text font-bold text-xs uppercase tracking-wider text-base-content/50">Description</span></label>
-                <input v-model="roleForm.description" type="text" class="input input-sm bg-base-200/50 border-none cursor-not-allowed" readonly />
-            </div>
-          </div>
-
-          <!-- Permissions Grid -->
-          <div class="px-8 pb-8">
-            <div class="flex items-center justify-between mb-6 pb-2 border-b border-base-100">
-                <h4 class="font-bold text-base">System Permissions</h4>
-                <div class="flex items-center gap-4 text-xs">
-                    <span class="flex items-center gap-1"><div class="w-3 h-3 rounded bg-primary"></div> Selected</span>
-                    <span class="flex items-center gap-1"><div class="w-3 h-3 rounded border border-base-300"></div> Unselected</span>
-                </div>
+    <!-- Main Editor Layout -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <!-- Left Sidebar: Role Selector & Basic Info -->
+      <div class="lg:col-span-4 space-y-6 lg:sticky lg:top-4 h-fit">
+        <div class="card bg-base-100 border border-base-200 shadow-sm">
+          <div class="card-body p-6">
+            <h3 class="text-sm font-bold uppercase tracking-wider text-base-content/40 mb-4">Select Role</h3>
+            
+            <div class="form-control mb-6">
+              <select 
+                class="select select-bordered w-full"
+                :value="selectedRoleId"
+                @change="handleRoleSwitch"
+              >
+                <option disabled value="">Select a role to manage</option>
+                <option 
+                  v-for="role in roles" 
+                  :key="role.id || role._id" 
+                  :value="role.id || role._id"
+                >
+                  {{ role.label || role.name }}
+                </option>
+              </select>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              <div v-for="(perms, category) in permissions" :key="category" class="permission-group">
-                <div class="flex items-center justify-between mb-3 group/cat">
-                  <h5 class="font-bold text-sm tracking-wide text-base-content/80 flex items-center gap-2">
-                    <span class="w-1.5 h-1.5 rounded-full bg-primary/40"></span>
-                    {{ formatCategoryName(category) }}
-                  </h5>
-                  <button 
-                    @click="toggleCategory(category, perms)"
-                    class="text-[10px] uppercase font-bold text-primary hover:underline"
-                  >
-                    {{ isCategoryFull(perms) ? 'Deselect All' : 'Select All' }}
-                  </button>
-                </div>
-                
-                <div class="space-y-2.5 bg-base-50/30 p-4 rounded-xl border border-base-100">
-                  <label v-for="permission in perms" :key="permission.id" class="flex items-center gap-3 cursor-pointer group">
-                    <div class="relative flex items-center">
-                        <input 
-                            type="checkbox" 
-                            :checked="roleForm.permission_ids.includes(permission.id)"
-                            @change="togglePermission(permission.id)"
-                            class="checkbox checkbox-primary checkbox-xs rounded"
-                        />
-                    </div>
-                    <span class="text-sm select-none group-hover:text-primary transition-colors">
-                        {{ permission.name }}
-                    </span>
-                  </label>
-                </div>
+            <div v-if="selectedRoleId" class="space-y-4">
+              <div class="form-control">
+                <label class="label">
+                  <span class="label-text font-semibold">Display Label</span>
+                </label>
+                <input 
+                  v-model="roleForm.label" 
+                  type="text" 
+                  class="input input-bordered w-full"
+                />
+              </div>
+
+              <div class="form-control">
+                <label class="label">
+                  <span class="label-text font-semibold">Description</span>
+                </label>
+                <textarea 
+                  v-model="roleForm.description" 
+                  class="textarea textarea-bordered w-full"
+                  rows="3"
+                ></textarea>
+              </div>
+
+              <div class="form-control">
+                <label class="label">
+                  <span class="label-text font-semibold">Status</span>
+                </label>
+                <select v-model="roleForm.status" class="select select-bordered w-full">
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+
+              <div class="pt-4 flex flex-col gap-2">
+                <button 
+                  @click="updateCurrentRole" 
+                  class="btn btn-primary w-full text-white"
+                  :disabled="isLoading"
+                >
+                  <Check v-if="!isLoading" :size="18" />
+                  <span v-else class="loading loading-spinner loading-sm"></span>
+                  Save Selection
+                </button>
+                <button 
+                  v-if="!isDefaultRole(roleForm.name)"
+                  @click="deleteCurrentRole" 
+                  class="btn btn-ghost text-error w-full gap-2"
+                >
+                  <Trash2 :size="18" />
+                  Delete Role
+                </button>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Modal Action -->
-        <div class="px-8 py-5 border-t border-base-200 bg-slate-50/50 flex justify-end gap-3">
-          <button @click="closeModal" class="btn btn-ghost">Cancel</button>
+        <!-- Help Info -->
+        <div class="card bg-primary/5 border border-primary/10">
+          <div class="card-body p-5">
+            <h4 class="flex items-center gap-2 font-bold text-primary mb-2 text-sm">
+              <ShieldCheck :size="16" />
+              Role Permissions
+            </h4>
+            <p class="text-xs text-base-content/70 leading-relaxed">
+              Updating these permissions will affect all users assigned to this role immediately.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Content: Permissions Grid -->
+      <div class="lg:col-span-8 overflow-y-auto custom-scrollbar pr-2" style="max-height: calc(100vh - 160px);">
+        <div v-if="!selectedRoleId" class="flex flex-col items-center justify-center py-20 bg-base-100/50 rounded-2xl border-2 border-dashed border-base-200">
+          <Shield :size="48" class="text-base-content/10 mb-4" />
+          <p class="text-base-content/40 font-medium">Select a role from the dropdown to manage permissions</p>
+        </div>
+
+        <div v-else class="space-y-6">
+          <div class="flex items-center justify-between px-2">
+            <h2 class="text-lg font-bold flex items-center gap-2">
+              <ShieldCheck class="text-primary" :size="20" />
+              System Permissions
+            </h2>
+            <div class="flex items-center gap-2 text-xs font-semibold text-base-content/40">
+              <span>{{ editingPermissionIds.length }} selected</span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 gap-4">
+            <div 
+              v-for="(perms, category) in permissions" 
+              :key="category" 
+              class="card bg-base-100 border border-base-200 overflow-hidden"
+            >
+              <div class="card-body p-0">
+                <button 
+                  @click="toggleExpanded(category)"
+                  class="w-full px-6 py-4 flex items-center justify-between hover:bg-base-50/50 transition-colors"
+                >
+                  <div class="flex items-center gap-3">
+                    <div 
+                      class="w-10 h-10 rounded-xl flex items-center justify-center shadow-sm"
+                      :class="categoryColors[category] || 'bg-gray-100 text-gray-600'"
+                    >
+                      <component :is="categoryIcons[category] || Shield" :size="20" />
+                    </div>
+                    <div class="text-left">
+                      <span class="font-bold text-base block">{{ formatCategoryName(category) }}</span>
+                      <span class="text-xs font-medium text-base-content/40">
+                        {{ perms.filter(p => editingPermissionIds.includes(p.id)).length }}/{{ perms.length }} Enabled
+                      </span>
+                    </div>
+                  </div>
+                  <ChevronDown 
+                    :size="20" 
+                    class="transition-transform duration-300"
+                    :class="{ '-rotate-180': expandedCategories[category] }"
+                  />
+                </button>
+
+                <div v-if="expandedCategories[category]" class="p-6 border-t border-base-100 bg-base-50/30">
+                  <div class="flex items-center justify-end mb-4">
+                    <button 
+                      @click="toggleCategoryPermissions(category, perms)"
+                      class="btn btn-xs btn-ghost text-primary text-[10px] font-bold tracking-wider uppercase border border-primary/20 hover:border-primary"
+                    >
+                      {{ isCategoryFullySelected(perms) ? 'Deselect Category' : 'Select All in Category' }}
+                    </button>
+                  </div>
+
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label 
+                      v-for="permission in perms" 
+                      :key="permission.id"
+                      class="flex items-start gap-4 p-3 rounded-xl border border-transparent hover:border-base-300 hover:bg-base-100 cursor-pointer transition-all duration-200"
+                      :class="{ 'bg-primary/5 border-primary/20': editingPermissionIds.includes(permission.id) }"
+                    >
+                      <div class="pt-1">
+                        <input 
+                          type="checkbox" 
+                          :checked="editingPermissionIds.includes(permission.id)"
+                          @change="togglePermission(permission.id)"
+                          class="checkbox checkbox-primary checkbox-sm rounded-md"
+                        />
+                      </div>
+                      <div class="flex-1">
+                        <div class="text-sm font-bold antialiased leading-none mb-1">{{ permission.name }}</div>
+                        <div class="text-[11px] text-base-content/50 leading-tight">{{ permission.description }}</div>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Create Role Modal (Repurposed for simple add) -->
+    <div v-if="showRoleModal" class="modal modal-open">
+      <div class="modal-box max-w-md rounded-2xl">
+        <div class="flex items-center justify-between mb-6">
+          <h3 class="font-bold text-xl flex items-center gap-2">
+            <Shield class="text-primary" :size="22" />
+            Create New Role
+          </h3>
+          <button @click="closeModal" class="btn btn-sm btn-circle btn-ghost">
+            <X :size="18" />
+          </button>
+        </div>
+
+        <div class="space-y-4">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-bold">Display Label <span class="text-error">*</span></span>
+            </label>
+            <input 
+              v-model="roleForm.label" 
+              type="text" 
+              placeholder="e.g., Department Head"
+              class="input input-bordered w-full"
+            />
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-bold">Role Name (Key)</span>
+            </label>
+            <input 
+              v-model="roleForm.name" 
+              type="text" 
+              placeholder="e.g., department_head (auto)"
+              class="input input-bordered w-full"
+            />
+            <label class="label">
+              <span class="label-text-alt text-base-content/40">Leave blank to auto-generate from label</span>
+            </label>
+          </div>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-bold">Description</span>
+            </label>
+            <textarea 
+              v-model="roleForm.description" 
+              class="textarea textarea-bordered w-full"
+              placeholder="Basic description..."
+              rows="2"
+            ></textarea>
+          </div>
+        </div>
+
+        <div class="modal-action mt-8">
+          <button @click="closeModal" class="btn btn-ghost rounded-xl">Cancel</button>
           <button 
-            @click="saveRolePermissions" 
-            class="btn btn-primary text-white px-8"
-            :disabled="isLoading || roleForm.name === 'admin'"
+            @click="createRole" 
+            class="btn btn-primary text-white rounded-xl shadow-lg shadow-primary/20"
+            :disabled="isLoading"
           >
             <span v-if="isLoading" class="loading loading-spinner loading-sm"></span>
-            <span v-else>Save Changes</span>
+            Create Role
           </button>
         </div>
       </div>
@@ -293,20 +575,11 @@ onMounted(() => {
 @reference "../../style.css";
 
 .view-container {
-  @apply p-8 bg-slate-50/50 min-h-full;
+  @apply p-0;
 }
 
 .modal-backdrop {
   @apply bg-black/60 backdrop-blur-sm;
-}
-
-.permission-group {
-    @apply h-full;
-}
-
-/* Custom Checkbox sizing */
-.checkbox-xs {
-    --size: 1.1rem;
 }
 
 .line-clamp-2 {
@@ -314,5 +587,25 @@ onMounted(() => {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.checkbox-sm {
+  --size: 1rem;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-base-300 rounded-full;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  @apply bg-base-content/20;
 }
 </style>

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useLogout } from '@/composables/useLogout'
 import { useAuth } from '@/composables/useAuth'
@@ -26,10 +26,10 @@ const userDept = ref('')
 
 const menuItems = [
   { name: 'Dashboard', path: '/secretary/dashboard', icon: LayoutDashboard },
-  { name: 'Memos', path: '/secretary/memos', icon: FileText, permission: 'memo.view' },
-  { name: 'Faculty', path: '/secretary/faculty', icon: User, permission: 'faculty.view' },
-  { name: 'Archive', path: '/secretary/archive', icon: Archive, permission: 'archive.view' }, // Note: archive.view or faculty.view?
-  { name: 'Calendar', path: '/secretary/calendar', icon: Calendar, permission: 'calendar.view' }
+  { name: 'Memos', path: '/secretary/memos', icon: FileText, permission: 'nav.memos' },
+  { name: 'Faculty', path: '/secretary/faculty', icon: User, permission: 'nav.users' },
+  { name: 'Archive', path: '/secretary/archive', icon: Archive, permission: 'nav.archive' },
+  { name: 'Calendar', path: '/secretary/calendar', icon: Calendar, permission: 'nav.calendar' }
 ]
 // Filter menu items based on permissions
 const filteredMenuItems = computed(() => {
