@@ -3,6 +3,9 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { X, Paperclip, Calendar, Eye, Send, Search } from 'lucide-vue-next'
 import api from '@/services/api'
 import ScheduleMemoModal from './ScheduleMemoModal.vue'
+import { useAuth } from '@/composables/useAuth'
+
+const { user } = useAuth()
 
 const props = defineProps({
   isOpen: Boolean,
@@ -33,6 +36,7 @@ const users = ref([])
 const showUserSuggestions = ref(false)
 const isLoadingUsers = ref(false)
 const departments = ref([])
+const signatures = ref([])
 const showPreviewModal = ref(false)
 const fileInput = ref(null)
 const isUploading = ref(false)
@@ -46,7 +50,7 @@ const priorities = [
 const fetchUsers = async () => {
   try {
     isLoadingUsers.value = true
-    const response = await axios.get('/api/users')
+    const response = await api.get('/users')
     users.value = response.data.data || response.data
   } catch (error) {
     console.error('Error fetching users:', error)
@@ -57,21 +61,33 @@ const fetchUsers = async () => {
 
 const fetchDepartments = async () => {
   try {
-    const response = await axios.get('/api/departments')
+    const response = await api.get('/departments')
     departments.value = response.data.data
   } catch (error) {
     console.error('Error fetching departments:', error)
   }
 }
+const fetchSignatures = async () => {
+  try {
+    const response = await api.get('/user-signatures')
+    signatures.value = response.data.data
+    
+    // Check for default signature
+    const defaultSig = signatures.value.find(s => s.is_default)
+    if (defaultSig) {
+      formData.value.signature = defaultSig.name
+      formData.value.signatureId = defaultSig.id
+    }
+  } catch (error) {
+    console.error('Error fetching signatures:', error)
+  }
+}
 
-const filteredUsers = computed(() => {
-  if (!formData.value.to || formData.value.to.length < 1) return []
-  const search = formData.value.to.toLowerCase()
-  return users.value.filter(user => 
-    user.first_name.toLowerCase().includes(search) || 
-    user.last_name.toLowerCase().includes(search) || 
-    user.email.toLowerCase().includes(search)
-  ).slice(0, 5)
+const filteredDepartments = computed(() => {
+  const roleName = (user.value?.role && typeof user.value.role === 'object') ? user.value.role.name : user.value?.role
+  if (roleName === 'admin') return departments.value
+  
+  return departments.value.filter(dept => dept.id === user.value?.department_id)
 })
 
 const selectUser = (user) => {
@@ -97,7 +113,7 @@ const handleFileUpload = async (event) => {
     const uploadData = new FormData()
     uploadData.append('file', file)
     
-    const response = await axios.post('/api/upload', uploadData)
+    const response = await api.post('/upload', uploadData)
     formData.value.attachmentPath = response.data.file_path
     formData.value.attachmentName = response.data.file_name
     Swal.fire({
@@ -147,7 +163,7 @@ const handleSend = async () => {
       payload.all_day_event = scheduleData.value.allDay
     }
 
-    const response = await axios.post('/api/memos', payload)
+    const response = await api.post('/memos', payload)
     
     emit('send', response.data)
     resetForm()
@@ -183,6 +199,7 @@ const handleScheduleSave = (schedule) => {
 onMounted(() => {
   fetchUsers()
   fetchDepartments()
+  fetchSignatures()
 })
 
 watch(() => props.initialData, (newVal) => {
@@ -266,8 +283,10 @@ watch(() => formData.value.to, (newVal) => {
               <span class="ml-2 opacity-40 text-[8px]">▼</span>
             </div>
             <ul tabindex="0" class="dropdown-content z-50 menu p-2 shadow-2xl bg-base-100 border border-base-300 rounded-xl w-52 mt-2">
-              <li @click="formData.signature = 'None'"><a class="font-bold">None</a></li>
-              <li @click="formData.signature = 'Admin Official'"><a class="font-bold">Admin Official</a></li>
+              <li @click="formData.signature = 'None'; formData.signatureId = null"><a class="font-bold">None</a></li>
+              <li v-for="sig in signatures" :key="sig.id" @click="formData.signature = sig.name; formData.signatureId = sig.id">
+                <a class="font-bold">{{ sig.name }}</a>
+              </li>
             </ul>
           </div>
 
@@ -278,7 +297,7 @@ watch(() => formData.value.to, (newVal) => {
               <span class="ml-2 opacity-40 text-[8px]">▼</span>
             </div>
             <ul tabindex="0" class="dropdown-content z-50 menu p-2 shadow-2xl bg-base-100 border border-base-300 rounded-xl w-64 mt-2">
-              <li v-for="dept in departments" :key="dept.id" @click="selectDepartment(dept)">
+              <li v-for="dept in filteredDepartments" :key="dept.id" @click="selectDepartment(dept)">
                 <a class="font-bold flex justify-between">
                   {{ dept.name }}
                   <span class="text-[8px] opacity-40">{{ dept.code }}</span>
@@ -286,13 +305,22 @@ watch(() => formData.value.to, (newVal) => {
               </li>
             </ul>
           </div>
-
+          
           <!-- Priority Selector -->
-          <div class="flex items-center gap-3 px-4 py-1.5 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors cursor-pointer group">
-            <span class="w-2.5 h-2.5 rounded-full" :class="priorities.find(p => p.label === formData.priority).color"></span>
-            <select v-model="formData.priority" class="select select-ghost select-xs p-0 focus:outline-none focus:bg-transparent font-black text-[10px] uppercase tracking-wider border-none min-h-0 h-auto text-base-content/70">
-              <option v-for="p in priorities" :key="p.label" :value="p.label">{{ p.label }}</option>
-            </select>
+          <div class="dropdown">
+            <div tabindex="0" role="button" class="btn btn-sm bg-base-200 border-none px-4 rounded-lg font-black text-[10px] uppercase tracking-wider hover:bg-base-300 text-base-content/70">
+              <span class="w-2 h-2 rounded-full mr-2" :class="priorities.find(p => p.label === formData.priority).color"></span>
+              Priority: {{ formData.priority }}
+              <span class="ml-2 opacity-40 text-[8px]">▼</span>
+            </div>
+            <ul tabindex="0" class="dropdown-content z-50 menu p-2 shadow-2xl bg-base-100 border border-base-300 rounded-xl w-40 mt-2">
+              <li v-for="p in priorities" :key="p.label" @click="formData.priority = p.label">
+                <a class="font-bold flex items-center gap-3">
+                  <span class="w-2 h-2 rounded-full" :class="p.color"></span>
+                  {{ p.label }}
+                </a>
+              </li>
+            </ul>
           </div>
         </div>
       </div>

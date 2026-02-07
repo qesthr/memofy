@@ -13,6 +13,8 @@ use App\Http\Controllers\Api\FileController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\LockController;
 use App\Http\Controllers\Api\ArchiveController;
+use App\Http\Controllers\Api\SecretaryMemoController;
+use App\Http\Controllers\Api\AdminMemoController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -119,6 +121,23 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::delete('/memos/{memo}', [MemoController::class, 'destroy'])->middleware('can:memo.archive');
     Route::post('/memos/{id}/rollback', [MemoController::class, 'rollback'])->middleware('can:memo.unarchive');
     Route::post('/memos/{id}/acknowledge', [MemoController::class, 'acknowledge'])->middleware('can:memo.view');
+
+    // Secretary Memo Routes
+    Route::prefix('secretary/memos')->middleware('role:secretary')->group(function () {
+        Route::get('/', [SecretaryMemoController::class, 'index']);
+        Route::get('/stats', [SecretaryMemoController::class, 'stats']);
+        Route::post('/submit-for-approval', [SecretaryMemoController::class, 'submitForApproval']);
+        Route::post('/draft', [SecretaryMemoController::class, 'storeDraft']);
+        Route::get('/{memo}/acknowledgments', [SecretaryMemoController::class, 'acknowledgmentStatus']);
+    });
+
+    // Admin Memo Approval Routes
+    Route::prefix('admin/memos')->middleware('can:memo.approve')->group(function () {
+        Route::get('/pending-approvals', [AdminMemoController::class, 'pendingApprovals']);
+        Route::post('/{id}/approve', [AdminMemoController::class, 'approve']);
+        Route::post('/{id}/reject', [AdminMemoController::class, 'reject']);
+        Route::get('/{id}/acknowledgments', [AdminMemoController::class, 'acknowledgmentStats']);
+    });
 
     // Activity Logs
     Route::get('/activity-logs', [ActivityLogController::class, 'index']);

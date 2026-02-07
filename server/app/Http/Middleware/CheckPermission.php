@@ -17,6 +17,16 @@ class CheckPermission
     {
         $user = $request->user();
 
+        // Bypass permission check for admin users
+        $isAdmin = $user && (
+            strtolower($user->getAttribute('role') ?? '') === 'admin' || 
+            ($user->assignedRole && strtolower($user->assignedRole->name ?? '') === 'admin')
+        );
+
+        if ($isAdmin) {
+            return $next($request);
+        }
+
         if (!$user || !$user->hasPermissionTo($permission)) {
             return response()->json([
                 'success' => false,

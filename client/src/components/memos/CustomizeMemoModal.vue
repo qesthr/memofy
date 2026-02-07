@@ -4,6 +4,10 @@ import { X, Save, Eraser, Undo2, Plus, Trash2, Mail, Users, FileText, Check } fr
 import SignaturePad from 'signature_pad'
 import api from '@/services/api'
 import Swal from 'sweetalert2'
+import { useAuth } from '@/composables/useAuth'
+
+const { user, can } = useAuth()
+const userRole = computed(() => (user.value?.role && typeof user.value.role === 'object') ? user.value.role.name : user.value?.role)
 
 const props = defineProps({
   isOpen: Boolean
@@ -12,6 +16,39 @@ const props = defineProps({
 const emit = defineEmits(['close', 'apply'])
 
 const activeTab = ref('templates') // templates, signatures, departments
+
+const handleTabClick = (tab) => {
+  if (tab === 'templates' && !can('template.manage')) {
+    Swal.fire({
+      title: 'Restricted',
+      text: 'Restricted by Admin',
+      icon: 'warning',
+      confirmButtonColor: '#fb923c'
+    })
+    return
+  }
+
+  if (tab === 'signatures' && !can('signature.manage')) {
+    Swal.fire({
+      title: 'Restricted',
+      text: 'Restricted by Admin',
+      icon: 'warning',
+      confirmButtonColor: '#fb923c'
+    })
+    return
+  }
+  
+  if (tab === 'departments' && !can('department.manage')) {
+    Swal.fire({
+      title: 'Restricted',
+      text: 'Restricted by Admin',
+      icon: 'warning',
+      confirmButtonColor: '#fb923c'
+    })
+    return
+  }
+  activeTab.value = tab
+}
 const templates = ref([])
 const signatures = ref([])
 const departments = ref([])
@@ -255,7 +292,7 @@ const deleteTemplate = async (template) => {
 
   if (result.isConfirmed) {
     try {
-      await axios.delete(`/api/memo-templates/${template.id}`)
+      await api.delete(`/memo-templates/${template.id}`)
       await fetchInitialData()
     } catch (error) {
       Swal.fire('Error', 'Failed to delete template', 'error')
@@ -270,7 +307,7 @@ const saveDepartment = async () => {
   }
 
   try {
-    await axios.post('/api/departments', newDepartment.value)
+    await api.post('/departments', newDepartment.value)
     newDepartment.value = { name: '', code: '', description: '' }
     await fetchInitialData()
     Swal.fire('Success', 'Department added successfully', 'success')
@@ -290,7 +327,7 @@ const deleteDepartment = async (id) => {
 
   if (result.isConfirmed) {
     try {
-      await axios.delete(`/api/departments/${id}`)
+      await api.delete(`/departments/${id}`)
       await fetchInitialData()
       Swal.fire('Deleted!', 'Department has been removed.', 'success')
     } catch (error) {
@@ -335,7 +372,7 @@ watch(activeTab, (newTab) => {
         <!-- Sidebar Navigation -->
         <div class="w-64 bg-base-200/30 border-r border-base-200 p-4 flex flex-col gap-2">
           <button 
-            @click="activeTab = 'templates'"
+            @click="handleTabClick('templates')"
             class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-black text-[10px] uppercase tracking-widest"
             :class="activeTab === 'templates' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'hover:bg-base-200 text-base-content/60'"
           >
@@ -343,7 +380,7 @@ watch(activeTab, (newTab) => {
             Templates
           </button>
           <button 
-            @click="activeTab = 'signatures'"
+            @click="handleTabClick('signatures')"
             class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-black text-[10px] uppercase tracking-widest"
             :class="activeTab === 'signatures' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'hover:bg-base-200 text-base-content/60'"
           >
@@ -351,7 +388,7 @@ watch(activeTab, (newTab) => {
             Signatures
           </button>
           <button 
-            @click="activeTab = 'departments'"
+            @click="handleTabClick('departments')"
             class="flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-black text-[10px] uppercase tracking-widest"
             :class="activeTab === 'departments' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'hover:bg-base-200 text-base-content/60'"
           >
@@ -629,7 +666,7 @@ watch(activeTab, (newTab) => {
     <div class="modal-backdrop bg-base-100/5 backdrop-blur-3xl transition-all duration-700" @click="closeModal"></div>
 
     <!-- Fullscreen Maximize Overlay -->
-    <div v-if="isFullscreen" class="fixed inset-0 z-[1000] bg-base-100 flex flex-col items-center justify-center p-10 animate-in fade-in zoom-in duration-300">
+    <div v-if="isFullscreen" class="fixed inset-0 z-1000 bg-base-100 flex flex-col items-center justify-center p-10 animate-in fade-in zoom-in duration-300">
       <div class="w-full max-w-7xl h-full flex flex-col gap-8">
         <div class="flex items-center justify-between">
            <div>
