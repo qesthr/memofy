@@ -18,20 +18,31 @@ api.interceptors.request.use(config => {
   return config
 })
 
-// Response interceptor to handle 401
+// Response interceptor to handle auth errors
 api.interceptors.response.use(
   response => response,
   async error => {
-    if (error.response && error.response.status === 401) {
-      if (!window.location.pathname.includes('/login')) {
+    if (error.response) {
+      if (error.response.status === 401) {
+        if (!window.location.pathname.includes('/login')) {
+          const Swal = (await import('sweetalert2')).default
+          Swal.fire({
+            title: 'Session Expired',
+            text: 'You have been logged out. Please log in again to continue.',
+            icon: 'warning',
+            confirmButtonText: 'Log In'
+          }).then(() => {
+            window.location.href = '/login'
+          })
+        }
+      } else if (error.response.status === 403) {
         const Swal = (await import('sweetalert2')).default
         Swal.fire({
-          title: 'Session Expired',
-          text: 'You have been logged out. Please log in again to continue.',
-          icon: 'warning',
-          confirmButtonText: 'Log In'
-        }).then(() => {
-          window.location.href = '/login'
+          title: 'Access Denied',
+          text: error.response.data.message || 'You do not have permission to perform this action.',
+          icon: 'error',
+          confirmButtonColor: '#3b82f6',
+          confirmButtonText: 'Understood'
         })
       }
     }

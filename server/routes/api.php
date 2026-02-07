@@ -75,8 +75,10 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     });
 
     // Reports & Analytics
-    Route::middleware('throttle:dashboard')->group(function () {
+    Route::middleware(['auth:sanctum', 'throttle:dashboard'])->group(function () {
         Route::get('/reports', [ReportController::class, 'index']);
+        Route::get('/reports/export/pdf', [ReportController::class, 'exportPdf']);
+        Route::get('/reports/export/excel', [ReportController::class, 'exportExcel']);
     });
 
     // Lock Management (Concurrency Control)
@@ -176,6 +178,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::delete('/roles/{id}', [RoleController::class, 'destroy']);
     Route::get('/roles/{id}/permissions', [RoleController::class, 'getRolePermissions']);
     Route::put('/roles/{id}/permissions', [RoleController::class, 'updatePermissions']);
+    Route::get('/roles/{roleName}/users', [RoleController::class, 'usersByRole']);
+    Route::put('/users/{id}/permissions', [RoleController::class, 'updateUserPermissions']);
     Route::post('/roles/assign', [RoleController::class, 'assignRole']);
     Route::get('/permissions', [RoleController::class, 'permissions']);
     Route::put('/roles/{id}/permissions', [RoleController::class, 'updatePermissions']);

@@ -16,6 +16,7 @@ class CalendarEvent extends Model
         'end',
         'all_day',
         'category',
+        'priority',
         'description',
         'memo_id',
         'created_by',

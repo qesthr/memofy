@@ -1,9 +1,9 @@
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import api from '@/services/api'
 import { useCalendar } from './useCalendar'
 
 export function useEvents() {
-    const { selectedDate, currentView, weekRange } = useCalendar()
+    const { selectedDate, currentView, weekRange, priorityFilters } = useCalendar()
     const events = ref([])
     const isLoading = ref(false)
     const error = ref(null)
@@ -54,8 +54,16 @@ export function useEvents() {
         fetchEvents()
     }, { immediate: true })
 
+    const filteredEvents = computed(() => {
+        return events.value.filter(event => {
+            const priority = event.priority || 'medium'
+            return priorityFilters.value[priority] !== false
+        })
+    })
+
     return {
-        events,
+        events: filteredEvents,
+        allEvents: events,
         isLoading,
         error,
         fetchEvents

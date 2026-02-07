@@ -49,6 +49,10 @@ class RBACSeeder extends Seeder
             ['name' => 'activity.view_all', 'label' => 'View All Activities', 'description' => 'View system-wide activity logs', 'category' => 'activity'],
             ['name' => 'activity.view_department', 'label' => 'View Department Activities', 'description' => 'View activities within the department', 'category' => 'activity'],
 
+            // Reports & Analytics
+            ['name' => 'reports.view', 'label' => 'View Reports', 'description' => 'Access reports and analytics dashboard', 'category' => 'reports'],
+            ['name' => 'reports.export', 'label' => 'Export Reports', 'description' => 'Export reports to PDF, Excel, or CSV', 'category' => 'reports'],
+
             // Department Management
             ['name' => 'department.manage', 'label' => 'Manage Departments', 'description' => 'Create, edit, and delete departments', 'category' => 'memo'],
 
@@ -86,8 +90,8 @@ class RBACSeeder extends Seeder
         // 3. Assign Permissions to Roles
         
         // Admin gets everything
-        $allPermissionIds = array_values(array_map(fn($p) => $p->id, $permissions));
-        $adminRole->update(['permission_ids' => $allPermissionIds]);
+        $allPermissionNames = array_keys($permissions);
+        $adminRole->update(['permission_ids' => $allPermissionNames]);
 
         // Secretary Permissions
         $secretaryPermissions = [
@@ -97,7 +101,7 @@ class RBACSeeder extends Seeder
             'calendar.add_event', 'calendar.edit_event', 'calendar.archive_event',
             'theme.select', 'activity.view_department', 'template.manage'
         ];
-        $secretaryRole->update(['permission_ids' => $this->getIds($secretaryPermissions, $permissions)]);
+        $secretaryRole->update(['permission_ids' => $secretaryPermissions]);
 
         // Faculty Permissions
         $facultyPermissions = [
@@ -105,7 +109,7 @@ class RBACSeeder extends Seeder
             'archive.unarchive_memo', 'archive.remove_permanently',
             'calendar.add_event', 'calendar.edit_event'
         ];
-        $facultyRole->update(['permission_ids' => $this->getIds($facultyPermissions, $permissions)]);
+        $facultyRole->update(['permission_ids' => $facultyPermissions]);
 
         // 4. Update Existing Users to use role_id and sync strings
         foreach (User::all() as $user) {

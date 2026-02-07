@@ -5,7 +5,7 @@ import { useEvents } from '@/composables/useEvents'
 import { useAuth } from '@/composables/useAuth'
 import Swal from 'sweetalert2'
 
-const { selectedDate, weekRange, openEventModal, formattedDate } = useCalendar()
+const { selectedDate, weekRange, openEventModal, formattedDate, formattedSelectedDate } = useCalendar()
 const { events, isLoading } = useEvents()
 const { can } = useAuth()
 
@@ -52,24 +52,38 @@ const getEventStyle = (event) => {
   const top = (startMinutes / 60) * 60 // 1 hour = 60px
   const height = (duration / 60) * 60
   
-  // Visual distinction for different sources
+  // Visual distinction for different sources and priorities
   let bgColor, borderColor
-  if (event.source === 'MEMO') {
-    bgColor = '#10b981' // green for memos
-    borderColor = '#059669'
-  } else if (event.source === 'GOOGLE') {
+  if (event.source === 'GOOGLE') {
     bgColor = '#4285F4'
     borderColor = '#1a73e8'
   } else {
-    bgColor = '#3b82f6'
-    borderColor = '#1d4ed8'
+    const priority = event.priority || 'medium'
+    switch (priority) {
+      case 'high':
+        bgColor = '#F44336'
+        borderColor = '#D32F2F'
+        break
+      case 'medium':
+        bgColor = '#FF9800'
+        borderColor = '#F57C00'
+        break
+      case 'low':
+        bgColor = '#4CAF50'
+        borderColor = '#388E3C'
+        break
+      default:
+        bgColor = '#3b82f6'
+        borderColor = '#1d4ed8'
+    }
   }
   
   return {
     top: `${top}px`,
     height: `${height}px`,
     backgroundColor: bgColor,
-    borderLeft: `3px solid ${borderColor}`
+    borderLeft: `5px solid ${borderColor}`,
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
   }
 }
 
@@ -94,8 +108,11 @@ const allDayEventsForDay = (fullDate) => {
       <div v-for="day in weekDays" :key="day.fullDate" 
            class="flex-1 py-3 flex flex-col items-center">
         <span class="text-[11px] font-bold text-base-content/40 uppercase tracking-widest">{{ day.name }}</span>
-        <div class="w-10 h-10 flex items-center justify-center rounded-full mt-1"
-             :class="{ 'bg-primary text-primary-content font-bold': day.isToday }">
+        <div class="w-10 h-10 flex items-center justify-center rounded-full mt-1 transition-all"
+             :class="{ 
+               'bg-primary text-primary-content font-bold shadow-lg': day.isToday,
+               'border-2 border-primary text-primary font-bold': day.fullDate === formattedSelectedDate && !day.isToday
+             }">
           <span class="text-xl">{{ day.date }}</span>
         </div>
       </div>
@@ -106,7 +123,9 @@ const allDayEventsForDay = (fullDate) => {
       <div class="w-16 flex flex-col items-center justify-center border-r border-black/20 dark:border-white/20">
         <span class="text-[9px] font-bold text-base-content/40 uppercase">All Day</span>
       </div>
-      <div v-for="day in weekDays" :key="day.fullDate" class="flex-1 border-r border-black/20 dark:border-white/20 last:border-r-0 p-1 flex flex-col gap-1">
+      <div v-for="day in weekDays" :key="day.fullDate" 
+           class="flex-1 border-r border-black/20 dark:border-white/20 last:border-r-0 p-1 flex flex-col gap-1"
+           :class="{ 'bg-primary/5': day.fullDate === formattedSelectedDate }">
         <div v-for="event in allDayEventsForDay(day.fullDate)" :key="event.id"
              @click="() => {
                if (can('calendar.edit_event')) {
@@ -119,7 +138,8 @@ const allDayEventsForDay = (fullDate) => {
                  })
                }
              }"
-             class="bg-primary/20 text-primary text-[10px] font-medium px-2 py-1 rounded truncate border-l-2 border-primary cursor-pointer hover:bg-primary/30 transition-colors">
+             class="text-white text-[10px] font-bold px-2 py-1 rounded truncate shadow-sm cursor-pointer hover:brightness-110 transition-all"
+             :style="{ backgroundColor: getEventStyle(event).backgroundColor, borderLeft: getEventStyle(event).borderLeft }">
           {{ event.title }}
         </div>
       </div>
@@ -145,7 +165,9 @@ const allDayEventsForDay = (fullDate) => {
           </div>
 
           <!-- Days interaction area -->
-          <div v-for="day in weekDays" :key="day.fullDate" class="flex-1 border-r border-black/20 dark:border-white/20 last:border-r-0 relative">
+          <div v-for="day in weekDays" :key="day.fullDate" 
+               class="flex-1 border-r border-black/20 dark:border-white/20 last:border-r-0 relative"
+               :class="{ 'bg-primary/[0.03]': day.fullDate === formattedSelectedDate }">
              <!-- Clickable Slots for New Events (30 min slots) -->
              <div v-for="slot in timeSlots" :key="`${slot.hour}-${slot.minute}`" 
                   @click="() => {

@@ -41,7 +41,8 @@ class User extends Authenticatable
         'theme',
         'reset_code',
         'reset_code_expires_at',
-        'role_id'
+        'role_id',
+        'permission_ids'
     ];
 
     /**
@@ -179,18 +180,24 @@ class User extends Authenticatable
      */
     public function getPermissionsAttribute()
     {
-        // 1. Determine effective role
+        // 1. Check for user-specific permissions (Override)
+        if (!empty($this->permission_ids)) {
+            return $this->permission_ids;
+        }
+
+        // 2. Fallback to Role permissions 
         $roleModel = $this->assignedRole;
 
-        // 2. Resolve Role Model if not loaded (fallback for legacy role field)
+        // 3. Resolve Role Model if not loaded (fallback for legacy role field)
         if (!$roleModel) {
             $roleField = strtolower($this->getAttribute('role') ?? '');
             if ($roleField) {
-                $roleModel = Role::where('name', 'i-like', $roleField)->first();
+                // Use i-like for case-insensitive search if needed, or stick to where
+                $roleModel = Role::where('name', $roleField)->first();
             }
         }
         
-        // 3. Return permission names (permission_ids stores names in this system)
+        // 4. Return permission names
         if (!$roleModel || !$roleModel->permission_ids) {
             return [];
         }

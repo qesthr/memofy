@@ -23,7 +23,9 @@ const {
   setSelectedDate,
   openEventModal,
   isGoogleConnected,
-  checkGoogleStatus
+  checkGoogleStatus,
+  priorityFilters,
+  togglePriorityFilter
 } = useCalendar()
 
 onMounted(() => {
@@ -128,6 +130,34 @@ const currentTitle = computed(() => {
                 <input type="checkbox" checked class="checkbox checkbox-xs border-[#4285F4] [--chkbg:#4285F4] [--chkfg:white]" />
                 <span class="text-sm">Google Calendar</span>
                 <span v-if="!isGoogleConnected" class="text-[10px] text-base-content/40 uppercase font-bold">(Offline)</span>
+              </label>
+           </div>
+        </div>
+
+        <!-- Category (Priority Filtering) -->
+        <div class="flex flex-col gap-4">
+           <h3 class="text-xs font-bold text-base-content/50 uppercase tracking-wider">Category</h3>
+           <div class="flex flex-col gap-2">
+              <label class="flex items-center gap-3 cursor-pointer group">
+                <input type="checkbox" 
+                       :checked="priorityFilters.low" 
+                       @change="togglePriorityFilter('low')"
+                       class="checkbox checkbox-xs border-[#4CAF50] [--chkbg:#4CAF50] [--chkfg:white]" />
+                <span class="text-sm group-hover:text-[#4CAF50] transition-colors">Low</span>
+              </label>
+              <label class="flex items-center gap-3 cursor-pointer group">
+                <input type="checkbox" 
+                       :checked="priorityFilters.medium" 
+                       @change="togglePriorityFilter('medium')"
+                       class="checkbox checkbox-xs border-[#FF9800] [--chkbg:#FF9800] [--chkfg:white]" />
+                <span class="text-sm group-hover:text-[#FF9800] transition-colors">Medium</span>
+              </label>
+              <label class="flex items-center gap-3 cursor-pointer group">
+                <input type="checkbox" 
+                       :checked="priorityFilters.high" 
+                       @change="togglePriorityFilter('high')"
+                       class="checkbox checkbox-xs border-[#F44336] [--chkbg:#F44336] [--chkfg:white]" />
+                <span class="text-sm group-hover:text-[#F44336] transition-colors">High</span>
               </label>
            </div>
         </div>

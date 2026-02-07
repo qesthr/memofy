@@ -8,14 +8,18 @@ use App\Models\Memo;
 use App\Models\UserActivityLog;
 use App\Models\Department;
 use Illuminate\Http\Request;
-// use Illuminate\Support\Facades\DB; // Removed DB facade
 use Carbon\Carbon;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class ReportController extends Controller
 {
     public function index(Request $request)
     {
         $user = $request->user();
+
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized - User not authenticated'], 401);
+        }
 
         if (!$user->hasPermissionTo('reports.view') && !$user->hasPermissionTo('reports.view_analytics')) {
             return response()->json(['message' => 'Unauthorized'], 403);
@@ -36,6 +40,99 @@ class ReportController extends Controller
         $reports['dailyMemos'] = $this->getDailyMemos($user, $startDate);
 
         return response()->json($reports);
+    }
+
+    /**
+     * Export PDF Report with header, footer, watermark, and digital signature
+     */
+    public function exportPdf(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized - User not authenticated'], 401);
+        }
+
+        if (!$user->hasPermissionTo('reports.export')) {
+            return response()->json(['message' => 'Unauthorized - Export permission required'], 403);
+        }
+
+        $period = $request->get('period', '30');
+        $startDate = Carbon::now()->subDays($period);
+
+        $data = [
+            'generated_at' => now()->format('Y-m-d H:i:s'),
+            'generated_by' => $user->name,
+            'tracking_number' => 'MEMOFY-' . now()->format('Ymd') . '-' . strtoupper(substr(md5($user->id . now()), 0, 8)),
+            'period' => $period,
+            'period_label' => $period == 7 ? 'Last 7 days' : ($period == 365 ? 'This Year' : 'Last 30 days'),
+            'overview' => $this->getOverviewStats($user, $startDate),
+            'users' => $this->getUserStats($user, $startDate),
+            'memos' => $this->getMemoStats($user, $startDate),
+            'activity' => $this->getActivityStats($user, $startDate),
+            'departments' => $this->getDepartmentStats($user, $startDate),
+            'memoStatusDistribution' => $this->getMemoStatusDistribution($user, $startDate),
+            'logo_base64' => base64_encode(file_get_contents(public_path('images/memofy-logo.png'))),
+        ];
+
+        $pdf = Pdf::loadView('reports.pdf', $data)
+            ->setPaper('a4', 'landscape')
+            ->setOptions([
+                'isRemoteEnabled' => true,
+                'isHtml5ParserEnabled' => true,
+                'isPhpEnabled' => true,
+                'defaultFont' => 'sans-serif',
+            ]);
+
+        $pdf->render();
+        $canvas = $pdf->getCanvas();
+        $font = null; // Use default
+        $size = 9;
+        $color = [100/255, 116/255, 139/255]; // #64748b - footer color
+        
+        // DomPDF Canvas: text(x, y, text, font, size, color, word_space, char_space, angle)
+        // The numbers below are approximate for A4 Landscape (842pt wide)
+        $canvas->page_text(740, 545, "Page {PAGE_NUM} / {PAGE_COUNT}", $font, $size, $color);
+
+        return $pdf->download('memofy-report-' . now()->format('Y-m-d') . '.pdf');
+    }
+
+    /**
+     * Export Excel Report
+     */
+    public function exportExcel(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized - User not authenticated'], 401);
+        }
+
+        if (!$user->hasPermissionTo('reports.export')) {
+            return response()->json(['message' => 'Unauthorized - Export permission required'], 403);
+        }
+
+        $period = $request->get('period', '30');
+        $startDate = Carbon::now()->subDays($period);
+
+        $data = [
+            'generated_at' => now()->format('Y-m-d H:i:s'),
+            'generated_by' => $user->name,
+            'tracking_number' => 'MEMOFY-' . now()->format('Ymd') . '-' . strtoupper(substr(md5($user->id . now()), 0, 8)),
+            'period' => $period,
+            'overview' => $this->getOverviewStats($user, $startDate),
+            'users' => $this->getUserStats($user, $startDate),
+            'memos' => $this->getMemoStats($user, $startDate),
+            'activity' => $this->getActivityStats($user, $startDate),
+            'departments' => $this->getDepartmentStats($user, $startDate),
+        ];
+
+        // For simplicity, return JSON that client can convert to CSV/Excel
+        return response()->json([
+            'success' => true,
+            'data' => $data,
+            'message' => 'Excel export data prepared'
+        ]);
     }
 
     private function getOverviewStats($user, $startDate)

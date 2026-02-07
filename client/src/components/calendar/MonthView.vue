@@ -82,6 +82,16 @@ const selectDate = (day) => {
     setSelectedDate(day.date)
   }
 }
+const getPriorityColor = (event) => {
+  if (event.source === 'GOOGLE') return '#4285F4'
+  const priority = event.priority || 'medium'
+  switch (priority) {
+    case 'high': return '#F44336'
+    case 'medium': return '#FF9800'
+    case 'low': return '#4CAF50'
+    default: return '#3B82F6'
+  }
+}
 </script>
 
 <template>
@@ -99,7 +109,10 @@ const selectDate = (day) => {
        <div v-for="(day, idx) in days" :key="idx" 
             @click="selectDate(day)"
             class="border-r border-b border-black/20 dark:border-white/20 min-h-0 flex flex-col p-1 hover:bg-base-200/20 transition-colors cursor-pointer group"
-            :class="{ 'bg-black/10 dark:bg-white/10': !day.currentMonth }">
+            :class="{ 
+                'bg-black/10 dark:bg-white/10': !day.currentMonth,
+                'bg-primary/5 shadow-[inset_0_0_0_2px_rgba(59,130,246,0.3)]': day.date.toDateString() === selectedDate.toDateString()
+            }">
          
          <div class="flex justify-center mt-1">
             <div class="w-8 h-8 flex items-center justify-center rounded-full text-sm"
@@ -126,9 +139,9 @@ const selectDate = (day) => {
                      })
                    }
                  }"
-                 class="px-1.5 py-0.5 rounded text-[10px] font-medium truncate cursor-pointer hover:brightness-110 transition-all"
+                 class="px-1.5 py-0.5 rounded text-[10px] font-medium truncate cursor-pointer hover:brightness-110 transition-all shadow-sm"
                  :style="{ 
-                   backgroundColor: event.source === 'GOOGLE' ? '#4285F4' : '#3b82f6',
+                   backgroundColor: getPriorityColor(event),
                    color: 'white'
                  }">
               <span v-if="!event.all_day" class="opacity-80">{{ new Date(event.start).getHours() }}:{{ new Date(event.start).getMinutes().toString().padStart(2, '0') }}</span>

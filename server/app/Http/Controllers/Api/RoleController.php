@@ -157,8 +157,35 @@ class RoleController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        // Fetch all and sort in PHP to be safe with MongoDB mixed fields
-        $permissions = Permission::all()->sortBy(function($p) {
+        $targetRole = $request->query('role');
+        
+        // Define Whitelists for specific roles
+        $whitelists = [
+            'secretary' => [
+                'memo.create', 'memo.send', 'memo.archive', 'memo.view', 'memo.unarchive', 'memo.remove_permanently',
+                'faculty.add', 'faculty.edit', 'faculty.archive', 'faculty.view', 'faculty.unarchive',
+                'archive.unarchive_memo', 'archive.unarchive_calendar', 'archive.remove_permanently',
+                'calendar.add_event', 'calendar.edit_event', 'calendar.archive_event',
+                'theme.select', 'activity.view_department', 'template.manage'
+            ],
+            'faculty' => [
+                'memo.view', 'memo.archive',
+                'archive.unarchive_memo', 'archive.remove_permanently',
+                'calendar.add_event', 'calendar.edit_event'
+            ]
+        ];
+
+        // Fetch all and filter in PHP
+        $permissions = Permission::all();
+        
+        if ($targetRole && isset($whitelists[$targetRole])) {
+            $allowed = $whitelists[$targetRole];
+            $permissions = $permissions->filter(function($p) use ($allowed) {
+                return in_array($p->name, $allowed);
+            });
+        }
+
+        $permissions = $permissions->sortBy(function($p) {
             return ($p->category ?? 'general') . '.' . $p->name;
         });
         
@@ -178,7 +205,6 @@ class RoleController extends Controller
             ];
         }
 
-        // Sort keys to ensure 'general' or others are in a predictable order if desired
         ksort($grouped);
 
         return response()->json($grouped);
@@ -229,6 +255,65 @@ class RoleController extends Controller
         return response()->json([
             'role' => $role,
             'permissions' => $role->permission_ids ?? []
+        ]);
+    }
+
+    public function usersByRole(Request $request, $roleName)
+    {
+        $user = $request->user();
+        
+        if (!$this->isAdmin($user)) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        try {
+            // Find users by role string OR role_id (if roleName matches a role's name)
+            $roleModel = Role::where('name', $roleName)->first();
+            
+            $query = User::query();
+            if ($roleModel) {
+                $query->where('role_id', $roleModel->id)->orWhere('role', $roleName);
+            } else {
+                $query->where('role', $roleName);
+            }
+
+            $users = $query->select('id', 'first_name', 'last_name', 'email', 'permission_ids', 'role')->get();
+            
+            return response()->json($users);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Failed to retrieve users: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function updateUserPermissions(Request $request, $id)
+    {
+        $user = $request->user();
+        
+        if (!$this->isAdmin($user)) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $targetUser = User::findOrFail($id);
+
+        $validated = $request->validate([
+            'permission_ids' => 'nullable|array',
+        ]);
+
+        $originalPermissions = $targetUser->permission_ids ?? [];
+        $targetUser->update([
+            'permission_ids' => $validated['permission_ids']
+        ]);
+
+        $this->activityLogger->logUserAction($user, 'update_user_permissions', "Updated individual permissions for user: {$targetUser->email}", [
+            'target_user_id' => $targetUser->id,
+            'original' => $originalPermissions,
+            'new' => $validated['permission_ids']
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'User permissions updated successfully',
+            'user' => $targetUser
         ]);
     }
 

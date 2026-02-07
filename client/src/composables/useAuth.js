@@ -13,9 +13,12 @@ const error = ref(null)
 const can = (permission) => {
   if (!user.value) return false
   const userRole = (user.value.role && typeof user.value.role === 'object') ? user.value.role.name : user.value.role
-  if (userRole === 'admin') return true
-  if (!user.value.permissions) return false
-  return user.value.permissions.includes(permission)
+
+  // Admin bypass
+  if (userRole === 'admin' || userRole === 'superadmin') return true
+
+  const permissions = user.value.permissions || user.value.permission_ids || []
+  return permissions.includes(permission)
 }
 
 export function useAuth() {

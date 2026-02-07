@@ -19,6 +19,7 @@ const form = ref({
   end: '',
   all_day: false,
   category: 'standard',
+  priority: 'medium',
   description: '',
   invited_users: []
 })
@@ -243,18 +244,17 @@ const respondToInvitation = async (status) => {
            </div>
         </div>
 
-        <!-- Category & Source -->
+        <!-- Priority & Source -->
         <div v-if="!isViewMode" class="flex items-start gap-4">
            <div class="p-2 bg-base-200 rounded-lg text-base-content/60">
               <div class="w-5 h-5 rounded-full border-2 border-primary"></div>
            </div>
            <div class="flex-1">
-              <label class="text-[10px] font-bold text-base-content/40 uppercase tracking-wider block mb-1">Category</label>
-              <select v-model="form.category" class="select select-sm select-bordered w-full rounded-md">
-                <option value="standard">Standard</option>
-                <option value="urgent">Urgent</option>
-                <option value="meeting">Meeting</option>
-                <option value="deadline">Deadline</option>
+              <label class="text-[10px] font-bold text-base-content/40 uppercase tracking-wider block mb-1">Priority</label>
+              <select v-model="form.priority" class="select select-sm select-bordered w-full rounded-md">
+                <option value="low" class="text-[#4CAF50]">Low</option>
+                <option value="medium" class="text-[#FF9800]">Medium</option>
+                <option value="high" class="text-[#F44336]">High</option>
               </select>
            </div>
         </div>

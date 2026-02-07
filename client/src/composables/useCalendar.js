@@ -14,7 +14,29 @@ const activeEvent = ref(null)
 // Google Status
 const isGoogleConnected = ref(false)
 
+// Priority Filters
+const priorityFilters = ref({
+    low: true,
+    medium: true,
+    high: true
+})
+
+// Load filters from localStorage
+const savedFilters = localStorage.getItem('calendar_priority_filters')
+if (savedFilters) {
+    try {
+        priorityFilters.value = JSON.parse(savedFilters)
+    } catch (e) {
+        console.error('Failed to parse saved calendar filters', e)
+    }
+}
+
 export function useCalendar() {
+
+    const togglePriorityFilter = (priority) => {
+        priorityFilters.value[priority] = !priorityFilters.value[priority]
+        localStorage.setItem('calendar_priority_filters', JSON.stringify(priorityFilters.value))
+    }
 
     const checkGoogleStatus = async () => {
         try {
@@ -128,6 +150,8 @@ export function useCalendar() {
         formattedDate,
         weekRange,
         isGoogleConnected,
-        checkGoogleStatus
+        checkGoogleStatus,
+        priorityFilters,
+        togglePriorityFilter
     }
 }

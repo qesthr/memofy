@@ -17,6 +17,14 @@ const selectedRoleId = ref('')
 const expandedCategories = ref({})
 const editingPermissionIds = ref([])
 
+const users = ref([])
+const selectedUserId = ref('')
+
+const isUserMode = computed(() => {
+  const currentRole = roles.value.find(r => (r.id || r._id) === selectedRoleId.value)
+  return currentRole && (currentRole.name === 'secretary' || currentRole.name === 'faculty')
+})
+
 const roleForm = ref({
   name: '',
   label: '',
@@ -76,10 +84,12 @@ const fetchRoles = async () => {
   }
 }
 
-const fetchPermissions = async () => {
+const fetchPermissions = async (roleName = '') => {
   try {
-    const response = await api.get('/permissions')
+    const response = await api.get(`/permissions?role=${roleName}`)
     permissions.value = response.data
+    // Reset expanded states for new categories
+    expandedCategories.value = {}
     Object.keys(permissions.value).forEach(cat => {
       expandedCategories.value[cat] = true
     })
@@ -91,6 +101,9 @@ const fetchPermissions = async () => {
 const selectRole = (role) => {
   if (!role) return
   selectedRoleId.value = role.id || role._id
+  selectedUserId.value = '' // Reset user selection
+  users.value = []
+  
   roleForm.value = {
     name: role.name,
     label: role.label || role.name,
@@ -99,6 +112,43 @@ const selectRole = (role) => {
     department: role.department || ''
   }
   editingPermissionIds.value = [...(role.permission_ids || [])]
+
+  // Fetch filtered permissions for this role
+  fetchPermissions(role.name)
+
+  // If it's a role that supports user-specific overrides, fetch users
+  if (role.name === 'secretary' || role.name === 'faculty') {
+    fetchUsersByRole(role.name)
+  }
+}
+
+const fetchUsersByRole = async (roleName) => {
+  try {
+    const response = await api.get(`/roles/${roleName}/users`)
+    users.value = response.data
+  } catch (error) {
+    console.error('Error fetching users for role:', error)
+  }
+}
+
+const selectUser = (userId) => {
+  selectedUserId.value = userId
+  const user = users.value.find(u => (u.id || u._id) === userId)
+  if (user) {
+    // If user has specific permissions, load them. 
+    // Otherwise, fallback to the current role permissions which are already in editingPermissionIds
+    if (user.permission_ids && user.permission_ids.length > 0) {
+      editingPermissionIds.value = [...user.permission_ids]
+    } else {
+      // Fallback to current role permissions
+      const currentRole = roles.value.find(r => (r.id || r._id) === selectedRoleId.value)
+      editingPermissionIds.value = [...(currentRole?.permission_ids || [])]
+    }
+  }
+}
+
+const handleUserSwitch = (event) => {
+  selectUser(event.target.value)
 }
 
 const handleRoleSwitch = (event) => {
@@ -220,23 +270,44 @@ const updateCurrentRole = async () => {
 
   isLoading.value = true
   try {
-    // 1. Update role details
-    await api.put(`/roles/${selectedRoleId.value}`, {
-      ...roleForm.value,
-      permission_ids: editingPermissionIds.value
-    })
+    if (selectedUserId.value) {
+      // Update User-specific permissions
+      await api.put(`/users/${selectedUserId.value}/permissions`, {
+        permission_ids: editingPermissionIds.value
+      })
 
-    await Swal.fire({
-      icon: 'success',
-      title: 'Role Updated!',
-      text: 'Changes saved successfully',
-      timer: 2000,
-      showConfirmButton: false
-    })
-    
-    await fetchRoles()
+      // Update local user data in the users list
+      const userIndex = users.value.findIndex(u => (u.id || u._id) === selectedUserId.value)
+      if (userIndex !== -1) {
+        users.value[userIndex].permission_ids = [...editingPermissionIds.value]
+      }
+
+      await Swal.fire({
+        icon: 'success',
+        title: 'User Permissions Updated!',
+        text: 'Individual permissions saved successfully',
+        timer: 2000,
+        showConfirmButton: false
+      })
+    } else {
+      // Update role details (standard behavior)
+      await api.put(`/roles/${selectedRoleId.value}`, {
+        ...roleForm.value,
+        permission_ids: editingPermissionIds.value
+      })
+
+      await Swal.fire({
+        icon: 'success',
+        title: 'Role Updated!',
+        text: 'Changes saved successfully',
+        timer: 2000,
+        showConfirmButton: false
+      })
+      
+      await fetchRoles()
+    }
   } catch (error) {
-    console.error('Error updating role:', error)
+    console.error('Error updating permissions:', error)
     Swal.fire({
       icon: 'error',
       title: 'Action Failed',
@@ -303,7 +374,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="view-container">
+  <div class="view-container h-[calc(100vh-140px)] flex flex-col overflow-hidden">
     <!-- Header -->
     <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
       <div>
@@ -324,7 +395,10 @@ onMounted(() => {
           <div class="card-body p-6">
             <h3 class="text-sm font-bold uppercase tracking-wider text-base-content/40 mb-4">Select Role</h3>
             
-            <div class="form-control mb-6">
+            <div class="form-control mb-4">
+              <label class="label">
+                <span class="label-text-alt font-bold text-base-content/40 uppercase">Role</span>
+              </label>
               <select 
                 class="select select-bordered w-full"
                 :value="selectedRoleId"
@@ -341,7 +415,33 @@ onMounted(() => {
               </select>
             </div>
 
-            <div v-if="selectedRoleId" class="space-y-4">
+            <!-- Select User (Only for specific roles) -->
+            <div v-if="isUserMode && users.length > 0" class="form-control mb-6">
+              <label class="label pt-0">
+                <span class="label-text-alt font-bold text-base-content/40 uppercase">Select Individual User</span>
+              </label>
+              <select 
+                class="select select-bordered select-primary w-full"
+                :value="selectedUserId"
+                @change="handleUserSwitch"
+              >
+                <option value="">Apply to all {{ roleForm.label }}s</option>
+                <option 
+                  v-for="user in users" 
+                  :key="user.id || user._id" 
+                  :value="user.id || user._id"
+                >
+                  {{ user.first_name }} {{ user.last_name }} ({{ user.email }})
+                </option>
+              </select>
+              <label class="label">
+                <span class="label-text-alt text-primary font-medium italic">
+                  {{ selectedUserId ? 'Customizing permissions for this user only' : 'Managing default permissions for this role' }}
+                </span>
+              </label>
+            </div>
+
+            <div v-if="selectedRoleId && !selectedUserId" class="space-y-4">
               <div class="form-control">
                 <label class="label">
                   <span class="label-text font-semibold">Display Label</span>
@@ -382,7 +482,7 @@ onMounted(() => {
                 >
                   <Check v-if="!isLoading" :size="18" />
                   <span v-else class="loading loading-spinner loading-sm"></span>
-                  Save Selection
+                  {{ selectedUserId ? 'Save User Permissions' : 'Save Selection' }}
                 </button>
                 <button 
                   v-if="!isDefaultRole(roleForm.name)"
@@ -394,19 +494,6 @@ onMounted(() => {
                 </button>
               </div>
             </div>
-          </div>
-        </div>
-
-        <!-- Help Info -->
-        <div class="card bg-primary/5 border border-primary/10">
-          <div class="card-body p-5">
-            <h4 class="flex items-center gap-2 font-bold text-primary mb-2 text-sm">
-              <ShieldCheck :size="16" />
-              Role Permissions
-            </h4>
-            <p class="text-xs text-base-content/70 leading-relaxed">
-              Updating these permissions will affect all users assigned to this role immediately.
-            </p>
           </div>
         </div>
       </div>
@@ -422,7 +509,7 @@ onMounted(() => {
           <div class="flex items-center justify-between px-2">
             <h2 class="text-lg font-bold flex items-center gap-2">
               <ShieldCheck class="text-primary" :size="20" />
-              System Permissions
+              {{ selectedUserId ? 'Custom User Permissions' : 'System Permissions' }}
             </h2>
             <div class="flex items-center gap-2 text-xs font-semibold text-base-content/40">
               <span>{{ editingPermissionIds.length }} selected</span>

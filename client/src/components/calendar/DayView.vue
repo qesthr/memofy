@@ -45,24 +45,38 @@ const getEventStyle = (event) => {
   const top = (startMinutes / 60) * 60 
   const height = Math.max((duration / 60) * 60, 20) // min 20px
   
-  // Visual distinction for different sources
+  // Visual distinction for different sources and priorities
   let bgColor, borderColor
-  if (event.source === 'MEMO') {
-    bgColor = '#10b981' // green for memos
-    borderColor = '#059669'
-  } else if (event.source === 'GOOGLE') {
+  if (event.source === 'GOOGLE') {
     bgColor = '#4285F4'
     borderColor = '#1a73e8'
   } else {
-    bgColor = '#3b82f6'
-    borderColor = '#1d4ed8'
+    const priority = event.priority || 'medium'
+    switch (priority) {
+      case 'high':
+        bgColor = '#F44336'
+        borderColor = '#D32F2F'
+        break
+      case 'medium':
+        bgColor = '#FF9800'
+        borderColor = '#F57C00'
+        break
+      case 'low':
+        bgColor = '#4CAF50'
+        borderColor = '#388E3C'
+        break
+      default:
+        bgColor = '#3b82f6'
+        borderColor = '#1d4ed8'
+    }
   }
   
   return {
     top: `${top}px`,
     height: `${height}px`,
     backgroundColor: bgColor,
-    borderLeft: `5px solid ${borderColor}`
+    borderLeft: `8px solid ${borderColor}`,
+    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
   }
 }
 
@@ -88,8 +102,8 @@ const allDayEvents = computed(() => {
       <div class="w-20 border-r border-black/20 dark:border-white/20"></div>
       <div class="flex-1 py-6 flex flex-col items-center">
         <span class="text-sm font-bold text-base-content/40 uppercase tracking-widest">{{ currentDay.name }}</span>
-        <div class="w-16 h-16 flex items-center justify-center rounded-full mt-2"
-             :class="{ 'bg-primary text-primary-content font-bold': currentDay.isToday }">
+        <div class="w-16 h-16 flex items-center justify-center rounded-full mt-2 transition-all shadow-lg"
+             :class="{ 'bg-primary text-primary-content font-bold': currentDay.isToday, 'border-4 border-primary text-primary font-bold': !currentDay.isToday }">
           <span class="text-4xl">{{ currentDay.date }}</span>
         </div>
       </div>
@@ -113,7 +127,8 @@ const allDayEvents = computed(() => {
                  })
                }
              }"
-             class="bg-primary/20 text-primary text-xs font-medium px-3 py-1.5 rounded truncate border-l-4 border-primary shadow-sm min-w-[150px] cursor-pointer hover:bg-primary/30 transition-colors">
+             class="text-white text-xs font-bold px-3 py-1.5 rounded truncate shadow-md min-w-[150px] cursor-pointer hover:brightness-110 transition-all"
+             :style="{ backgroundColor: getEventStyle(event).backgroundColor, borderLeft: getEventStyle(event).borderLeft }">
           {{ event.title }}
         </div>
       </div>
