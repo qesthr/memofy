@@ -40,7 +40,16 @@ class SecretaryMemoController extends Controller
         $sort = $request->get('sort', 'desc');
         $date = $request->get('date');
 
-        $query = Memo::with(['sender', 'recipient']);
+        $query = Memo::with(['sender', 'recipient', 'department']);
+        
+        \Illuminate\Support\Facades\Log::info("SecretaryMemo Index Debug", [
+            'user' => $user->id,
+            'scope' => $scope,
+            'search' => $search,
+            'department' => $department,
+            'priority' => $priority,
+            'date' => $date
+        ]);
 
         switch ($scope) {
             case 'sent':
@@ -58,27 +67,39 @@ class SecretaryMemoController extends Controller
 
             case 'drafts':
                 // Draft memos
-                $query->where('sender_id', $user->id)
-                      ->where('is_draft', true);
+                $query->where('created_by', (string)$user->id)
+                      ->whereIn('is_draft', [true, 1]);
                 // For drafts, we might want to load the recipients too
                 // But since recipients is not a standard Eloquent relation for eager loading easily in MongoDB like this, 
                 // we'll handle it in the response or just let the frontend handle it if common users are already fetched.
                 break;
 
             default:
-                // Received: memos sent to users in secretary's department
-                $recipientIds = User::where('department_id', $user->department_id)
-                                   ->where('id', '!=', $user->id)
-                                   ->pluck('id')
-                                   ->toArray();
-                    
-                // Also include memos sent directly to the secretary
-                $recipientIds[] = $user->id;
-                    
-                $query->whereIn('recipient_id', $recipientIds)
-                      ->where('is_draft', false)
-                      ->where('status', '!=', 'pending_approval');
-                break;
+            // RECEIVED: Memos sent to users in secretary's department
+            $recipientIds = User::where('department_id', $user->department_id)
+                               ->where('id', '!=', $user->id)
+                               ->pluck('id')
+                               ->toArray();
+                
+            // Also include memos sent directly to the secretary
+            $recipientIds[] = $user->id;
+                
+            $query->where(function ($q) use ($user, $recipientIds) {
+                // Received memos
+                $q->whereIn('recipient_id', $recipientIds)
+                  ->where('is_draft', false)
+                  ->where('status', '!=', 'pending_approval');
+                  
+                // OR Memos sent/created by this secretary that are drafts or pending approval
+                $q->orWhere(function ($sq) use ($user) {
+                    $sq->where('created_by', (string)$user->id)
+                       ->where(function ($ssq) {
+                           $ssq->whereIn('is_draft', [true, 1])
+                               ->orWhere('status', 'pending_approval');
+                       });
+                });
+            });
+            break;
         }
 
         // Apply filters
@@ -93,10 +114,16 @@ class SecretaryMemoController extends Controller
             });
         }
 
-        if ($department) {
-            $query->whereHas('sender', function ($q) use ($department) {
-                $q->where('department_id', $department);
-            });
+        if ($department && $department !== 'All Departments') {
+            // Check if $department is an ID (MongoID or similar) or a name
+            if (preg_match('/^[0-9a-fA-F]{24}$/', $department)) {
+                $query->where('department_id', $department);
+            } else {
+                // Filter by department name via relationship
+                $query->whereHas('department', function ($q) use ($department) {
+                    $q->where('name', $department);
+                });
+            }
         }
 
         if ($priority) {
@@ -111,6 +138,11 @@ class SecretaryMemoController extends Controller
         $query->orderBy('created_at', $sort);
 
         $memos = $query->paginate($perPage, ['*'], 'page', $page);
+        
+        \Illuminate\Support\Facades\Log::info("SecretaryMemo Result Debug", [
+            'count' => $memos->count(),
+            'total' => $memos->total()
+        ]);
 
         return response()->json($memos);
     }

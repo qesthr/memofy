@@ -63,7 +63,7 @@ const closeModal = () => {
 
 <template>
   <Teleport to="body">
-    <div v-if="isOpen" class="modal modal-open items-center justify-center z-[100]">
+    <div v-if="isOpen" class="modal modal-open z-100 items-center justify-center">
     <div class="modal-box max-w-2xl w-full rounded-xl bg-base-100 shadow-2xl border border-base-300 p-0 overflow-hidden">
       <!-- Header -->
       <div class="bg-primary px-6 py-4 flex items-center justify-between text-primary-content">

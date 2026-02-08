@@ -225,7 +225,6 @@ const getPriorityClass = (priority) => {
 
 const tabs = [
   { key: 'all', label: 'All Memos' },
-  { key: 'pending', label: 'Pending Approvals', icon: 'clock' },
   { key: 'sent', label: 'Sent' },
   { key: 'drafts', label: 'Drafts' }
 ]
@@ -267,14 +266,15 @@ onMounted(() => {
       <div 
         v-for="(count, key) in stats" 
         :key="key"
+        v-show="key !== 'pending'"
         @click="activeTab = key === 'all' ? '' : key"
-        class="card bg-base-100 border border-base-200 cursor-pointer hover:border-primary/50 transition-all"
+        class="card bg-base-100 border border-base-200 cursor-pointer hover:border-primary/50 transition-all font-inter"
         :class="{ 'border-primary ring-2 ring-primary/20': activeTab === (key === 'all' ? '' : key) }"
       >
         <div class="card-body p-4">
           <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider opacity-60">{{ key }}</span>
-            <span class="badge badge-primary badge-sm">{{ count }}</span>
+            <span class="text-[10px] font-black uppercase tracking-[0.2em] opacity-50">{{ key }}</span>
+            <span class="badge badge-primary badge-sm font-black">{{ count }}</span>
           </div>
         </div>
       </div>

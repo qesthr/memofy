@@ -45,10 +45,12 @@ const fileInput = ref(null)
 const isUploading = ref(false)
 const isSaving = ref(false)
 const lastSaved = ref(null)
+const recipientSearch = ref('') // Search input for recipients
 
 // Auto-save timer
-let autoSaveTimer = null
-const AUTO_SAVE_INTERVAL = 30000 // 30 seconds
+// let autoSaveTimer = null
+// const AUTO_SAVE_INTERVAL = 30000 // 30 seconds
+// Auto-save logic removed as per user request
 
 const priorities = [
   { label: 'Low', color: 'bg-info' },
@@ -112,11 +114,12 @@ const fetchSignatures = async () => {
 }
 
 const filteredUsers = computed(() => {
-  if (!formData.value.to) return []
-  const search = formData.value.to.toLowerCase()
+  if (!recipientSearch.value) return []
+  const search = recipientSearch.value.toLowerCase()
   return users.value.filter(u => 
-    `${u.first_name} ${u.last_name}`.toLowerCase().includes(search) ||
-    u.email.toLowerCase().includes(search)
+    (`${u.first_name} ${u.last_name}`.toLowerCase().includes(search) ||
+    u.email.toLowerCase().includes(search)) &&
+    !formData.value.recipientIds.includes(u.id) // Exclude already selected
   ).slice(0, 10) // Limit to 10 results
 })
 
@@ -132,8 +135,7 @@ const selectUser = (selectedUser) => {
     formData.value.recipientIds.push(selectedUser.id)
     formData.value.selectedRecipients.push(selectedUser)
   }
-  formData.value.to = ''
-  formData.value.recipientType = 'individual'
+  recipientSearch.value = ''
   showUserSuggestions.value = false
 }
 
@@ -145,8 +147,9 @@ const removeRecipient = (userId) => {
 const selectDepartment = (dept) => {
   formData.value.department = dept.name
   formData.value.departmentId = dept.id
-  formData.value.to = `Department: ${dept.name}`
-  formData.value.recipientType = 'department'
+  // Clear individual recipients when department is selected
+  formData.value.recipientIds = []
+  formData.value.selectedRecipients = []
 }
 
 const handleFileUpload = async (event) => {
@@ -268,8 +271,8 @@ const handleSend = async () => {
     }
 
     const payload = {
-      recipient_ids: formData.value.recipientType === 'individual' ? formData.value.recipientIds : [],
-      department_id: formData.value.recipientType === 'department' ? formData.value.departmentId : null,
+      recipient_ids: formData.value.recipientIds.length > 0 ? formData.value.recipientIds : [],
+      department_id: formData.value.departmentId || null,
       subject: formData.value.subject,
       message: formData.value.content,
       priority: priorityMap[formData.value.priority] || 'normal',
@@ -329,8 +332,8 @@ const saveAsDraft = async () => {
     }
 
     const payload = {
-      recipient_ids: formData.value.recipientType === 'individual' ? formData.value.recipientIds : [],
-      department_id: formData.value.recipientType === 'department' ? formData.value.departmentId : null,
+      recipient_ids: formData.value.recipientIds.length > 0 ? formData.value.recipientIds : [],
+      department_id: formData.value.departmentId || null,
       subject: formData.value.subject || 'Untitled Draft',
       message: formData.value.content || '',
       priority: priorityMap[formData.value.priority] || 'normal',
@@ -385,15 +388,12 @@ const resetForm = () => {
     attachments: [],
     draftId: null
   }
+  recipientSearch.value = ''
   scheduleData.value = null
   lastSaved.value = null
 }
 
 const closeModal = () => {
-  // Auto-save before closing if there's content
-  if (formData.value.subject || formData.value.content) {
-    saveAsDraft()
-  }
   emit('close')
 }
 
@@ -402,27 +402,12 @@ const handleScheduleSave = (schedule) => {
   showScheduleModal.value = false
 }
 
-// Auto-save functionality
-const startAutoSave = () => {
-  autoSaveTimer = setInterval(() => {
-    if (formData.value.subject || formData.value.content) {
-      saveAsDraft()
-    }
-  }, AUTO_SAVE_INTERVAL)
-}
-
-const stopAutoSave = () => {
-  if (autoSaveTimer) {
-    clearInterval(autoSaveTimer)
-    autoSaveTimer = null
-  }
-}
+// startAutoSave and stopAutoSave functions removed
 
 onMounted(() => {
   fetchUsers()
   fetchDepartments()
   fetchSignatures()
-  startAutoSave()
 
   // Auto-populate department for secretaries
   const roleName = (user.value?.role && typeof user.value.role === 'object') ? user.value.role.name : user.value?.role
@@ -432,20 +417,45 @@ onMounted(() => {
   }
 })
 
-onUnmounted(() => {
-  stopAutoSave()
-})
+// stopAutoSave removed
 
 watch(() => props.initialData, (newVal) => {
   if (newVal) {
+    const data = { ...newVal }
+    
+    // Normalize recipient data
+    if (data.recipient_ids && Array.isArray(data.recipient_ids)) {
+      data.recipientIds = [...data.recipient_ids]
+    } else if (data.recipient_id) {
+      data.recipientIds = [data.recipient_id]
+    } else {
+      data.recipientIds = data.recipientIds || []
+    }
+
+    // Populate selectedRecipients from users list if possible
+    if (data.recipientIds.length > 0 && users.value.length > 0) {
+      data.selectedRecipients = users.value.filter(u => data.recipientIds.includes(u.id))
+    }
+
+    // Handle other fields from backend
+    if (data.id) data.draftId = data.id
+    if (data.message) data.content = data.message
+    
     formData.value = {
       ...formData.value,
-      ...newVal
+      ...data
     }
   }
 }, { immediate: true })
 
-watch(() => formData.value.to, (newVal) => {
+// Also watch users to populate selectedRecipients once users are loaded
+watch(users, (newUsers) => {
+  if (newUsers.length > 0 && formData.value.recipientIds.length > 0 && formData.value.selectedRecipients.length === 0) {
+    formData.value.selectedRecipients = newUsers.filter(u => formData.value.recipientIds.includes(u.id))
+  }
+})
+
+watch(() => recipientSearch.value, (newVal) => {
   if (newVal && filteredUsers.value.length > 0) {
     showUserSuggestions.value = true
   } else {
@@ -469,7 +479,6 @@ watch(() => formData.value.to, (newVal) => {
           <X :size="20" />
         </button>
       </div>
-
       <!-- Fixed Metadata Section (Not Scrollable) -->
       <div class="px-10 pt-8 pb-4 space-y-6 shrink-0 bg-base-100">
         <!-- To Field (Inline) -->
@@ -485,21 +494,21 @@ watch(() => formData.value.to, (newVal) => {
             </div>
 
             <input 
-              v-model="formData.to"
+              v-model="recipientSearch"
               @focus="showUserSuggestions = true"
               type="text" 
               placeholder="Add recipient..." 
               class="input input-ghost focus:bg-transparent border-transparent focus:border-transparent focus:outline-none p-0 text-base flex-1 min-w-[150px] placeholder:text-base-content/20 font-medium"
             />
             <!-- Autocomplete Suggestion -->
-            <div v-if="showUserSuggestions && filteredUsers.length > 0" class="absolute left-0 top-full mt-2 w-full bg-base-100 shadow-2xl border border-base-300 rounded-xl z-[60] overflow-hidden">
+            <div v-if="showUserSuggestions && filteredUsers.length > 0" class="absolute left-0 top-full mt-2 w-full bg-base-100 shadow-2xl border border-base-300 rounded-xl z-60 overflow-hidden">
               <ul class="menu p-1">
                 <li v-for="user in filteredUsers" :key="user.id">
                   <button @click="selectUser(user)" class="flex items-center gap-3 py-3 px-4 hover:bg-base-200 rounded-lg transition-colors">
                     <div class="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs uppercase">
                       {{ user.first_name[0] }}{{ user.last_name[0] }}
                     </div>
-                    <div class="flex flex-col items-start translate-y-[-1px]">
+                    <div class="flex flex-col items-start -translate-y-px">
                       <span class="font-bold text-sm">{{ user.first_name }} {{ user.last_name }}</span>
                       <span class="text-[10px] opacity-40 leading-none">{{ user.email }}</span>
                     </div>
@@ -664,30 +673,29 @@ watch(() => formData.value.to, (newVal) => {
     />
 
     <!-- Preview Modal -->
-    <div v-if="showPreviewModal" class="modal modal-open z-[100]">
+    <div v-if="showPreviewModal" class="modal modal-open z-100">
       <div class="modal-box max-w-2xl bg-white p-12 rounded-none shadow-2xl flex flex-col gap-8 relative">
         <button @click="showPreviewModal = false" class="absolute top-4 right-4 btn btn-ghost btn-circle btn-sm"><X :size="20" /></button>
         
         <!-- Memo Header -->
-        <div class="border-b-4 border-primary pb-4 flex justify-between items-end">
-          <h2 class="text-4xl font-black tracking-tighter text-primary italic">MEMO</h2>
+        <div class="border-b-[1px] border-black pb-2 flex justify-between items-end">
+          <h2 class="text-2xl font-black tracking-widest text-black">MEMO</h2>
           <div class="text-right">
-            <p class="text-[10px] font-bold uppercase tracking-[0.3em] opacity-40">BukSU Memofy Official</p>
-            <p class="text-xs font-black">{{ new Date().toLocaleDateString() }}</p>
+            <p class="text-[9px] font-bold uppercase tracking-[0.2em] text-black/60">BukSU Memofy Official</p>
+            <p class="text-[11px] font-black text-black">{{ new Date().toLocaleDateString() }}</p>
           </div>
         </div>
 
         <!-- Memo Meta -->
-        <div class="space-y-2">
-          <div class="flex gap-4">
-            <span class="w-16 font-black text-[10px] uppercase opacity-40">TO:</span> 
-            <span class="font-bold underline uppercase flex flex-wrap gap-x-2">
+        <div class="space-y-3 text-black">
+          <div class="flex gap-4"><span class="w-20 font-bold text-[10px] uppercase text-black/60">TO:</span> 
+            <span class="font-black underline uppercase flex flex-wrap gap-x-2 text-sm">
               <template v-if="formData.selectedRecipients.length > 0">
                 <span v-for="(r, i) in formData.selectedRecipients" :key="r.id">
                   {{ r.first_name }} {{ r.last_name }}{{ i < formData.selectedRecipients.length - 1 ? ',' : '' }}
                 </span>
               </template>
-              <template v-else-if="formData.recipientType === 'department'">
+              <template v-else-if="formData.departmentId">
                 {{ formData.department }}
               </template>
               <template v-else>
@@ -695,36 +703,36 @@ watch(() => formData.value.to, (newVal) => {
               </template>
             </span>
           </div>
-          <div class="flex gap-4"><span class="w-16 font-black text-[10px] uppercase opacity-40">FROM:</span> <span class="font-bold uppercase">ADMIN / {{ formData.department }}</span></div>
-          <div class="flex gap-4"><span class="w-16 font-black text-[10px] uppercase opacity-40">SUBJECT:</span> <span class="font-bold uppercase">{{ formData.subject || '(NO SUBJECT)' }}</span></div>
+          <div class="flex gap-4"><span class="w-20 font-bold text-[10px] uppercase text-black/60">FROM:</span> <span class="font-black uppercase text-sm">ADMIN / {{ formData.department }}</span></div>
+          <div class="flex gap-4"><span class="w-20 font-bold text-[10px] uppercase text-black/60">SUBJECT:</span> <span class="font-black uppercase text-sm">{{ formData.subject || 'UNTITLED MEMO' }}</span></div>
         </div>
 
         <!-- Memo Content -->
-        <div class="py-10 text-sm leading-relaxed min-h-[200px] whitespace-pre-wrap font-medium">
-          {{ formData.content || 'No content provided...' }}
+        <div class="py-10 text-[15px] leading-relaxed min-h-[300px] whitespace-pre-wrap font-bold text-black border-y border-black/5">
+          {{ formData.content || 'Write your memo content here...' }}
         </div>
 
         <!-- Attachments Preview -->
-        <div v-if="formData.attachments.length > 0" class="border-t border-base-200 pt-4">
-          <p class="text-[10px] font-bold uppercase opacity-40 mb-2">Attachments:</p>
+        <div v-if="formData.attachments.length > 0" class="border-t border-black/10 pt-4">
+          <p class="text-[9px] font-bold uppercase opacity-60 mb-2">Attachments:</p>
           <div class="flex flex-wrap gap-2">
-            <div v-for="attachment in formData.attachments" :key="attachment.id" class="flex items-center gap-2 bg-base-100 px-3 py-2 rounded">
-              <Paperclip :size="12" class="opacity-60" />
-              <span class="text-xs">{{ attachment.name }}</span>
+            <div v-for="attachment in formData.attachments" :key="attachment.id" class="flex items-center gap-2 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-sm">
+              <Paperclip :size="10" class="opacity-60" />
+              <span class="text-[10px]">{{ attachment.name }}</span>
             </div>
           </div>
         </div>
 
         <!-- Signature Space -->
-        <div class="mt-auto pt-10 flex flex-col items-end">
-          <div class="w-48 h-20 border-b border-black flex items-center justify-center p-2">
-            <span class="text-[10px] opacity-20 font-black italic">SIGNATURE HERE</span>
+        <div class="mt-auto pt-10 flex flex-col items-end text-black">
+          <div class="w-48 h-20 border-b-2 border-black flex items-center justify-center p-2">
+            <span class="text-[10px] text-black/30 font-black italic">SIGNATURE HERE</span>
           </div>
-          <p class="text-[10px] font-black uppercase tracking-widest mt-2">{{ formData.signature }}</p>
-          <p class="text-[8px] font-bold opacity-40">{{ formData.department }}</p>
+          <p class="text-[11px] font-black uppercase tracking-widest mt-2">{{ formData.signature }}</p>
+          <p class="text-[9px] font-bold text-black/60">{{ formData.department }}</p>
         </div>
 
-        <button @click="showPreviewModal = false" class="btn btn-primary btn-block text-white rounded-xl font-black uppercase tracking-widest text-xs mt-8">Back to Edit</button>
+        <button @click="showPreviewModal = false" class="btn btn-neutral btn-outline btn-block rounded-lg font-bold uppercase tracking-widest text-[10px] mt-8">Back to Edit</button>
       </div>
       <div class="modal-backdrop bg-black/40 backdrop-blur-sm" @click="showPreviewModal = false"></div>
     </div>

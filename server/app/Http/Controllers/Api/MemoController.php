@@ -29,8 +29,15 @@ class MemoController extends Controller
         } elseif ($request->scope === 'drafts') {
             $query->where('created_by', $user->id)->where('is_draft', true);
         } else {
-            // Default: Received
-            $query->where('recipient_id', $user->id)->where('is_draft', false);
+            // Default: All (Received + Sent + Drafts)
+            $query->where(function ($q) use ($user) {
+                // Received
+                $q->where('recipient_id', $user->id)
+                  ->where('is_draft', false);
+                
+                // Sent + Drafts
+                $q->orWhere('sender_id', $user->id);
+            });
         }
 
         // Search

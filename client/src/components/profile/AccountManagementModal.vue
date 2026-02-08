@@ -92,7 +92,7 @@ const close = () => {
 
 <template>
   <Teleport to="body">
-    <div v-if="isOpen" class="modal modal-open z-[100]">
+    <div v-if="isOpen" class="modal modal-open z-100">
       <div class="modal-box max-w-2xl p-0 overflow-hidden">
         <!-- Header -->
         <div class="p-6 border-b border-base-200 flex items-center justify-between">

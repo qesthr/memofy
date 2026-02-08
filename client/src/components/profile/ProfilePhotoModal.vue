@@ -122,7 +122,7 @@ onUnmounted(() => {
 
 <template>
   <Teleport to="body">
-    <div v-if="isOpen" class="modal modal-open z-[100]">
+    <div v-if="isOpen" class="modal modal-open z-100 items-center justify-center">
       <div class="modal-box max-w-md p-0 overflow-hidden">
         <div class="p-6 border-b border-base-200 flex items-center justify-between">
           <h3 class="font-bold text-lg">Update Profile Photo</h3>
@@ -135,7 +135,7 @@ onUnmounted(() => {
             <div class="avatar">
               <div class="w-32 h-32 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2">
                 <img v-if="user?.profile_picture" :src="user.profile_picture" alt="Profile" />
-                <div v-else class="bg-base-300 w-full h-full flex items-center justify-center text-4xl font-bold opacity-30">
+                <div v-else class="w-full h-full flex items-center justify-center text-4xl font-bold opacity-30 bg-base-300 shrink-0">
                   {{ user?.first_name?.[0] }}{{ user?.last_name?.[0] }}
                 </div>
               </div>

@@ -12,20 +12,6 @@ const stats = ref([
     bgColor: 'bg-primary/10'
   },
   {
-    title: 'Pending',
-    value: '0',
-    icon: Hourglass,
-    color: 'text-secondary',
-    bgColor: 'bg-secondary/10'
-  },
-  {
-    title: 'Overdue Memos',
-    value: '0',
-    icon: AlertCircle,
-    color: 'text-error',
-    bgColor: 'bg-error/10'
-  },
-  {
     title: 'Active Users',
     value: '0',
     icon: Users,
@@ -76,15 +62,10 @@ const fetchDashboardData = async () => {
     const response = await api.get('/admin/dashboard-stats')
     const data = response.data.stats
     
-    // Update values while keeping icons and colors
     // 0: Total Memos
     stats.value[0].value = data.total_memos || 0
-    // 1: Pending
-    stats.value[1].value = data.pending_memos || 0
-    // 2: Overdue Memos (Not implemented in backend yet)
-    stats.value[2].value = 0 
-    // 3: Active Users
-    stats.value[3].value = data.active_users || 0
+    // 1: Active Users
+    stats.value[1].value = data.active_users || 0
 
   } catch (error) {
     console.error('Error fetching dashboard data:', error)

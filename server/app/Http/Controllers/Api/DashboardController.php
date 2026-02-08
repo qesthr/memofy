@@ -27,15 +27,16 @@ class DashboardController extends Controller
         }
 
         if ($user->hasPermissionTo('memo.view_all')) {
-            $stats['total_memos'] = Memo::count();
-            $stats['pending_memos'] = Memo::where('status', 'draft')->count();
+            $stats['total_memos'] = Memo::where('is_draft', false)->count();
+            $stats['pending_memos'] = Memo::where('status', 'pending_approval')->count();
         } else if ($user->hasPermissionTo('memo.view')) {
-            // For general view, count memos where they are sender or recipient or department-wide if authorized
-            $stats['total_memos'] = Memo::where(function($q) use ($user) {
-                $q->where('sender_id', $user->id)
-                  ->orWhere('recipient_id', $user->id);
-            })->count();
-            $stats['pending_memos'] = Memo::where('sender_id', $user->id)->where('status', 'draft')->count();
+            // For general view, count memos where they are recipient
+            $stats['total_memos'] = Memo::where('recipient_id', $user->id)
+                                        ->where('is_draft', false)
+                                        ->count();
+            $stats['pending_memos'] = Memo::where('sender_id', $user->id)
+                                          ->where('status', 'pending_approval')
+                                          ->count();
         }
 
         // 2. Recent Activities (Global for admin, or filtered)
@@ -83,9 +84,23 @@ class DashboardController extends Controller
             // Sync global stats for secretary view if needed
             $stats['pending_memos'] = $userStats['pending_memos'];
         } else {
+            // Admin or other roles
             $userStats = [
-                'sent_memos' => Memo::where('sender_id', $user->id)->count(),
-                'received_memos' => Memo::where('recipient_id', $user->id)->count(),
+                'sent_memos' => Memo::where('sender_id', $user->id)
+                                    ->where('is_draft', false)
+                                    ->count(),
+                'received_memos' => Memo::where('recipient_id', $user->id)
+                                        ->where('is_draft', false)
+                                        ->count(),
+                'draft_memos' => Memo::where('sender_id', $user->id)
+                                      ->where('is_draft', true)
+                                      ->count(),
+                'all_memos' => Memo::where(function($q) use ($user) {
+                                        $q->where('sender_id', $user->id)
+                                          ->orWhere('recipient_id', $user->id);
+                                    })
+                                    ->where('is_draft', false)
+                                    ->count()
             ];
         }
 

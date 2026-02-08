@@ -11,7 +11,7 @@ const departmentFilter = ref('All Departments')
 const priorityFilter = ref('All Priorities')
 const sortFilter = ref('Newest')
 const dateFilter = ref('')
-const activeTab = ref('received') // received, sent, pending, drafts
+const activeTab = ref('all') // all, sent, pending, drafts
 const searchQuery = ref('')
 
 // Additional data
@@ -49,7 +49,7 @@ const fetchMemos = async () => {
   try {
     loading.value = true
     const params = {
-      scope: activeTab.value === 'received' ? '' : activeTab.value,
+      scope: activeTab.value === 'all' ? '' : activeTab.value,
       page: pagination.value.current_page,
       per_page: pagination.value.per_page,
       search: searchQuery.value || undefined,
@@ -116,6 +116,16 @@ const fetchDepartments = async () => {
 const handleTemplateApply = (data) => {
   templateData.value = data
   showCustomizeModal.value = false
+  showComposeModal.value = true
+}
+
+const editMemo = (memo) => {
+  templateData.value = {
+    ...memo,
+    recipientIds: memo.recipient_ids || (memo.recipient_id ? [memo.recipient_id] : []),
+    draftId: memo.id,
+    content: memo.message
+  }
   showComposeModal.value = true
 }
 
@@ -218,7 +228,7 @@ const getStatusIcon = (status) => {
 }
 
 const tabs = [
-  { key: 'received', label: 'Received', icon: 'inbox' },
+  { key: 'all', label: 'All Memos', icon: 'inbox' },
   { key: 'sent', label: 'Sent', icon: 'send' },
   { key: 'pending', label: 'Pending Approval', icon: 'clock' },
   { key: 'drafts', label: 'Drafts', icon: 'file' }
@@ -249,19 +259,18 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Stats Cards -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
       <div 
         v-for="(count, key) in stats" 
         :key="key"
-        @click="activeTab = key === 'received' ? '' : key"
-        class="card bg-base-100 border border-base-200 cursor-pointer hover:border-primary/50 transition-all"
-        :class="{ 'border-primary ring-2 ring-primary/20': activeTab === (key === 'received' ? '' : key) }"
+        @click="activeTab = key === 'received' ? 'all' : key"
+        class="card bg-base-100 border border-base-200 cursor-pointer hover:border-primary/50 transition-all font-inter"
+        :class="{ 'border-primary ring-2 ring-primary/20': activeTab === (key === 'received' ? 'all' : key) }"
       >
         <div class="card-body p-4">
           <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider opacity-60">{{ key === 'received' ? 'Received' : key }}</span>
-            <span class="badge badge-primary badge-sm">{{ count }}</span>
+            <span class="text-[10px] font-black uppercase tracking-[0.2em] opacity-50">{{ key === 'received' ? 'all' : key }}</span>
+            <span class="badge badge-primary badge-sm font-black">{{ count }}</span>
           </div>
         </div>
       </div>
@@ -272,9 +281,9 @@ onMounted(() => {
       <button 
         v-for="tab in tabs" 
         :key="tab.key"
-        @click="activeTab = tab.key === 'received' ? '' : tab.key"
-        class="tab font-bold text-xs uppercase tracking-wider"
-        :class="{ 'tab-active bg-primary text-white': activeTab === (tab.key === 'received' ? '' : tab.key) }"
+        @click="activeTab = tab.key"
+        class="tab font-black text-[10px] uppercase tracking-widest"
+        :class="{ 'tab-active bg-primary text-white': activeTab === tab.key }"
       >
         {{ tab.label }}
       </button>
@@ -408,7 +417,10 @@ onMounted(() => {
                   From: {{ memo.sender.first_name }} {{ memo.sender.last_name }}
                 </span>
                 <span>{{ formatDate(memo.created_at) }}</span>
-                <span v-if="memo.status === 'pending'" class="text-warning flex items-center gap-1">
+                <span v-if="memo.is_draft" class="text-gray-400 flex items-center gap-1">
+                  <Eye :size="12" /> Draft
+                </span>
+                <span v-else-if="memo.status === 'pending_approval' || memo.status === 'pending'" class="text-warning flex items-center gap-1">
                   <Clock :size="12" /> Pending Approval
                 </span>
               </div>
@@ -416,6 +428,13 @@ onMounted(() => {
 
             <!-- Actions -->
             <div class="flex items-center gap-2">
+              <button 
+                v-if="memo.is_draft"
+                @click.stop="editMemo(memo)"
+                class="btn btn-sm btn-primary btn-outline"
+              >
+                Edit Draft
+              </button>
               <button 
                 v-if="activeTab === 'received' && memo.status === 'sent'"
                 @click.stop="acknowledgeMemo(memo.id)"

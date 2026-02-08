@@ -549,7 +549,7 @@ onUnmounted(() => {
               <td class="py-4 pl-6">
                 <div class="flex items-center gap-3">
                   <div class="avatar">
-                    <div class="bg-primary text-primary-content rounded-full w-10 overflow-hidden flex items-center justify-center">
+                    <div class="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs uppercase shrink-0">
                       <img v-if="user.profile_picture" :src="user.profile_picture" :alt="user.name" class="w-full h-full object-cover" />
                       <span v-else class="text-xs">{{ user.name?.charAt(0) }}</span>
                     </div>
@@ -596,7 +596,7 @@ onUnmounted(() => {
                       class="absolute z-50 bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-64 bg-gray-900 text-white text-xs rounded-lg shadow-lg p-3"
                     >
                       <div class="flex items-start gap-2">
-                        <Lock class="text-yellow-400 mt-0.5 flex-shrink-0" :size="14" />
+                        <Lock class="text-yellow-400 mt-0.5 shrink-0" :size="14" />
                         <div>
                           <p class="font-semibold mb-1">Currently Being Edited</p>
                           <p class="text-gray-300">By: {{ getLockInfo(user.id)?.locked_by?.name || 'Unknown' }}</p>
