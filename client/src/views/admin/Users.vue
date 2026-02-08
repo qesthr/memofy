@@ -548,9 +548,10 @@ onUnmounted(() => {
             <tr v-for="user in users" :key="user.id" class="hover:bg-slate-50/50 border-b border-base-100 last:border-0 relative">
               <td class="py-4 pl-6">
                 <div class="flex items-center gap-3">
-                  <div class="avatar placeholder">
-                    <div class="bg-primary text-primary-content rounded-full w-10">
-                      <span class="text-xs">{{ user.name?.charAt(0) }}</span>
+                  <div class="avatar">
+                    <div class="bg-primary text-primary-content rounded-full w-10 overflow-hidden flex items-center justify-center">
+                      <img v-if="user.profile_picture" :src="user.profile_picture" :alt="user.name" class="w-full h-full object-cover" />
+                      <span v-else class="text-xs">{{ user.name?.charAt(0) }}</span>
                     </div>
                   </div>
                   <div>

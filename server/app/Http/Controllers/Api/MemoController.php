@@ -253,8 +253,8 @@ class MemoController extends Controller
             return response()->json(['message' => 'Unauthorized action.'], 403);
         }
 
-        // Ownership or Admin
-        if ($memo->created_by !== $user->id && $user->role !== 'admin') {
+        // Ownership or Admin or Recipient
+        if ($memo->created_by !== $user->id && $memo->recipient_id !== $user->id && $user->role !== 'admin') {
             return response()->json(['message' => 'Unauthorized to delete this memo.'], 403);
         }
 

@@ -526,14 +526,70 @@ class AuthController extends Controller
     public function updateMe(Request $request)
     {
         $user = $request->user();
-        $user->update($request->only(['first_name', 'last_name']));
+        $user->update($request->only(['first_name', 'last_name', 'bio']));
         return response()->json(['success' => true, 'user' => $user]);
     }
 
     public function uploadMyProfilePicture(Request $request)
     {
-        // Placeholder for future logic
-        return response()->json(['success' => true, 'message' => 'Profile picture upload logic placeholder']);
+        $request->validate([
+            'image' => 'required|string' // We expect base64 from Croppie
+        ]);
+
+        try {
+            $user = $request->user();
+            $imageData = $request->image;
+            
+            // Validate it's a valid data URL
+            if (!preg_match('/^data:image\/(\w+);base64,/', $imageData)) {
+                throw new \Exception('Invalid image data format. Please provide a base64 data URL.');
+            }
+
+            // Directly store the base64 string in the database
+            $user->profile_picture = $imageData;
+            $user->save();
+
+            $this->activityLogger->logUserAction($user, 'upload_profile_picture', "Updated profile picture (stored as base64)", $this->activityLogger->extractRequestInfo($request));
+
+            return response()->json([
+                'success' => true, 
+                'message' => 'Profile picture updated successfully',
+                'user' => $user
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to upload profile picture: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function updatePassword(Request $request)
+    {
+        $request->validate([
+            'current_password' => 'required',
+            'new_password' => 'required|min:8|confirmed',
+        ]);
+
+        $user = $request->user();
+
+        if (!Hash::check($request->current_password, $user->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'The current password you provided is incorrect.'
+            ], 422);
+        }
+
+        $user->update([
+            'password' => Hash::make($request->new_password)
+        ]);
+
+        $this->activityLogger->logAuthAction($user, 'password_change', 'User changed their password', $this->activityLogger->extractRequestInfo($request));
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Password updated successfully'
+        ]);
     }
 
     private function renderPopupHtml($data)

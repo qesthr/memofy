@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\LockController;
 use App\Http\Controllers\Api\ArchiveController;
 use App\Http\Controllers\Api\SecretaryMemoController;
 use App\Http\Controllers\Api\AdminMemoController;
+use App\Http\Controllers\Api\NotificationController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -68,6 +69,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::put('/me', [AuthController::class, 'updateMe']);
     Route::put('/me/theme', [AuthController::class, 'updateTheme']);
     Route::post('/me/profile-picture', [AuthController::class, 'uploadMyProfilePicture']);
+    Route::put('/me/password', [AuthController::class, 'updatePassword']);
 
     // Dashboard (Higher rate limit)
     Route::middleware('throttle:dashboard')->group(function () {
@@ -130,6 +132,10 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::get('/stats', [SecretaryMemoController::class, 'stats']);
         Route::post('/submit-for-approval', [SecretaryMemoController::class, 'submitForApproval']);
         Route::post('/draft', [SecretaryMemoController::class, 'storeDraft']);
+        Route::put('/{memo}', [SecretaryMemoController::class, 'update']);
+        Route::delete('/{memo}', [SecretaryMemoController::class, 'destroy']);
+        Route::delete('/bulk-delete', [SecretaryMemoController::class, 'bulkDestroy']);
+        Route::post('/bulk-submit', [SecretaryMemoController::class, 'bulkSubmitForApproval']);
         Route::get('/{memo}/acknowledgments', [SecretaryMemoController::class, 'acknowledgmentStatus']);
     });
 
@@ -138,6 +144,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::get('/pending-approvals', [AdminMemoController::class, 'pendingApprovals']);
         Route::post('/{id}/approve', [AdminMemoController::class, 'approve']);
         Route::post('/{id}/reject', [AdminMemoController::class, 'reject']);
+        Route::post('/{id}/send-reminder', [AdminMemoController::class, 'sendReminder']);
         Route::get('/{id}/acknowledgments', [AdminMemoController::class, 'acknowledgmentStats']);
     });
 
@@ -186,7 +193,33 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     
     // File Uploads
     Route::post('/upload', [FileController::class, 'upload']);
-    Route::get('/download/{path}', [FileController::class, 'download'])->where('path', '.*');
+    Route::get('/download/{path}', [FileController::class, 'download'])->where('path', '.*')->name('api.files.download');
+    Route::delete('/files/{path}', [FileController::class, 'delete'])->where('path', '.*');
+
+    // Notification Routes
+    Route::prefix('notifications')->middleware('auth:sanctum')->group(function () {
+        // Get notifications
+        Route::get('/', [NotificationController::class, 'index']);
+        
+        // Get unread count
+        Route::get('/unread-count', [NotificationController::class, 'unreadCount']);
+        
+        // Mark single notification as read
+        Route::post('/{id}/read', [NotificationController::class, 'markAsRead']);
+        
+        // Mark all notifications as read
+        Route::post('/mark-all-read', [NotificationController::class, 'markAllAsRead']);
+        
+        // Delete notification
+        Route::delete('/{id}', [NotificationController::class, 'destroy']);
+        
+        // Preferences
+        Route::get('/preferences', [NotificationController::class, 'preferencesIndex']);
+        Route::put('/preferences', [NotificationController::class, 'preferencesUpdate']);
+        
+        // Check email preference
+        Route::get('/check-email', [NotificationController::class, 'shouldReceiveEmail']);
+    });
     
     // Legacy Admin Routes mappings (if needed for frontend compatibility)
     Route::prefix('admin')->group(function () {

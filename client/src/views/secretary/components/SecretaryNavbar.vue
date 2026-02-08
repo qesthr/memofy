@@ -1,12 +1,18 @@
 <script setup>
 import { ref } from 'vue'
-import { Search, Bell, User, LogOut, Settings, Palette, Check } from 'lucide-vue-next'
+import { Search, Bell, User, LogOut, Settings, Palette, Check, Camera } from 'lucide-vue-next'
 import { useAuth } from '@/composables/useAuth'
 import { useTheme } from '@/composables/useTheme'
+import ProfilePhotoModal from '@/components/profile/ProfilePhotoModal.vue'
+import AccountManagementModal from '@/components/profile/AccountManagementModal.vue'
+import NotificationDropdown from '@/components/notifications/NotificationDropdown.vue'
 
 const searchQuery = ref('')
 const { user, logout } = useAuth()
 const { theme, availableThemes, setTheme } = useTheme()
+
+const showPhotoModal = ref(false)
+const showAccountModal = ref(false)
 
 const getInitials = (name) => {
   if (!name) return '?'
@@ -31,25 +37,7 @@ const getInitials = (name) => {
       <!-- Right Section -->
       <div class="navbar-right">
         <!-- Notifications -->
-        <div class="dropdown dropdown-end">
-          <button tabindex="0" class="btn btn-ghost btn-circle">
-            <div class="indicator">
-              <Bell :size="20" />
-              <span class="badge badge-xs badge-info indicator-item"></span>
-            </div>
-          </button>
-          <div tabindex="0" class="dropdown-content z-[1] mt-3 w-80 card card-compact bg-base-100 shadow-xl border border-base-300">
-            <div class="card-body">
-              <h3 class="font-bold text-lg">Notifications</h3>
-              <div class="py-4 text-center text-sm text-base-content/60">
-                No new notifications
-              </div>
-              <div class="card-actions">
-                <button class="btn btn-info btn-block btn-sm">View all</button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <NotificationDropdown />
 
         <!-- Theme Selector -->
         <div class="dropdown dropdown-end">
@@ -96,14 +84,24 @@ const getInitials = (name) => {
           </div>
           <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow-xl bg-base-100 border border-base-300 rounded-box w-52 mt-3">
             <li class="menu-title px-4 py-2 opacity-60">Account</li>
-            <li><router-link to="/secretary/settings"><User :size="16" /> My Profile</router-link></li>
-            <li><router-link to="/secretary/settings"><Settings :size="16" /> Settings</router-link></li>
+            <li><button @click="showPhotoModal = true"><Camera :size="16" /> Profile Photos</button></li>
+            <li><button @click="showAccountModal = true"><Settings :size="16" /> My Account</button></li>
             <div class="divider my-0"></div>
             <li><button @click="logout" class="text-error"><LogOut :size="16" /> Sign Out</button></li>
           </ul>
         </div>
       </div>
     </div>
+
+    <!-- Modals -->
+    <ProfilePhotoModal 
+      :is-open="showPhotoModal" 
+      @close="showPhotoModal = false" 
+    />
+    <AccountManagementModal 
+      :is-open="showAccountModal" 
+      @close="showAccountModal = false" 
+    />
   </header>
 </template>
 

@@ -57,14 +57,42 @@ class DashboardController extends Controller
         $recentActivities = $logsQuery->latest()->take(5)->get();
 
         // 3. User Specific Stats
-        $userStats = [
-            'sent_memos' => Memo::where('sender_id', $user->id)->count(),
-            'received_memos' => Memo::where('recipient_id', $user->id)->count(),
-        ];
+        $roleName = (isset($user->role) && is_object($user->role)) ? $user->role->name : ($user->role ?? '');
+        
+        if ($roleName === 'secretary') {
+            // Received memos (including those directed to their department)
+            $deptUserIds = User::where('department_id', $user->department_id)->pluck('id')->toArray();
+            
+            $userStats = [
+                'sent_memos' => Memo::where('sender_id', $user->id)
+                                    ->where('is_draft', false)
+                                    ->where('status', '!=', 'pending_approval')
+                                    ->count(),
+                'received_memos' => Memo::whereIn('recipient_id', array_merge($deptUserIds, [$user->id]))
+                                        ->where('is_draft', false)
+                                        ->where('status', '!=', 'pending_approval')
+                                        ->count(),
+                'pending_memos' => Memo::where('sender_id', $user->id)
+                                        ->where('status', 'pending_approval')
+                                        ->count(),
+                'draft_memos' => Memo::where('sender_id', $user->id)
+                                      ->where('is_draft', true)
+                                      ->count(),
+            ];
+            
+            // Sync global stats for secretary view if needed
+            $stats['pending_memos'] = $userStats['pending_memos'];
+        } else {
+            $userStats = [
+                'sent_memos' => Memo::where('sender_id', $user->id)->count(),
+                'received_memos' => Memo::where('recipient_id', $user->id)->count(),
+            ];
+        }
 
         return response()->json([
             'stats' => $stats,
             'user_stats' => $userStats,
+            'user' => $user, // Include user data as expected by Dashboard.vue
             'recent_activities' => $recentActivities
         ]);
     }

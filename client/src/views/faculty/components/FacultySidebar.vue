@@ -15,12 +15,12 @@ import {
 const router = useRouter()
 const route = useRoute()
 const { logout } = useLogout()
-const { can } = useAuth()
+const { user, can } = useAuth()
 
-const userName = ref('--')
+const userName = computed(() => user.value ? `${user.value.first_name} ${user.value.last_name}` : '--')
 const userRole = ref('Faculty Member')
-const userInitial = ref('F')
-const userEmail = ref('faculty@buksu.edu.ph')
+const userInitial = computed(() => user.value ? user.value.first_name.charAt(0) : 'F')
+const userEmail = computed(() => user.value?.email || 'faculty@buksu.edu.ph')
 
 const menuItems = [
   { name: 'Dashboard', path: '/faculty/dashboard', icon: LayoutDashboard },
@@ -45,16 +45,6 @@ const filteredBottomItems = computed(() => {
 const handleLogout = () => {
   logout()
 }
-
-onMounted(() => {
-  const user = JSON.parse(localStorage.getItem('user'))
-  if (user) {
-    userName.value = user.first_name + ' ' + user.last_name
-    userRole.value = 'Faculty Member'
-    userInitial.value = user.first_name.charAt(0)
-    userEmail.value = user.email
-  }
-})
 </script>
 
 <template>
@@ -111,8 +101,9 @@ onMounted(() => {
       <div class="faculty-profile border-t border-base-300 pt-4">
         <div class="flex items-center gap-3">
             <div class="avatar">
-              <div class="w-10 h-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center">
-                <span class="text-sm font-semibold">{{ userInitial }}</span>
+              <div class="w-10 h-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center overflow-hidden">
+                <img v-if="user?.profile_picture" :src="user.profile_picture" alt="Profile" class="w-full h-full object-cover" />
+                <span v-else class="text-sm font-semibold">{{ userInitial }}</span>
               </div>
             </div>
             <div class="profile-info">

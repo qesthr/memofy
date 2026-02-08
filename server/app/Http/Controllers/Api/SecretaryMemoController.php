@@ -32,6 +32,13 @@ class SecretaryMemoController extends Controller
         $scope = $request->get('scope', '');
         $page = $request->get('page', 1);
         $perPage = $request->get('per_page', 15);
+        
+        // Filter parameters
+        $search = $request->get('search');
+        $department = $request->get('department');
+        $priority = $request->get('priority');
+        $sort = $request->get('sort', 'desc');
+        $date = $request->get('date');
 
         $query = Memo::with(['sender', 'recipient']);
 
@@ -53,26 +60,57 @@ class SecretaryMemoController extends Controller
                 // Draft memos
                 $query->where('sender_id', $user->id)
                       ->where('is_draft', true);
+                // For drafts, we might want to load the recipients too
+                // But since recipients is not a standard Eloquent relation for eager loading easily in MongoDB like this, 
+                // we'll handle it in the response or just let the frontend handle it if common users are already fetched.
                 break;
 
             default:
                 // Received: memos sent to users in secretary's department
-                $recipientIds = User::where('department', $user->department)
+                $recipientIds = User::where('department_id', $user->department_id)
                                    ->where('id', '!=', $user->id)
                                    ->pluck('id')
                                    ->toArray();
-                
+                    
                 // Also include memos sent directly to the secretary
                 $recipientIds[] = $user->id;
-                
+                    
                 $query->whereIn('recipient_id', $recipientIds)
                       ->where('is_draft', false)
                       ->where('status', '!=', 'pending_approval');
                 break;
         }
 
-        $memos = $query->orderBy('created_at', 'desc')
-                       ->paginate($perPage, ['*'], 'page', $page);
+        // Apply filters
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('subject', 'like', "%{$search}%")
+                  ->orWhere('message', 'like', "%{$search}%")
+                  ->orWhereHas('sender', function ($sq) use ($search) {
+                      $sq->where('first_name', 'like', "%{$search}%")
+                         ->orWhere('last_name', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        if ($department) {
+            $query->whereHas('sender', function ($q) use ($department) {
+                $q->where('department_id', $department);
+            });
+        }
+
+        if ($priority) {
+            $query->where('priority', $priority);
+        }
+
+        if ($date) {
+            $query->whereDate('created_at', $date);
+        }
+
+        // Apply sorting
+        $query->orderBy('created_at', $sort);
+
+        $memos = $query->paginate($perPage, ['*'], 'page', $page);
 
         return response()->json($memos);
     }
@@ -85,7 +123,7 @@ class SecretaryMemoController extends Controller
         $user = $request->user();
 
         // Get recipient IDs in department
-        $recipientIds = User::where('department', $user->department)
+        $recipientIds = User::where('department_id', $user->department_id)
                            ->where('id', '!=', $user->id)
                            ->pluck('id')
                            ->toArray();
@@ -124,8 +162,9 @@ class SecretaryMemoController extends Controller
     public function submitForApproval(Request $request)
     {
         $validated = $request->validate([
-            'recipient_id' => 'required_without:department_id|exists:users,id',
-            'department_id' => 'required_without:recipient_id|exists:departments,id',
+            'recipient_ids' => 'required_without:department_id|array',
+            'recipient_ids.*' => 'exists:users,id',
+            'department_id' => 'required_without:recipient_ids|exists:departments,id',
             'subject' => 'required|string|max:255',
             'message' => 'required|string',
             'priority' => 'required|in:urgent,high,normal,low',
@@ -151,14 +190,17 @@ class SecretaryMemoController extends Controller
             }
             $userIds = User::where('department_id', $request->department_id)->pluck('id')->toArray();
         } else {
-            $recipient = User::find($validated['recipient_id']);
-            if (!$recipient || $recipient->department_id !== $user->department_id) {
-                return response()->json([
+            $userIds = $validated['recipient_ids'];
+            $invalidUsers = User::whereIn('id', $userIds)
+                               ->where('department_id', '!=', $user->department_id)
+                               ->count();
+            
+            if ($invalidUsers > 0) {
+                 return response()->json([
                     'success' => false,
                     'message' => 'You can only send memos to users in your department.'
                 ], 422);
             }
-            $userIds = [$validated['recipient_id']];
         }
 
         if (empty($userIds)) {
@@ -219,7 +261,7 @@ class SecretaryMemoController extends Controller
         $acknowledgments = MemoAcknowledgment::where('memo_id', $memoId)->get();
 
         // Get department members if this was a department-wide memo
-        $recipientIds = User::where('department', $user->department)
+        $recipientIds = User::where('department_id', $user->department_id)
                           ->where('id', '!=', $user->id)
                           ->pluck('id')
                           ->toArray();
@@ -246,7 +288,8 @@ class SecretaryMemoController extends Controller
     public function storeDraft(Request $request)
     {
         $validated = $request->validate([
-            'recipient_id' => 'nullable|exists:users,id',
+            'recipient_ids' => 'nullable|array',
+            'recipient_ids.*' => 'exists:users,id',
             'department_id' => 'nullable|exists:departments,id',
             'subject' => 'required|string|max:255',
             'message' => 'required|string',
@@ -261,7 +304,8 @@ class SecretaryMemoController extends Controller
         $memo = Memo::create([
             'created_by' => $user->id,
             'sender_id' => $user->id,
-            'recipient_id' => $validated['recipient_id'] ?? null,
+            'recipient_id' => (isset($validated['recipient_ids']) && count($validated['recipient_ids']) === 1) ? $validated['recipient_ids'][0] : null,
+            'recipient_ids' => $validated['recipient_ids'] ?? null,
             'department_id' => $validated['department_id'] ?? null,
             'signature_id' => $validated['signature_id'] ?? null,
             'subject' => $validated['subject'],
@@ -279,5 +323,189 @@ class SecretaryMemoController extends Controller
             'message' => 'Draft saved successfully',
             'data' => $memo
         ], 201);
+    }
+
+    /**
+     * Delete a memo (Secretary can delete their own drafts)
+     */
+    public function destroy(Request $request, $id)
+    {
+        $user = $request->user();
+        $memo = Memo::findOrFail($id);
+
+        // Only allow deletion of own drafts or pending memos
+        if ($memo->sender_id !== $user->id) {
+            return response()->json(['message' => 'Unauthorized to delete this memo'], 403);
+        }
+
+        if (!$memo->is_draft && $memo->status !== 'pending_approval') {
+            return response()->json(['message' => 'Only drafts or pending memos can be deleted'], 422);
+        }
+
+        $memo->delete();
+
+        $this->activityLogger->logUserAction(
+            $user,
+            'delete_memo',
+            "Deleted memo {$id}",
+            $this->activityLogger->extractRequestInfo($request)
+        );
+
+        return response()->json(['message' => 'Memo deleted successfully']);
+    }
+
+    /**
+     * Update a draft memo
+     */
+    public function update(Request $request, $id)
+    {
+        $user = $request->user();
+        $memo = Memo::findOrFail($id);
+
+        // Only allow update of own drafts
+        if ($memo->sender_id !== $user->id) {
+            return response()->json(['message' => 'Unauthorized to update this memo'], 403);
+        }
+
+        if (!$memo->is_draft) {
+            return response()->json(['message' => 'Only drafts can be updated'], 422);
+        }
+
+        $validated = $request->validate([
+            'recipient_ids' => 'nullable|array',
+            'recipient_ids.*' => 'exists:users,id',
+            'department_id' => 'nullable|exists:departments,id',
+            'subject' => 'sometimes|string|max:255',
+            'message' => 'sometimes|string',
+            'priority' => 'sometimes|in:urgent,high,normal,low',
+            'attachments' => 'nullable|array',
+            'signature_id' => 'nullable|exists:user_signatures,id',
+            'attachment_path' => 'nullable|string'
+        ]);
+
+        if (isset($validated['recipient_ids'])) {
+            $validated['recipient_id'] = count($validated['recipient_ids']) === 1 ? $validated['recipient_ids'][0] : null;
+        }
+
+        $memo->update($validated);
+
+        $this->activityLogger->logUserAction(
+            $user,
+            'update_draft_memo',
+            "Updated draft memo {$id}",
+            $this->activityLogger->extractRequestInfo($request)
+        );
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Draft updated successfully',
+            'data' => $memo
+        ]);
+    }
+
+    /**
+     * Bulk delete memos (Secretary can delete their own drafts/pending)
+     */
+    public function bulkDestroy(Request $request)
+    {
+        $user = $request->user();
+        
+        $validated = $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'exists:memos,id'
+        ]);
+        
+        $ids = $validated['ids'];
+        
+        // Get user's memos that are drafts or pending
+        $memos = Memo::whereIn('id', $ids)
+                    ->where('sender_id', $user->id)
+                    ->where(function ($query) {
+                        $query->where('is_draft', true)
+                              ->orWhere('status', 'pending_approval');
+                    })
+                    ->get();
+        
+        $deleted = [];
+        $skipped = [];
+        
+        foreach ($ids as $id) {
+            $memo = $memos->firstWhere('id', $id);
+            if ($memo) {
+                $memo->delete();
+                $deleted[] = $id;
+            } else {
+                $skipped[] = $id;
+            }
+        }
+        
+        $this->activityLogger->logUserAction(
+            $user,
+            'bulk_delete_memos',
+            "Bulk deleted " . count($deleted) . " memos",
+            ['deleted' => $deleted, 'skipped' => $skipped]
+        );
+        
+        return response()->json([
+            'status' => 'success',
+            'message' => "Deleted " . count($deleted) . " memo(s)",
+            'data' => [
+                'deleted' => $deleted,
+                'skipped' => $skipped
+            ]
+        ]);
+    }
+
+    /**
+     * Bulk submit memos for approval
+     */
+    public function bulkSubmitForApproval(Request $request)
+    {
+        $user = $request->user();
+        
+        $validated = $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'exists:memos,id'
+        ]);
+        
+        $ids = $validated['ids'];
+        
+        // Get user's draft memos
+        $drafts = Memo::whereIn('id', $ids)
+                     ->where('sender_id', $user->id)
+                     ->where('is_draft', true)
+                     ->get();
+        
+        $submitted = [];
+        $skipped = [];
+        
+        foreach ($ids as $id) {
+            $memo = $drafts->firstWhere('id', $id);
+            if ($memo) {
+                $memo->update([
+                    'status' => 'pending_approval',
+                    'is_draft' => false
+                ]);
+                $submitted[] = $id;
+            } else {
+                $skipped[] = $id;
+            }
+        }
+        
+        $this->activityLogger->logUserAction(
+            $user,
+            'bulk_submit_memos',
+            "Bulk submitted " . count($submitted) . " memos for approval",
+            ['submitted' => $submitted, 'skipped' => $skipped]
+        );
+        
+        return response()->json([
+            'status' => 'success',
+            'message' => "Submitted " . count($submitted) . " memo(s) for approval",
+            'data' => [
+                'submitted' => $submitted,
+                'skipped' => $skipped
+            ]
+        ]);
     }
 }

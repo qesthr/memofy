@@ -14,6 +14,7 @@ class Memo extends Model
         'created_by',
         'sender_id',
         'recipient_id',
+        'recipient_ids',
         'department_id',
         'subject',
         'message',
@@ -37,6 +38,7 @@ class Memo extends Model
 
     protected $casts = [
         'attachments' => 'array',
+        'recipient_ids' => 'array',
         'is_draft' => 'boolean',
         'version' => 'integer',
         'scheduled_send_at' => 'datetime',
@@ -56,6 +58,12 @@ class Memo extends Model
     public function recipient()
     {
         return $this->belongsTo(User::class, 'recipient_id');
+    }
+
+    public function recipients()
+    {
+        // For MongoDB, we can use whereIn if it's an array of IDs
+        return User::whereIn('_id', $this->recipient_ids ?? []);
     }
 
     public function creator()

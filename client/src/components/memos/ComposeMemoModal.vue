@@ -1,9 +1,10 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
-import { X, Paperclip, Calendar, Eye, Send, Search } from 'lucide-vue-next'
+import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
+import { X, Paperclip, Calendar, Eye, Send, Search, Trash2, FileText, Loader2 } from 'lucide-vue-next'
 import api from '@/services/api'
 import ScheduleMemoModal from './ScheduleMemoModal.vue'
 import { useAuth } from '@/composables/useAuth'
+import Swal from 'sweetalert2'
 
 const { user } = useAuth()
 
@@ -23,10 +24,12 @@ const formData = ref({
   departmentId: null,
   priority: 'Medium',
   content: '',
-  recipientId: null,
+  recipientId: null, // Keep for backward compatibility/single selection
+  recipientIds: [], // For multiple selection
+  selectedRecipients: [], // For UI chips
   recipientType: 'individual', // individual or department
-  attachmentPath: null,
-  attachmentName: null
+  attachments: [], // Array of uploaded files
+  draftId: null // For auto-save
 })
 
 const scheduleData = ref(null)
@@ -40,6 +43,12 @@ const signatures = ref([])
 const showPreviewModal = ref(false)
 const fileInput = ref(null)
 const isUploading = ref(false)
+const isSaving = ref(false)
+const lastSaved = ref(null)
+
+// Auto-save timer
+let autoSaveTimer = null
+const AUTO_SAVE_INTERVAL = 30000 // 30 seconds
 
 const priorities = [
   { label: 'Low', color: 'bg-info' },
@@ -47,10 +56,28 @@ const priorities = [
   { label: 'High', color: 'bg-error' }
 ]
 
+// Computed
+const canSubmit = computed(() => {
+  return formData.value.subject.trim() !== '' &&
+         formData.value.content.trim() !== '' &&
+         (formData.value.recipientIds.length > 0 || formData.value.departmentId) &&
+         !isUploading.value
+})
+
+const attachmentCount = computed(() => formData.value.attachments.length)
+
 const fetchUsers = async () => {
   try {
     isLoadingUsers.value = true
-    const response = await api.get('/users')
+    const params = {}
+    
+    // If secretary, filter by their department
+    const roleName = (user.value?.role && typeof user.value.role === 'object') ? user.value.role.name : user.value?.role
+    if (roleName === 'secretary' && user.value?.department_id) {
+      params.department_id = user.value.department_id
+    }
+
+    const response = await api.get('/users', { params })
     users.value = response.data.data || response.data
   } catch (error) {
     console.error('Error fetching users:', error)
@@ -67,6 +94,7 @@ const fetchDepartments = async () => {
     console.error('Error fetching departments:', error)
   }
 }
+
 const fetchSignatures = async () => {
   try {
     const response = await api.get('/user-signatures')
@@ -83,6 +111,15 @@ const fetchSignatures = async () => {
   }
 }
 
+const filteredUsers = computed(() => {
+  if (!formData.value.to) return []
+  const search = formData.value.to.toLowerCase()
+  return users.value.filter(u => 
+    `${u.first_name} ${u.last_name}`.toLowerCase().includes(search) ||
+    u.email.toLowerCase().includes(search)
+  ).slice(0, 10) // Limit to 10 results
+})
+
 const filteredDepartments = computed(() => {
   const roleName = (user.value?.role && typeof user.value.role === 'object') ? user.value.role.name : user.value?.role
   if (roleName === 'admin') return departments.value
@@ -90,11 +127,19 @@ const filteredDepartments = computed(() => {
   return departments.value.filter(dept => dept.id === user.value?.department_id)
 })
 
-const selectUser = (user) => {
-  formData.value.to = `${user.first_name} ${user.last_name} (${user.email})`
-  formData.value.recipientId = user.id
+const selectUser = (selectedUser) => {
+  if (!formData.value.recipientIds.includes(selectedUser.id)) {
+    formData.value.recipientIds.push(selectedUser.id)
+    formData.value.selectedRecipients.push(selectedUser)
+  }
+  formData.value.to = ''
   formData.value.recipientType = 'individual'
   showUserSuggestions.value = false
+}
+
+const removeRecipient = (userId) => {
+  formData.value.recipientIds = formData.value.recipientIds.filter(id => id !== userId)
+  formData.value.selectedRecipients = formData.value.selectedRecipients.filter(r => r.id !== userId)
 }
 
 const selectDepartment = (dept) => {
@@ -105,39 +150,117 @@ const selectDepartment = (dept) => {
 }
 
 const handleFileUpload = async (event) => {
-  const file = event.target.files[0]
-  if (!file) return
+  const files = event.target.files
+  if (!files || files.length === 0) return
+
+  // Handle multiple files
+  const filesArray = Array.from(files)
+  
+  for (const file of filesArray) {
+    await uploadSingleFile(file)
+  }
+  
+  // Reset input
+  if (fileInput.value) {
+    fileInput.value.value = ''
+  }
+}
+
+const uploadSingleFile = async (file) => {
+  // Validate file size (10MB max)
+  if (file.size > 10 * 1024 * 1024) {
+    Swal.fire({
+      title: 'File Too Large',
+      text: `${file.name} exceeds the 10MB limit`,
+      icon: 'warning',
+      confirmButtonText: 'OK'
+    })
+    return
+  }
+
+  // Validate file type
+  const allowedTypes = [
+    'application/pdf',
+    'image/jpeg', 'image/png', 'image/gif', 'image/svg+xml',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'text/plain',
+    'application/zip',
+    'application/x-zip-compressed'
+  ]
+  
+  if (!allowedTypes.includes(file.type)) {
+    Swal.fire({
+      title: 'Invalid File Type',
+      text: `${file.name} has an unsupported file type`,
+      icon: 'warning',
+      confirmButtonText: 'OK'
+    })
+    return
+  }
 
   try {
     isUploading.value = true
     const uploadData = new FormData()
     uploadData.append('file', file)
+    uploadData.append('type', 'attachment')
     
     const response = await api.post('/upload', uploadData)
-    formData.value.attachmentPath = response.data.file_path
-    formData.value.attachmentName = response.data.file_name
+    
+    formData.value.attachments.push({
+      id: Date.now() + Math.random(),
+      name: response.data.file_name,
+      path: response.data.file_path,
+      size: response.data.file_size,
+      type: response.data.file_type,
+      url: response.data.url
+    })
+    
     Swal.fire({
       title: 'Uploaded!',
-      text: 'File attached successfully',
+      text: `${response.data.file_name} attached successfully`,
       icon: 'success',
       timer: 1500,
       showConfirmButton: false
     })
   } catch (error) {
     console.error('Upload failed:', error)
-    Swal.fire('Error', 'File upload failed', 'error')
+    Swal.fire('Error', `Failed to upload ${file.name}`, 'error')
   } finally {
     isUploading.value = false
   }
 }
 
-const handleSend = async () => {
-  try {
-    if (!formData.value.recipientId && !formData.value.departmentId) {
-      alert('Please select a recipient or department')
-      return
-    }
+const removeAttachment = (index) => {
+  formData.value.attachments.splice(index, 1)
+}
 
+const formatFileSize = (bytes) => {
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
+const triggerFileInput = () => {
+  if (fileInput.value) {
+    fileInput.value.click()
+  }
+}
+
+const handleSend = async () => {
+  if (!canSubmit.value) {
+    Swal.fire({
+      title: 'Incomplete Memo',
+      text: 'Please fill in all required fields',
+      icon: 'warning',
+      confirmButtonText: 'OK'
+    })
+    return
+  }
+
+  try {
     const priorityMap = {
       'Low': 'low',
       'Medium': 'normal',
@@ -145,15 +268,19 @@ const handleSend = async () => {
     }
 
     const payload = {
-      recipient_id: formData.value.recipientType === 'individual' ? formData.value.recipientId : null,
+      recipient_ids: formData.value.recipientType === 'individual' ? formData.value.recipientIds : [],
       department_id: formData.value.recipientType === 'department' ? formData.value.departmentId : null,
       subject: formData.value.subject,
       message: formData.value.content,
       priority: priorityMap[formData.value.priority] || 'normal',
-      attachments: [],
+      attachments: formData.value.attachments.map(a => ({
+        name: a.name,
+        path: a.path,
+        size: a.size,
+        type: a.type
+      })),
       is_draft: false,
-      signature_id: formData.value.signatureId,
-      attachment_path: formData.value.attachmentPath
+      signature_id: formData.value.signatureId
     }
 
     // Add schedule data if present
@@ -163,14 +290,81 @@ const handleSend = async () => {
       payload.all_day_event = scheduleData.value.allDay
     }
 
-    const response = await api.post('/memos', payload)
+    // Clear auto-save draft if exists
+    if (formData.value.draftId) {
+      try {
+        await api.delete(`/secretary/memos/${formData.value.draftId}`)
+      } catch (e) {
+        console.error('Error clearing draft:', e)
+      }
+      formData.value.draftId = null
+    }
+
+    const response = await api.post('/secretary/memos/submit-for-approval', payload)
     
     emit('send', response.data)
     resetForm()
     closeModal()
+    
+    Swal.fire({
+      title: 'Submitted for Approval!',
+      text: 'Your memo has been submitted to Admin for approval before distribution.',
+      icon: 'success',
+      confirmButtonText: 'OK'
+    })
   } catch (error) {
     console.error('Error sending memo:', error)
-    alert('Failed to send memo. Please try again.')
+    Swal.fire('Error', error.response?.data?.message || 'Failed to submit memo for approval', 'error')
+  }
+}
+
+const saveAsDraft = async () => {
+  try {
+    isSaving.value = true
+    
+    const priorityMap = {
+      'Low': 'low',
+      'Medium': 'normal',
+      'High': 'high'
+    }
+
+    const payload = {
+      recipient_ids: formData.value.recipientType === 'individual' ? formData.value.recipientIds : [],
+      department_id: formData.value.recipientType === 'department' ? formData.value.departmentId : null,
+      subject: formData.value.subject || 'Untitled Draft',
+      message: formData.value.content || '',
+      priority: priorityMap[formData.value.priority] || 'normal',
+      attachments: formData.value.attachments.map(a => ({
+        name: a.name,
+        path: a.path,
+        size: a.size,
+        type: a.type
+      })),
+      signature_id: formData.value.signatureId
+    }
+
+    // Update existing draft or create new
+    if (formData.value.draftId) {
+      await api.put(`/secretary/memos/${formData.value.draftId}`, payload)
+    } else {
+      const response = await api.post('/secretary/memos/draft', payload)
+      formData.value.draftId = response.data.data.id
+    }
+
+    lastSaved.value = new Date()
+    
+    Swal.fire({
+      title: 'Draft Saved',
+      text: 'Your memo has been saved as a draft',
+      icon: 'success',
+      timer: 1500,
+      showConfirmButton: false
+    })
+  } catch (error) {
+    console.error('Error saving draft:', error)
+    Swal.fire('Error', 'Failed to save draft', 'error')
+  } finally {
+    isSaving.value = false
   }
 }
 
@@ -179,15 +373,27 @@ const resetForm = () => {
     to: '',
     subject: '',
     signature: 'None',
+    signatureId: null,
     department: 'Department',
+    departmentId: null,
     priority: 'Medium',
     content: '',
-    recipientId: null
+    recipientId: null,
+    recipientIds: [],
+    selectedRecipients: [],
+    recipientType: 'individual',
+    attachments: [],
+    draftId: null
   }
   scheduleData.value = null
+  lastSaved.value = null
 }
 
 const closeModal = () => {
+  // Auto-save before closing if there's content
+  if (formData.value.subject || formData.value.content) {
+    saveAsDraft()
+  }
   emit('close')
 }
 
@@ -196,10 +402,38 @@ const handleScheduleSave = (schedule) => {
   showScheduleModal.value = false
 }
 
+// Auto-save functionality
+const startAutoSave = () => {
+  autoSaveTimer = setInterval(() => {
+    if (formData.value.subject || formData.value.content) {
+      saveAsDraft()
+    }
+  }, AUTO_SAVE_INTERVAL)
+}
+
+const stopAutoSave = () => {
+  if (autoSaveTimer) {
+    clearInterval(autoSaveTimer)
+    autoSaveTimer = null
+  }
+}
+
 onMounted(() => {
   fetchUsers()
   fetchDepartments()
   fetchSignatures()
+  startAutoSave()
+
+  // Auto-populate department for secretaries
+  const roleName = (user.value?.role && typeof user.value.role === 'object') ? user.value.role.name : user.value?.role
+  if (roleName === 'secretary' && user.value?.department_id) {
+    formData.value.departmentId = user.value.department_id
+    formData.value.department = user.value.department || 'My Department'
+  }
+})
+
+onUnmounted(() => {
+  stopAutoSave()
 })
 
 watch(() => props.initialData, (newVal) => {
@@ -212,7 +446,7 @@ watch(() => props.initialData, (newVal) => {
 }, { immediate: true })
 
 watch(() => formData.value.to, (newVal) => {
-  if (newVal && filteredUsers.value.length > 0 && formData.value.recipientType === 'individual') {
+  if (newVal && filteredUsers.value.length > 0) {
     showUserSuggestions.value = true
   } else {
     showUserSuggestions.value = false
@@ -221,11 +455,16 @@ watch(() => formData.value.to, (newVal) => {
 </script>
 
 <template>
-  <div v-if="isOpen" class="modal modal-open items-center justify-center">
+  <Teleport to="body">
+    <div v-if="isOpen" class="modal modal-open items-center justify-center">
     <div class="modal-box p-0 max-w-4xl w-full h-[85vh] overflow-hidden rounded-xl bg-base-100 shadow-2xl border border-base-300 flex flex-col">
       <!-- Fixed Header -->
       <div class="bg-primary px-6 py-4 flex items-center justify-between text-primary-content shrink-0 z-10">
-        <h3 class="text-xl font-bold tracking-tight uppercase">Compose Memo</h3>
+        <div class="flex items-center gap-3">
+          <h3 class="text-xl font-bold tracking-tight uppercase">Compose Memo</h3>
+          <span v-if="formData.draftId" class="badge badge-sm badge-warning">Draft</span>
+          <span v-if="lastSaved" class="text-xs opacity-70">Last saved: {{ lastSaved.toLocaleTimeString() }}</span>
+        </div>
         <button @click="closeModal" class="btn btn-ghost btn-sm btn-circle text-primary-content hover:bg-white/10">
           <X :size="20" />
         </button>
@@ -236,13 +475,21 @@ watch(() => formData.value.to, (newVal) => {
         <!-- To Field (Inline) -->
         <div class="flex items-center gap-4 group">
           <label class="w-20 text-xs font-black text-base-content/50 uppercase tracking-[0.2em] shrink-0">TO</label>
-          <div class="relative flex-1">
+          <div class="relative flex-1 flex flex-wrap items-center gap-2">
+            <!-- Selected Recipients Chips -->
+            <div v-for="recipient in formData.selectedRecipients" :key="recipient.id" class="badge badge-primary gap-2 py-3 px-3">
+              <span class="text-[10px] font-bold">{{ recipient.first_name }} {{ recipient.last_name }}</span>
+              <button @click="removeRecipient(recipient.id)" class="hover:text-white/80 transition-colors">
+                <X :size="10" />
+              </button>
+            </div>
+
             <input 
               v-model="formData.to"
               @focus="showUserSuggestions = true"
               type="text" 
-              placeholder="Recipient" 
-              class="input input-ghost focus:bg-transparent border-transparent focus:border-transparent focus:outline-none p-0 text-base w-full placeholder:text-base-content/20 font-medium"
+              placeholder="Add recipient..." 
+              class="input input-ghost focus:bg-transparent border-transparent focus:border-transparent focus:outline-none p-0 text-base flex-1 min-w-[150px] placeholder:text-base-content/20 font-medium"
             />
             <!-- Autocomplete Suggestion -->
             <div v-if="showUserSuggestions && filteredUsers.length > 0" class="absolute left-0 top-full mt-2 w-full bg-base-100 shadow-2xl border border-base-300 rounded-xl z-[60] overflow-hidden">
@@ -334,15 +581,44 @@ watch(() => formData.value.to, (newVal) => {
         ></textarea>
       </div>
 
+      <!-- Attachments Section -->
+      <div v-if="formData.attachments.length > 0" class="px-10 py-4 border-t border-base-200 bg-base-50">
+        <div class="flex items-center gap-2 mb-2">
+          <Paperclip :size="16" class="opacity-60" />
+          <span class="text-xs font-bold uppercase opacity-60">Attachments ({{ attachmentCount }})</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <div 
+            v-for="(attachment, index) in formData.attachments" 
+            :key="attachment.id"
+            class="flex items-center gap-2 bg-base-200 px-3 py-2 rounded-lg"
+          >
+            <FileText :size="16" class="opacity-60" />
+            <div class="flex flex-col">
+              <span class="text-xs font-medium max-w-[150px] truncate">{{ attachment.name }}</span>
+              <span class="text-[10px] opacity-40">{{ formatFileSize(attachment.size) }}</span>
+            </div>
+            <button @click="removeAttachment(index)" class="btn btn-ghost btn-xs btn-circle text-error">
+              <X :size="14" />
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Footer (Fixed) -->
       <div class="px-10 py-6 bg-base-100 border-t border-base-200 flex items-center justify-between shrink-0">
         <div class="flex items-center gap-4">
-          <input type="file" ref="fileInput" class="hidden" @change="handleFileUpload" />
-          <button @click="fileInput.click()" class="btn btn-ghost btn-md btn-square rounded-xl hover:bg-base-200" :class="{ 'text-primary bg-primary/10': formData.attachmentPath }" title="Attach Files (PDF, Image)">
-            <Paperclip :size="20" :class="{ 'opacity-100': formData.attachmentPath, 'opacity-60': !formData.attachmentPath }" />
+          <input type="file" ref="fileInput" class="hidden" @change="handleFileUpload" multiple />
+          <button 
+            @click="triggerFileInput" 
+            class="btn btn-ghost btn-md btn-square rounded-xl hover:bg-base-200 relative" 
+            :class="{ 'text-primary bg-primary/10': formData.attachments.length > 0 }"
+            title="Attach Files (Multiple allowed)"
+            :disabled="isUploading"
+          >
+            <Paperclip :size="20" :class="{ 'opacity-100': formData.attachments.length > 0, 'opacity-60': formData.attachments.length === 0 }" />
+            <span v-if="isUploading" class="absolute -top-1 -right-1 loading loading-sm loading-primary"></span>
           </button>
-          <div v-if="isUploading" class="loading loading-spinner loading-sm text-primary"></div>
-          <span v-if="formData.attachmentName" class="text-[10px] font-bold opacity-40 max-w-[100px] truncate">{{ formData.attachmentName }}</span>
           
           <button 
             @click="showScheduleModal = true" 
@@ -353,12 +629,25 @@ watch(() => formData.value.to, (newVal) => {
             Schedule
             <span v-if="scheduleData" class="badge badge-primary badge-xs">✓</span>
           </button>
+          
+          <button 
+            @click="saveAsDraft"
+            class="btn btn-ghost btn-md border border-base-300 hover:border-primary/50 hover:bg-primary/5 gap-3 px-6 font-black text-[10px] uppercase tracking-widest rounded-xl transition-all"
+            :disabled="isSaving"
+          >
+            <Loader2 v-if="isSaving" :size="16" class="animate-spin" />
+            <span v-else>Save Draft</span>
+          </button>
         </div>
 
         <div class="flex items-center gap-4">
           <button @click="closeModal" class="btn btn-ghost btn-md px-6 font-black text-[10px] uppercase tracking-[0.2em] opacity-40 hover:opacity-100 transition-opacity">Cancel</button>
           <button @click="showPreviewModal = true" class="btn btn-ghost btn-md border border-base-300 hover:border-primary/50 hover:bg-primary/5 px-8 font-black text-[10px] uppercase tracking-[0.2em] rounded-xl transition-all">Preview</button>
-          <button @click="handleSend" class="btn btn-primary btn-md px-12 text-white font-black text-[11px] uppercase tracking-[0.25em] shadow-2xl shadow-primary/40 rounded-xl hover:scale-[1.02] active:scale-[0.98] transition-all">
+          <button 
+            @click="handleSend" 
+            class="btn btn-primary btn-md px-12 text-white font-black text-[11px] uppercase tracking-[0.25em] shadow-2xl shadow-primary/40 rounded-xl hover:scale-[1.02] active:scale-[0.98] transition-all"
+            :disabled="!canSubmit"
+          >
             Send
           </button>
         </div>
@@ -390,7 +679,22 @@ watch(() => formData.value.to, (newVal) => {
 
         <!-- Memo Meta -->
         <div class="space-y-2">
-          <div class="flex gap-4"><span class="w-16 font-black text-[10px] uppercase opacity-40">TO:</span> <span class="font-bold underline uppercase">{{ formData.to || 'RECIPIENT' }}</span></div>
+          <div class="flex gap-4">
+            <span class="w-16 font-black text-[10px] uppercase opacity-40">TO:</span> 
+            <span class="font-bold underline uppercase flex flex-wrap gap-x-2">
+              <template v-if="formData.selectedRecipients.length > 0">
+                <span v-for="(r, i) in formData.selectedRecipients" :key="r.id">
+                  {{ r.first_name }} {{ r.last_name }}{{ i < formData.selectedRecipients.length - 1 ? ',' : '' }}
+                </span>
+              </template>
+              <template v-else-if="formData.recipientType === 'department'">
+                {{ formData.department }}
+              </template>
+              <template v-else>
+                RECIPIENT
+              </template>
+            </span>
+          </div>
           <div class="flex gap-4"><span class="w-16 font-black text-[10px] uppercase opacity-40">FROM:</span> <span class="font-bold uppercase">ADMIN / {{ formData.department }}</span></div>
           <div class="flex gap-4"><span class="w-16 font-black text-[10px] uppercase opacity-40">SUBJECT:</span> <span class="font-bold uppercase">{{ formData.subject || '(NO SUBJECT)' }}</span></div>
         </div>
@@ -398,6 +702,17 @@ watch(() => formData.value.to, (newVal) => {
         <!-- Memo Content -->
         <div class="py-10 text-sm leading-relaxed min-h-[200px] whitespace-pre-wrap font-medium">
           {{ formData.content || 'No content provided...' }}
+        </div>
+
+        <!-- Attachments Preview -->
+        <div v-if="formData.attachments.length > 0" class="border-t border-base-200 pt-4">
+          <p class="text-[10px] font-bold uppercase opacity-40 mb-2">Attachments:</p>
+          <div class="flex flex-wrap gap-2">
+            <div v-for="attachment in formData.attachments" :key="attachment.id" class="flex items-center gap-2 bg-base-100 px-3 py-2 rounded">
+              <Paperclip :size="12" class="opacity-60" />
+              <span class="text-xs">{{ attachment.name }}</span>
+            </div>
+          </div>
         </div>
 
         <!-- Signature Space -->
@@ -413,7 +728,8 @@ watch(() => formData.value.to, (newVal) => {
       </div>
       <div class="modal-backdrop bg-black/40 backdrop-blur-sm" @click="showPreviewModal = false"></div>
     </div>
-  </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>

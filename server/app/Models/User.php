@@ -42,7 +42,8 @@ class User extends Authenticatable
         'reset_code',
         'reset_code_expires_at',
         'role_id',
-        'permission_ids'
+        'permission_ids',
+        'bio'
     ];
 
     /**

@@ -7,6 +7,7 @@ use App\Models\CalendarEvent;
 use App\Models\CalendarEventParticipant;
 use App\Models\User;
 use App\Services\ActivityLogger;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -15,10 +16,12 @@ use App\Http\Controllers\Api\GoogleCalendarController;
 class CalendarController extends Controller
 {
     protected $activityLogger;
+    protected $notificationService;
 
-    public function __construct(ActivityLogger $activityLogger)
+    public function __construct(ActivityLogger $activityLogger, NotificationService $notificationService)
     {
         $this->activityLogger = $activityLogger;
+        $this->notificationService = $notificationService;
     }
     /**
      * Display a listing of the resource.
@@ -128,8 +131,9 @@ class CalendarController extends Controller
 
             $this->activityLogger->logUserAction($request->user(), 'create_calendar_event', $event, $this->activityLogger->extractRequestInfo($request));
 
-            // Add participants
+            // Add participants and send notifications
             if (!empty($validated['invited_users'])) {
+                $invitedUsers = [];
                 foreach ($validated['invited_users'] as $userId) {
                     if ($userId != $request->user()->id) { // Don't invite self
                         CalendarEventParticipant::create([
@@ -137,8 +141,12 @@ class CalendarController extends Controller
                             'user_id' => $userId,
                             'status' => 'pending'
                         ]);
+                        $invitedUsers[] = User::find($userId);
                     }
                 }
+                
+                // Send calendar invitation notifications
+                $this->notificationService->notifyCalendarInvitation($request->user(), $event, $invitedUsers);
             }
 
             // Sync to Google
@@ -190,18 +198,33 @@ class CalendarController extends Controller
                     ->whereNotIn('user_id', $validated['invited_users'])
                     ->delete();
 
-                // Add new ones
+                // Add new ones and collect for notification
+                $newInvitedUsers = [];
                 foreach ($validated['invited_users'] as $userId) {
                     if ($userId != $request->user()->id) {
-                        CalendarEventParticipant::firstOrCreate([
-                            'calendar_event_id' => $event->id,
-                            'user_id' => $userId
-                        ], [
-                            'status' => 'pending'
-                        ]);
+                        $existing = CalendarEventParticipant::where('calendar_event_id', $event->id)
+                            ->where('user_id', $userId)
+                            ->first();
+                        
+                        if (!$existing) {
+                            CalendarEventParticipant::create([
+                                'calendar_event_id' => $event->id,
+                                'user_id' => $userId,
+                                'status' => 'pending'
+                            ]);
+                            $newInvitedUsers[] = User::find($userId);
+                        }
                     }
                 }
+                
+                // Send notifications to newly invited users
+                if (!empty($newInvitedUsers)) {
+                    $this->notificationService->notifyCalendarInvitation($request->user(), $event, $newInvitedUsers);
+                }
             }
+            
+            // Notify existing participants about event update
+            $this->notificationService->notifyCalendarUpdated($request->user(), $event);
 
             // Sync to Google
             try {
@@ -263,6 +286,12 @@ class CalendarController extends Controller
             'response' => $validated['status'],
             ...$this->activityLogger->extractRequestInfo($request)
         ]);
+
+        // Notify event creator about the response
+        $creator = User::find($event->created_by);
+        if ($creator && $creator->id !== $request->user()->id) {
+            $this->notificationService->notifyCalendarResponse($creator, $event, $request->user(), $validated['status']);
+        }
 
         return response()->json([
             'message' => 'Invitation ' . $validated['status'],

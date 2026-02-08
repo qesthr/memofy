@@ -16,13 +16,13 @@ import {
 const router = useRouter()
 const route = useRoute()
 const { logout } = useLogout()
-const { can } = useAuth()
+const { user, can } = useAuth()
 
-const userName = ref('--')
+const userName = computed(() => user.value ? `${user.value.first_name} ${user.value.last_name}` : '--')
 const userRole = ref('Department Secretary')
-const userInitial = ref('S')
-const userEmail = ref('secretary@buksu.edu.ph')
-const userDept = ref('')
+const userInitial = computed(() => user.value ? user.value.first_name.charAt(0) : 'S')
+const userEmail = computed(() => user.value?.email || 'secretary@buksu.edu.ph')
+const userDept = computed(() => user.value?.department || '')
 
 const menuItems = [
   { name: 'Dashboard', path: '/secretary/dashboard', icon: LayoutDashboard },
@@ -45,17 +45,6 @@ const handleLogout = () => {
   logout()
 }
 
-onMounted(() => {
-  const user = JSON.parse(localStorage.getItem('user'))
-  if (user) {
-    userName.value = user.first_name + ' ' + user.last_name
-    // Force specific role display as requested by design
-    userRole.value = 'Department Secretary' 
-    userInitial.value = user.first_name.charAt(0)
-    userEmail.value = user.email
-    userDept.value = user.department || ''
-  }
-})
 </script>
 
 <template>
@@ -112,13 +101,14 @@ onMounted(() => {
       <div class="secretary-profile border-t border-base-300 pt-4">
         <div class="flex items-center gap-3">
             <div class="avatar">
-              <div class="w-10 h-10 rounded-full bg-primary text-primary-content flex items-center justify-center">
-                <span class="text-sm font-semibold">{{ userInitial }}</span>
+              <div class="w-10 h-10 rounded-full bg-primary text-primary-content flex items-center justify-center overflow-hidden">
+                <img v-if="user?.profile_picture" :src="user.profile_picture" alt="Profile" class="w-full h-full object-cover" />
+                <span v-else class="text-sm font-semibold">{{ userInitial }}</span>
               </div>
             </div>
             <div class="profile-info">
               <p class="font-bold text-sm text-base-content leading-tight">
-                {{ userDept ? userDept + ' Secretary' : 'Secretary' }}
+                {{ userName }}
               </p>
               <p class="text-xs text-base-content/60 truncate w-32" :title="userEmail">{{ userEmail }}</p>
             </div>

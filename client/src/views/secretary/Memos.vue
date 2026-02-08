@@ -10,8 +10,12 @@ import Swal from 'sweetalert2'
 const departmentFilter = ref('All Departments')
 const priorityFilter = ref('All Priorities')
 const sortFilter = ref('Newest')
-const dateFilter = ref('mm/dd/yyyy')
+const dateFilter = ref('')
 const activeTab = ref('received') // received, sent, pending, drafts
+const searchQuery = ref('')
+
+// Additional data
+const departments = ref([])
 
 // Modal states
 const showComposeModal = ref(false)
@@ -38,13 +42,21 @@ const stats = ref({
   drafts: 0
 })
 
+// Debounce timer for search
+let searchTimeout = null
+
 const fetchMemos = async () => {
   try {
     loading.value = true
     const params = {
       scope: activeTab.value === 'received' ? '' : activeTab.value,
       page: pagination.value.current_page,
-      per_page: pagination.value.per_page
+      per_page: pagination.value.per_page,
+      search: searchQuery.value || undefined,
+      department: departmentFilter.value !== 'All Departments' ? departmentFilter.value : undefined,
+      priority: priorityFilter.value !== 'All Priorities' ? priorityFilter.value.toLowerCase() : undefined,
+      sort: sortFilter.value === 'Oldest' ? 'asc' : 'desc',
+      date: dateFilter.value || undefined
     }
     
     const response = await api.get('/secretary/memos', { params })
@@ -63,12 +75,41 @@ const fetchMemos = async () => {
   }
 }
 
+const handleSearch = () => {
+  // Debounce search to avoid too many API calls
+  if (searchTimeout) clearTimeout(searchTimeout)
+  searchTimeout = setTimeout(() => {
+    pagination.value.current_page = 1
+    fetchMemos()
+  }, 300)
+}
+
+const handleFilterChange = () => {
+  pagination.value.current_page = 1
+  fetchMemos()
+}
+
+// Watch for filter changes
+const applyFilters = () => {
+  pagination.value.current_page = 1
+  fetchMemos()
+}
+
 const fetchStats = async () => {
   try {
     const response = await api.get('/secretary/memos/stats')
     stats.value = response.data
   } catch (error) {
     console.error('Error fetching stats:', error)
+  }
+}
+
+const fetchDepartments = async () => {
+  try {
+    const response = await api.get('/departments')
+    departments.value = response.data.data || []
+  } catch (error) {
+    console.error('Error fetching departments:', error)
   }
 }
 
@@ -186,6 +227,7 @@ const tabs = [
 onMounted(() => {
   fetchMemos()
   fetchStats()
+  fetchDepartments()
 })
 </script>
 
@@ -242,45 +284,78 @@ onMounted(() => {
     <div class="flex flex-col md:flex-row items-center gap-4 mb-4 bg-base-100 p-2 rounded-xl border border-base-200 shadow-sm">
       <!-- Filters -->
       <div class="flex-1 flex flex-wrap items-center gap-2 w-full">
-        <select v-model="departmentFilter" class="select select-sm select-bordered w-full md:w-auto bg-base-100">
-          <option selected>All Departments</option>
-          <option>Computer Science</option>
-          <option>Information Technology</option>
+        <select 
+          v-model="departmentFilter" 
+          @change="handleFilterChange"
+          class="select select-sm select-bordered w-full md:w-auto bg-base-100"
+        >
+          <option value="All Departments">All Departments</option>
+          <option v-for="dept in departments" :key="dept.id" :value="dept.name">{{ dept.name }}</option>
         </select>
         
-        <select v-model="priorityFilter" class="select select-sm select-bordered w-full md:w-auto bg-base-100">
-          <option selected>All Priorities</option>
-          <option>High</option>
-          <option>Normal</option>
-          <option>Low</option>
+        <select 
+          v-model="priorityFilter" 
+          @change="handleFilterChange"
+          class="select select-sm select-bordered w-full md:w-auto bg-base-100"
+        >
+          <option value="All Priorities">All Priorities</option>
+          <option value="High">High</option>
+          <option value="Normal">Normal</option>
+          <option value="Low">Low</option>
         </select>
         
-        <select v-model="sortFilter" class="select select-sm select-bordered w-full md:w-auto bg-base-100">
-          <option selected>Newest</option>
-          <option>Oldest</option>
+        <select 
+          v-model="sortFilter" 
+          @change="handleFilterChange"
+          class="select select-sm select-bordered w-full md:w-auto bg-base-100"
+        >
+          <option value="Newest">Newest</option>
+          <option value="Oldest">Oldest</option>
         </select>
         
-        <!-- Date Picker Placeholder -->
+        <!-- Date Picker -->
         <div class="relative w-full md:w-auto">
           <input 
-            type="text" 
-            placeholder="mm/dd/yyyy" 
+            v-model="dateFilter"
+            @change="handleFilterChange"
+            type="date" 
             class="input input-sm input-bordered w-full pr-8 bg-base-100" 
           />
-          <button class="absolute right-2 top-1/2 -translate-y-1/2 text-base-content/40 hover:text-base-content">
+          <button 
+            v-if="dateFilter"
+            @click="dateFilter = ''; handleFilterChange()"
+            class="absolute right-2 top-1/2 -translate-y-1/2 text-base-content/40 hover:text-base-content"
+          >
             <X :size="14" />
           </button>
         </div>
+        
+        <button 
+          v-if="departmentFilter !== 'All Departments' || priorityFilter !== 'All Priorities' || dateFilter"
+          @click="() => { departmentFilter = 'All Departments'; priorityFilter = 'All Priorities'; dateFilter = ''; handleFilterChange(); }"
+          class="btn btn-sm btn-ghost text-error"
+        >
+          Clear
+        </button>
       </div>
 
       <!-- Search -->
       <div class="relative w-full md:w-64">
         <input 
+          v-model="searchQuery"
+          @input="handleSearch"
           type="text" 
           placeholder="Search memos..." 
           class="input input-sm input-bordered w-full pr-8 bg-base-100" 
         />
         <Search :size="14" class="absolute right-3 top-1/2 -translate-y-1/2 opacity-40" />
+        <button 
+          v-if="searchQuery"
+          @click="searchQuery = ''; handleSearch()"
+          class="absolute right-8 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100"
+        >
+          <X :size="14" />
+        </button>
       </div>
     </div>
 

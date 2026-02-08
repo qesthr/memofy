@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\UserInvitation;
 use App\Services\ActivityLogger;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Mail;
@@ -14,10 +15,12 @@ use App\Mail\UserInvitationMail;
 class UserController extends Controller
 {
     protected $activityLogger;
+    protected $notificationService;
 
-    public function __construct(ActivityLogger $activityLogger)
+    public function __construct(ActivityLogger $activityLogger, NotificationService $notificationService)
     {
         $this->activityLogger = $activityLogger;
+        $this->notificationService = $notificationService;
     }
 
     public function index(Request $request)
@@ -67,6 +70,10 @@ class UserController extends Controller
         // Filter by Department
         if ($request->department) {
             $query->where('department', $request->department);
+        }
+
+        if ($request->department_id) {
+            $query->where('department_id', $request->department_id);
         }
 
         // Filter by Status
@@ -232,6 +239,29 @@ class UserController extends Controller
 
         $original = $user->getOriginal();
         $user->update($validated);
+
+        // Notify admins if a secretary updates their profile
+        if ($user->role === 'secretary' && $request->user()->id === $user->id) {
+            $changes = $user->getChanges();
+            $updateTypes = [];
+            
+            if (isset($changes['first_name']) || isset($changes['last_name'])) {
+                $updateTypes[] = 'name';
+            }
+            if (isset($changes['email'])) {
+                $updateTypes[] = 'email';
+            }
+            if (isset($changes['department'])) {
+                $updateTypes[] = 'department';
+            }
+            if (isset($changes['signature'])) {
+                $updateTypes[] = 'signature';
+            }
+            
+            if (!empty($updateTypes)) {
+                $this->notificationService->notifyAdminsOfProfileUpdate($user, $updateTypes);
+            }
+        }
 
         $this->activityLogger->logUserAction($request->user(), 'update_user', $user, [
             'changes' => $user->getChanges(),

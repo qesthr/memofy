@@ -24,6 +24,7 @@ class RBACSeeder extends Seeder
             ['name' => 'memo.unarchive', 'label' => 'Unarchive Memos', 'description' => 'Restore memos from archive', 'category' => 'memo'],
             ['name' => 'memo.remove_permanently', 'label' => 'Permanent Delete', 'description' => 'Remove memos permanently', 'category' => 'memo'],
             ['name' => 'memo.approve', 'label' => 'Approve Memos', 'description' => 'Approve memos submitted for review', 'category' => 'memo'],
+            ['name' => 'memo.acknowledge', 'label' => 'Acknowledge Memos', 'description' => 'Mark received memos as read/acknowledged', 'category' => 'memo'],
             
             // Faculty Tab
             ['name' => 'faculty.add', 'label' => 'Add Faculty', 'description' => 'Add/Invite faculty members', 'category' => 'faculty'],
@@ -61,6 +62,17 @@ class RBACSeeder extends Seeder
 
             // Signature Management
             ['name' => 'signature.manage', 'label' => 'Manage Signatures', 'description' => 'Create and edit memo signatures', 'category' => 'memo'],
+
+            // Sidebar Navigation Permissions
+            ['name' => 'nav.dashboard', 'label' => 'Dashboard Navigation', 'description' => 'Can access Dashboard sidebar', 'category' => 'navigation'],
+            ['name' => 'nav.users', 'label' => 'Users Navigation', 'description' => 'Can access Users/Faculty sidebar', 'category' => 'navigation'],
+            ['name' => 'nav.memos', 'label' => 'Memos Navigation', 'description' => 'Can access Memos sidebar', 'category' => 'navigation'],
+            ['name' => 'nav.calendar', 'label' => 'Calendar Navigation', 'description' => 'Can access Calendar sidebar', 'category' => 'navigation'],
+            ['name' => 'nav.reports', 'label' => 'Reports Navigation', 'description' => 'Can access Reports sidebar', 'category' => 'navigation'],
+            ['name' => 'nav.activity_logs', 'label' => 'Activity Logs Navigation', 'description' => 'Can access Activity Logs sidebar', 'category' => 'navigation'],
+            ['name' => 'nav.archive', 'label' => 'Archive Navigation', 'description' => 'Can access Archive sidebar', 'category' => 'navigation'],
+            ['name' => 'nav.roles', 'label' => 'Roles Navigation', 'description' => 'Can access Roles sidebar', 'category' => 'navigation'],
+            ['name' => 'nav.settings', 'label' => 'Settings Navigation', 'description' => 'Can access Settings sidebar', 'category' => 'navigation'],
         ];
 
         $permissions = [];
@@ -99,15 +111,18 @@ class RBACSeeder extends Seeder
             'faculty.add', 'faculty.edit', 'faculty.archive', 'faculty.view', 'faculty.unarchive',
             'archive.unarchive_memo', 'archive.unarchive_calendar', 'archive.remove_permanently',
             'calendar.add_event', 'calendar.edit_event', 'calendar.archive_event',
-            'theme.select', 'activity.view_department', 'template.manage'
+            'theme.select', 'activity.view_department', 'template.manage',
+            'nav.dashboard', 'nav.memos', 'nav.users', 'nav.archive', 'nav.calendar', 'nav.settings',
+            'memo.acknowledge'
         ];
         $secretaryRole->update(['permission_ids' => $secretaryPermissions]);
 
         // Faculty Permissions
         $facultyPermissions = [
-            'memo.view', 'memo.archive',
+            'memo.view', 'memo.archive', 'memo.acknowledge',
             'archive.unarchive_memo', 'archive.remove_permanently',
-            'calendar.add_event', 'calendar.edit_event'
+            'calendar.add_event', 'calendar.edit_event',
+            'nav.dashboard', 'nav.memos', 'nav.archive', 'nav.calendar', 'nav.settings'
         ];
         $facultyRole->update(['permission_ids' => $facultyPermissions]);
 

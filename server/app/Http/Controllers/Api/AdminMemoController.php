@@ -8,16 +8,19 @@ use App\Models\MemoAcknowledgment;
 use App\Models\User;
 use App\Models\CalendarEvent;
 use App\Services\ActivityLogger;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class AdminMemoController extends Controller
 {
     protected $activityLogger;
+    protected $notificationService;
 
-    public function __construct(ActivityLogger $activityLogger)
+    public function __construct(ActivityLogger $activityLogger, NotificationService $notificationService)
     {
         $this->activityLogger = $activityLogger;
+        $this->notificationService = $notificationService;
     }
 
     /**
@@ -72,6 +75,7 @@ class AdminMemoController extends Controller
             ]);
 
             // Create acknowledgment records for all recipients
+            $recipients = [];
             if ($memo->department_id) {
                 // Department-wide memo - create acknowledgments for all department members
                 $departmentUsers = User::where('department_id', $memo->department_id)
@@ -85,22 +89,37 @@ class AdminMemoController extends Controller
                         'is_acknowledged' => false,
                         'sent_at' => now()
                     ]);
+                    $recipients[] = $deptUser;
                 }
             } else {
                 // Individual memo
                 if ($memo->recipient_id) {
-                    MemoAcknowledgment::create([
-                        'memo_id' => $memo->id,
-                        'recipient_id' => $memo->recipient_id,
-                        'is_acknowledged' => false,
-                        'sent_at' => now()
-                    ]);
+                    $recipient = User::find($memo->recipient_id);
+                    if ($recipient) {
+                        MemoAcknowledgment::create([
+                            'memo_id' => $memo->id,
+                            'recipient_id' => $memo->recipient_id,
+                            'is_acknowledged' => false,
+                            'sent_at' => now()
+                        ]);
+                        $recipients[] = $recipient;
+                    }
                 }
             }
 
             // Create calendar event if scheduled
             if ($memo->scheduled_send_at) {
                 $this->createCalendarEventForMemo($memo, $user->id);
+            }
+
+            // Send notifications to creator and recipients
+            $sender = User::find($memo->sender_id);
+            if ($sender) {
+                // Notify memo creator that their memo was approved
+                $this->notificationService->notifyMemoApproved($user, $sender, $memo);
+                
+                // Notify all recipients about the new memo
+                $this->notificationService->notifyMemoRecipients($user, $memo, $recipients);
             }
 
             // Log the approval
@@ -149,6 +168,12 @@ class AdminMemoController extends Controller
                 'rejected_at' => now(),
                 'rejection_reason' => $validated['rejection_reason'] ?? null
             ]);
+
+            // Send notification to memo creator
+            $sender = User::find($memo->sender_id);
+            if ($sender) {
+                $this->notificationService->notifyMemoRejected($user, $sender, $memo, $validated['rejection_reason'] ?? null);
+            }
 
             // Log the rejection
             $this->activityLogger->logUserAction(
@@ -214,6 +239,58 @@ class AdminMemoController extends Controller
             ],
             'acknowledged_by' => $acknowledgedBy,
             'pending_by' => $pendingBy
+        ]);
+    }
+
+    /**
+     * Send reminder for acknowledgment
+     */
+    public function sendReminder(Request $request, $id)
+    {
+        $user = $request->user();
+        
+        // Permission check
+        if (!$user->hasPermissionTo('memo.approve') && !$user->hasPermissionTo('memo.approve_all')) {
+            return response()->json(['message' => 'Unauthorized to send reminders'], 403);
+        }
+
+        $memo = Memo::with(['sender'])->findOrFail($id);
+
+        if ($memo->status !== 'sent') {
+            return response()->json(['message' => 'Can only send reminders for sent memos'], 422);
+        }
+
+        // Get pending acknowledgments
+        $pendingAcknowledgments = MemoAcknowledgment::where('memo_id', $id)
+                                                    ->where('is_acknowledged', false)
+                                                    ->with('recipient')
+                                                    ->get();
+
+        if ($pendingAcknowledgments->isEmpty()) {
+            return response()->json(['message' => 'All recipients have acknowledged this memo'], 422);
+        }
+
+        $pendingRecipients = $pendingAcknowledgments->pluck('recipient');
+        $sender = User::find($memo->sender_id);
+
+        // Send reminders
+        $result = $this->notificationService->sendAcknowledgmentReminders($memo, $sender, $pendingRecipients);
+
+        // Log the action
+        $this->activityLogger->logUserAction(
+            $user,
+            'send_memo_reminder',
+            "Sent acknowledgment reminder for memo: {$memo->subject}",
+            [
+                'memo_id' => $memo->id,
+                'recipients_reminded' => $result['sent']
+            ]
+        );
+
+        return response()->json([
+            'status' => 'success',
+            'message' => "Sent {$result['sent']} reminder(s) successfully",
+            'stats' => $result
         ]);
     }
 
