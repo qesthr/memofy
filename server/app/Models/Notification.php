@@ -3,11 +3,28 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Notifications\DatabaseNotification;
+use MongoDB\Laravel\Eloquent\Model;
 
-class Notification extends DatabaseNotification
+class Notification extends Model
 {
     use HasFactory;
+
+    protected $collection = 'notifications';
+
+    protected $fillable = [
+        'type',
+        'notifiable_type',
+        'notifiable_id',
+        'data',
+        'read_at'
+    ];
+
+    protected $casts = [
+        'data' => 'array',
+        'read_at' => 'datetime',
+    ];
+
+    public $timestamps = true;
 
     // Notification type constants
     public const TYPE_MEMO_APPROVED = 'memo.approved';

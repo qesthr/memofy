@@ -36,7 +36,7 @@ return new class extends Migration
     {
         Schema::table('user_activity_logs', function (Blueprint $table) {
             $table->dropColumn(['actor_id', 'actor_email', 'actor_role', 'actor_department', 'target', 'target_id']);
-            $table->unsignedBigInteger('user_id')->nullable()->after('id');
+            $table->unsignedBigInteger('user_id')->nullable();
         });
     }
 };

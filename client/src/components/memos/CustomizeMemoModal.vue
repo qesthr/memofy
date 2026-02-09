@@ -58,6 +58,7 @@ const isLoading = ref(false)
 const signaturePadRef = ref(null)
 const signaturePadCanvas = ref(null)
 const newSignatureName = ref('')
+const newSignaturePosition = ref('') // Add position field
 const signatureMode = ref('draw') // draw or upload
 const uploadedSignature = ref(null)
 const uploadedSignatureName = ref('')
@@ -84,7 +85,7 @@ const fetchInitialData = async () => {
     isLoading.value = true
     const [templatesRes, signaturesRes, departmentsRes] = await Promise.all([
       api.get('/memo-templates'),
-      api.get('/signatures'),
+      api.get('/user-signatures'),
       api.get('/departments')
     ])
     templates.value = templatesRes.data.data
@@ -200,13 +201,15 @@ const saveSignature = async () => {
       ? signaturePadRef.value.toDataURL() 
       : uploadedSignature.value
 
-    await api.post('/signatures', {
+    await api.post('/user-signatures', {
       name: newSignatureName.value,
+      position: newSignaturePosition.value,
       signature_data: signatureData,
       is_default: signatures.value.length === 0
     })
     
     newSignatureName.value = ''
+    newSignaturePosition.value = ''
     uploadedSignature.value = null
     if (signaturePadRef.value) signaturePadRef.value.clear()
     await fetchInitialData()
@@ -239,7 +242,7 @@ const deleteSignature = async (id) => {
 
   if (result.isConfirmed) {
     try {
-      await api.delete(`/signatures/${id}`)
+      await api.delete(`/user-signatures/${id}`)
       await fetchInitialData()
       Swal.fire('Deleted!', 'Signature has been deleted.', 'success')
     } catch (error) {
@@ -520,6 +523,12 @@ watch(activeTab, (newTab) => {
                   <div class="form-control max-w-sm">
                     <label class="label"><span class="label-text font-bold text-xs uppercase opacity-60">Signatory Full Name</span></label>
                     <input v-model="newSignatureName" type="text" class="input input-bordered rounded-xl bg-base-200/30 border-none focus:ring-2 ring-primary/20" placeholder="e.g., Dr. John Doe" />
+                  </div>
+
+                  <!-- Position Field -->
+                  <div class="form-control max-w-sm">
+                    <label class="label"><span class="label-text font-bold text-xs uppercase opacity-60">Position</span></label>
+                    <input v-model="newSignaturePosition" type="text" class="input input-bordered rounded-xl bg-base-200/30 border-none focus:ring-2 ring-primary/20" placeholder="e.g., Dean, President, Vice Chancellor" />
                   </div>
 
                   <!-- Expanded Draw Mode -->

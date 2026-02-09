@@ -8,10 +8,16 @@ use Illuminate\Http\Request;
 
 class ActivityLogController extends Controller
 {
+    /**
+     * Display activity logs with pagination and eager loading.
+     * 
+     * PERFORMANCE: Uses paginate() with eager loading to prevent N+1 queries.
+     */
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = UserActivityLog::with('actor');
+        $perPage = min((int) $request->get('per_page', 20), 100);
+        $query = UserActivityLog::with(['actor:id,first_name,last_name,email,role']);
 
         // RBAC Scoping
         if (!$user->hasPermissionTo('activity.view_all')) {
@@ -46,14 +52,15 @@ class ActivityLogController extends Controller
             $query->whereBetween('created_at', [$request->start_date, $request->end_date]);
         }
 
-        $logs = $query->latest()->paginate(20);
+        $logs = $query->latest()->paginate($perPage);
 
         return response()->json($logs);
     }
 
     public function show($id)
     {
-        $log = UserActivityLog::with('actor')->findOrFail($id);
+        $log = UserActivityLog::with(['actor:id,first_name,last_name,email,role,department'])
+                    ->findOrFail($id);
         $user = auth()->user();
 
         // RBAC Check for single log

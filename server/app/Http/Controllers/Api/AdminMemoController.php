@@ -24,11 +24,19 @@ class AdminMemoController extends Controller
     }
 
     /**
-     * Get all memos pending approval from secretaries
+     * Get all memos pending approval from secretaries.
+     * 
+     * PERFORMANCE: Uses eager loading to prevent N+1 queries.
      */
     public function pendingApprovals(Request $request)
     {
-        $query = Memo::with(['sender', 'recipient'])
+        $perPage = min((int) $request->get('per_page', 15), 50);
+        
+        $query = Memo::with([
+            'sender:id,first_name,last_name,email,role,department',
+            'recipient:id,first_name,last_name,email,role,department',
+            'department:id,name'
+        ])
                      ->where('status', 'pending_approval')
                      ->orderBy('created_at', 'desc');
 
@@ -38,7 +46,7 @@ class AdminMemoController extends Controller
             $query->where('department_id', $user->department_id);
         }
 
-        $memos = $query->paginate(15);
+        $memos = $query->paginate($perPage);
 
         return response()->json($memos);
     }

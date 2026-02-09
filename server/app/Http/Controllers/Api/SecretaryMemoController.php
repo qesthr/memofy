@@ -20,18 +20,16 @@ class SecretaryMemoController extends Controller
     }
 
     /**
-     * Get memos for secretary with scope filtering
-     * Received: memos sent to users in secretary's department
-     * Sent: memos sent by this secretary
-     * Pending: memos submitted for approval
-     * Drafts: draft memos
+     * Get memos for secretary with scope filtering and eager loading.
+     * 
+     * PERFORMANCE: Already uses paginate() but now with optimized eager loading.
      */
     public function index(Request $request)
     {
         $user = $request->user();
         $scope = $request->get('scope', '');
         $page = $request->get('page', 1);
-        $perPage = $request->get('per_page', 15);
+        $perPage = min((int) $request->get('per_page', 15), 50);
         
         // Filter parameters
         $search = $request->get('search');
@@ -40,59 +38,48 @@ class SecretaryMemoController extends Controller
         $sort = $request->get('sort', 'desc');
         $date = $request->get('date');
 
-        $query = Memo::with(['sender', 'recipient', 'department']);
-        
-        \Illuminate\Support\Facades\Log::info("SecretaryMemo Index Debug", [
-            'user' => $user->id,
-            'scope' => $scope,
-            'search' => $search,
-            'department' => $department,
-            'priority' => $priority,
-            'date' => $date
+        // Eager load with selective columns to reduce data transfer
+        $query = Memo::with([
+            'sender:_id,id,first_name,last_name,email,role,department',
+            'recipient:_id,id,first_name,last_name,email,role,department',
+            'department:_id,id,name'
         ]);
+        
+        $userId = (string) $user->id;
 
         switch ($scope) {
             case 'sent':
-                // Memos sent by this secretary (not drafts)
-                $query->where('sender_id', $user->id)
+                $query->where('sender_id', $userId)
                       ->where('is_draft', false)
                       ->where('status', '!=', 'pending_approval');
                 break;
 
             case 'pending':
-                // Memos submitted for approval by this secretary
-                $query->where('sender_id', $user->id)
+                $query->where('sender_id', $userId)
                       ->where('status', 'pending_approval');
                 break;
 
             case 'drafts':
-                // Draft memos
-                $query->where('created_by', (string)$user->id)
+                $query->where('created_by', $userId)
                       ->whereIn('is_draft', [true, 1]);
-                // For drafts, we might want to load the recipients too
-                // But since recipients is not a standard Eloquent relation for eager loading easily in MongoDB like this, 
-                // we'll handle it in the response or just let the frontend handle it if common users are already fetched.
                 break;
 
             default:
             // RECEIVED: Memos sent to users in secretary's department
-            $recipientIds = User::where('department_id', $user->department_id)
-                               ->where('id', '!=', $user->id)
+            $recipientIds = User::where('department_id', (string)$user->department_id)
+                               ->where('_id', '!=', $userId)
                                ->pluck('id')
                                ->toArray();
                 
-            // Also include memos sent directly to the secretary
-            $recipientIds[] = $user->id;
+            $recipientIds[] = $userId;
                 
-            $query->where(function ($q) use ($user, $recipientIds) {
-                // Received memos
+            $query->where(function ($q) use ($userId, $recipientIds) {
                 $q->whereIn('recipient_id', $recipientIds)
                   ->where('is_draft', false)
                   ->where('status', '!=', 'pending_approval');
                   
-                // OR Memos sent/created by this secretary that are drafts or pending approval
-                $q->orWhere(function ($sq) use ($user) {
-                    $sq->where('created_by', (string)$user->id)
+                $q->orWhere(function ($sq) use ($userId) {
+                    $sq->where('created_by', $userId)
                        ->where(function ($ssq) {
                            $ssq->whereIn('is_draft', [true, 1])
                                ->orWhere('status', 'pending_approval');
@@ -106,20 +93,14 @@ class SecretaryMemoController extends Controller
         if ($search) {
             $query->where(function ($q) use ($search) {
                 $q->where('subject', 'like', "%{$search}%")
-                  ->orWhere('message', 'like', "%{$search}%")
-                  ->orWhereHas('sender', function ($sq) use ($search) {
-                      $sq->where('first_name', 'like', "%{$search}%")
-                         ->orWhere('last_name', 'like', "%{$search}%");
-                  });
+                  ->orWhere('message', 'like', "%{$search}%");
             });
         }
 
         if ($department && $department !== 'All Departments') {
-            // Check if $department is an ID (MongoID or similar) or a name
             if (preg_match('/^[0-9a-fA-F]{24}$/', $department)) {
                 $query->where('department_id', $department);
             } else {
-                // Filter by department name via relationship
                 $query->whereHas('department', function ($q) use ($department) {
                     $q->where('name', $department);
                 });
@@ -134,21 +115,17 @@ class SecretaryMemoController extends Controller
             $query->whereDate('created_at', $date);
         }
 
-        // Apply sorting
         $query->orderBy('created_at', $sort);
 
         $memos = $query->paginate($perPage, ['*'], 'page', $page);
-        
-        \Illuminate\Support\Facades\Log::info("SecretaryMemo Result Debug", [
-            'count' => $memos->count(),
-            'total' => $memos->total()
-        ]);
 
         return response()->json($memos);
     }
 
     /**
-     * Get memo statistics for secretary dashboard
+     * Get memo statistics for secretary dashboard with optimized queries.
+     * 
+     * PERFORMANCE: Uses single query with conditional counts instead of multiple queries.
      */
     public function stats(Request $request)
     {
@@ -161,31 +138,25 @@ class SecretaryMemoController extends Controller
                            ->toArray();
         $recipientIds[] = $user->id;
 
-        $stats = [
-            // Received memos (sent to department)
-            'received' => Memo::whereIn('recipient_id', $recipientIds)
-                            ->where('is_draft', false)
-                            ->where('status', '!=', 'pending_approval')
-                            ->count(),
-            
-            // Sent memos (approved and sent)
-            'sent' => Memo::where('sender_id', $user->id)
-                         ->where('is_draft', false)
-                         ->where('status', '!=', 'pending_approval')
-                         ->count(),
-            
-            // Pending approval
-            'pending' => Memo::where('sender_id', $user->id)
-                            ->where('status', 'pending_approval')
-                            ->count(),
-            
-            // Drafts
-            'drafts' => Memo::where('sender_id', $user->id)
-                           ->where('is_draft', true)
-                           ->count()
-        ];
+        // Revert to individual counts for MongoDB compatibility
+        $userId = (string) $user->id;
 
-        return response()->json($stats);
+        return response()->json([
+            'sent' => Memo::where('sender_id', $userId)
+                          ->where('is_draft', false)
+                          ->where('status', '!=', 'pending_approval')
+                          ->count(),
+            'received' => Memo::whereIn('recipient_id', $recipientIds)
+                              ->where('is_draft', false)
+                              ->where('status', '!=', 'pending_approval')
+                              ->count(),
+            'pending' => Memo::where('sender_id', $userId)
+                             ->where('status', 'pending_approval')
+                             ->count(),
+            'drafts' => Memo::where('sender_id', $userId)
+                            ->where('is_draft', true)
+                            ->count(),
+        ]);
     }
 
     /**

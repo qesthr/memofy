@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { Plus, Search, ChevronDown, Calendar, X, Settings2, CheckCircle, Clock, Eye, XCircle, Check } from 'lucide-vue-next'
+import { Plus, Search, ChevronDown, Calendar, X, Settings2, CheckCircle, Clock, Eye, XCircle, Check, FileText } from 'lucide-vue-next'
 import ComposeMemoModal from '@/components/memos/ComposeMemoModal.vue'
 import CustomizeMemoModal from '@/components/memos/CustomizeMemoModal.vue'
 import api from '@/services/api'
@@ -96,13 +96,12 @@ const handleTemplateApply = (data) => {
   showComposeModal.value = true
 }
 
-const handleSendMemo = async (memoData) => {
+const handleSendMemo = async (result) => {
   try {
-    const response = await api.post('/memos', memoData)
-    
+    // The modal now handles the sending directly
     await Swal.fire({
       title: 'Success!',
-      text: 'Memo has been sent successfully.',
+      text: result.message || 'Memo has been sent successfully.',
       icon: 'success',
       confirmButtonText: 'OK',
       customClass: {
@@ -115,8 +114,7 @@ const handleSendMemo = async (memoData) => {
     fetchMemos()
     fetchStats()
   } catch (error) {
-    console.error('Error sending memo:', error)
-    Swal.fire('Error', error.response?.data?.message || 'Failed to send memo', 'error')
+    console.error('Error handling sent memo:', error)
   }
 }
 
@@ -437,7 +435,10 @@ onMounted(() => {
     </div>
 
     <!-- Pagination -->
-    <div v-if="pagination.last_page > 1" class="flex justify-center mt-6">
+    <div v-if="pagination.last_page > 1" class="flex flex-col items-center justify-center mt-6 gap-3">
+      <span class="text-sm text-base-content/60">
+        Page {{ pagination.current_page }} of {{ pagination.last_page }} ({{ pagination.total }} total memos)
+      </span>
       <div class="join">
         <button 
           @click="pagination.current_page--; fetchMemos()"
@@ -507,6 +508,23 @@ onMounted(() => {
         <div class="prose prose-sm max-w-none">
           <p class="whitespace-pre-wrap">{{ selectedMemo.message }}</p>
         </div>
+
+        <!-- Attachments Section -->
+        <div v-if="selectedMemo.attachments?.length" class="mt-4 pt-4 border-t border-base-200">
+          <p class="text-sm opacity-60 mb-2 font-bold uppercase tracking-wider text-[10px]">Attachments:</p>
+          <div class="flex flex-wrap gap-2">
+            <a 
+              v-for="attachment in selectedMemo.attachments" 
+              :key="attachment.path"
+              :href="attachment.url"
+              target="_blank"
+              class="btn btn-sm btn-ghost bg-base-200 hover:bg-base-300 gap-2 font-bold text-[10px] uppercase group"
+            >
+              <FileText :size="14" class="opacity-60 group-hover:opacity-100" />
+              {{ attachment.name }}
+            </a>
+          </div>
+        </div>
         
         <div class="modal-action">
           <button @click="showDetailModal = false" class="btn">Close</button>
@@ -555,6 +573,23 @@ onMounted(() => {
         <h4 class="font-bold mb-2">Content</h4>
         <div class="prose prose-sm max-w-none bg-base-200/50 p-4 rounded-lg">
           <p class="whitespace-pre-wrap">{{ selectedMemo.message }}</p>
+        </div>
+
+        <!-- Attachments Section (In Approval) -->
+        <div v-if="selectedMemo.attachments?.length" class="mt-4 pt-4">
+          <h4 class="font-bold mb-2">Attachments ({{ selectedMemo.attachments.length }})</h4>
+          <div class="flex flex-wrap gap-2">
+            <a 
+              v-for="attachment in selectedMemo.attachments" 
+              :key="attachment.path"
+              :href="attachment.url"
+              target="_blank"
+              class="btn btn-sm btn-ghost bg-base-100 border border-base-200 hover:bg-base-200 gap-2 font-bold text-[10px] uppercase group shadow-sm"
+            >
+              <FileText :size="14" class="opacity-60 group-hover:opacity-100 text-primary" />
+              {{ attachment.name }}
+            </a>
+          </div>
         </div>
         
         <div class="modal-action">

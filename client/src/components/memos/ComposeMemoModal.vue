@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
-import { X, Paperclip, Calendar, Eye, Send, Search, Trash2, FileText, Loader2 } from 'lucide-vue-next'
+import { X, Paperclip, Calendar, Eye, Send, Search, Trash2, FileText, Loader2, Check } from 'lucide-vue-next'
 import api from '@/services/api'
 import ScheduleMemoModal from './ScheduleMemoModal.vue'
 import { useAuth } from '@/composables/useAuth'
@@ -20,6 +20,8 @@ const formData = ref({
   subject: '',
   signature: 'None',
   signatureId: null,
+  signatureIds: [], // For multiple signature selection
+  signaturePositions: {}, // { sigId: 'Position Name' } for editable positions
   department: 'Department',
   departmentId: null,
   priority: 'Medium',
@@ -68,6 +70,11 @@ const canSubmit = computed(() => {
 
 const attachmentCount = computed(() => formData.value.attachments.length)
 
+// Get selected signatures for preview
+const selectedSignatures = computed(() => {
+  return signatures.value.filter(s => formData.value.signatureIds.includes(s.id))
+})
+
 const fetchUsers = async () => {
   try {
     isLoadingUsers.value = true
@@ -104,9 +111,12 @@ const fetchSignatures = async () => {
     
     // Check for default signature
     const defaultSig = signatures.value.find(s => s.is_default)
-    if (defaultSig) {
+    if (defaultSig && formData.value.signatureIds.length === 0) {
+      formData.value.signatureIds.push(defaultSig.id)
       formData.value.signature = defaultSig.name
       formData.value.signatureId = defaultSig.id
+      // Initialize position
+      formData.value.signaturePositions[defaultSig.id] = defaultSig.position || ''
     }
   } catch (error) {
     console.error('Error fetching signatures:', error)
@@ -246,6 +256,60 @@ const formatFileSize = (bytes) => {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
+// Helper function to check if attachment is an image
+const isImageAttachment = (attachment) => {
+  const imageTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/svg+xml', 'image/webp']
+  const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp']
+  
+  // Check by type
+  if (attachment.type && imageTypes.includes(attachment.type)) {
+    return true
+  }
+  // Check by file_type (server response)
+  if (attachment.file_type && imageTypes.includes(attachment.file_type)) {
+    return true
+  }
+  // Check by extension
+  if (attachment.name) {
+    const ext = attachment.name.toLowerCase().substring(attachment.name.lastIndexOf('.'))
+    if (imageExtensions.includes(ext)) return true
+  }
+  
+  return false
+}
+
+// Toggle signature selection
+const toggleSignature = (sig) => {
+  const index = formData.value.signatureIds.indexOf(sig.id)
+  if (index === -1) {
+    formData.value.signatureIds.push(sig.id)
+    // Initialize position from saved signature or empty
+    if (formData.value.signaturePositions[sig.id] === undefined) {
+      formData.value.signaturePositions[sig.id] = sig.position || ''
+    }
+    // Update single signature fields for backward compatibility
+    if (!formData.value.signatureId) {
+      formData.value.signatureId = sig.id
+      formData.value.signature = sig.name
+    }
+  } else {
+    formData.value.signatureIds.splice(index, 1)
+    // Remove position for this signature
+    delete formData.value.signaturePositions[sig.id]
+    // Update single signature fields
+    if (formData.value.signatureId === sig.id) {
+      formData.value.signatureId = formData.value.signatureIds.length > 0 ? formData.value.signatureIds[0] : null
+      formData.value.signature = formData.value.signatureId ? 
+        signatures.value.find(s => s.id === formData.value.signatureId)?.name || 'None' : 'None'
+    }
+  }
+}
+
+// Check if signature is selected
+const isSignatureSelected = (sigId) => {
+  return formData.value.signatureIds.includes(sigId)
+}
+
 const triggerFileInput = () => {
   if (fileInput.value) {
     fileInput.value.click()
@@ -280,10 +344,12 @@ const handleSend = async () => {
         name: a.name,
         path: a.path,
         size: a.size,
-        type: a.type
+        type: a.type,
+        url: a.url
       })),
       is_draft: false,
-      signature_id: formData.value.signatureId
+      signature_ids: formData.value.signatureIds.length > 0 ? formData.value.signatureIds : [formData.value.signatureId].filter(Boolean),
+      signature_positions: formData.value.signaturePositions
     }
 
     // Add schedule data if present
@@ -296,28 +362,48 @@ const handleSend = async () => {
     // Clear auto-save draft if exists
     if (formData.value.draftId) {
       try {
-        await api.delete(`/secretary/memos/${formData.value.draftId}`)
+        const rawRole = (user.value?.role && typeof user.value.role === 'object') ? user.value.role.name : user.value?.role
+        const roleName = String(rawRole || '').toLowerCase()
+        
+        const deleteEndpoint = roleName === 'secretary' 
+          ? `/secretary/memos/${formData.value.draftId}`
+          : `/memos/${formData.value.draftId}`
+          
+        await api.delete(deleteEndpoint)
       } catch (e) {
         console.error('Error clearing draft:', e)
       }
       formData.value.draftId = null
     }
 
-    const response = await api.post('/secretary/memos/submit-for-approval', payload)
+    const rawRole = (user.value?.role && typeof user.value.role === 'object') ? user.value.role.name : user.value?.role
+    const roleName = String(rawRole || '').toLowerCase()
+    
+    let endpoint = '/secretary/memos/submit-for-approval'
+    let successTitle = 'Submitted for Approval!'
+    let successText = 'Your memo has been submitted to Admin for approval before distribution.'
+    
+    if (roleName !== 'secretary') {
+      endpoint = '/memos'
+      successTitle = 'Memo Sent!'
+      successText = 'Your memo has been sent successfully.'
+    }
+
+    const response = await api.post(endpoint, payload)
     
     emit('send', response.data)
     resetForm()
     closeModal()
     
     Swal.fire({
-      title: 'Submitted for Approval!',
-      text: 'Your memo has been submitted to Admin for approval before distribution.',
+      title: successTitle,
+      text: successText,
       icon: 'success',
       confirmButtonText: 'OK'
     })
   } catch (error) {
     console.error('Error sending memo:', error)
-    Swal.fire('Error', error.response?.data?.message || 'Failed to submit memo for approval', 'error')
+    Swal.fire('Error', error.response?.data?.message || 'Failed to submit memo', 'error')
   }
 }
 
@@ -341,17 +427,37 @@ const saveAsDraft = async () => {
         name: a.name,
         path: a.path,
         size: a.size,
-        type: a.type
+        type: a.type,
+        url: a.url
       })),
-      signature_id: formData.value.signatureId
+      signature_ids: formData.value.signatureIds.length > 0 ? formData.value.signatureIds : [formData.value.signatureId].filter(Boolean),
+      signature_positions: formData.value.signaturePositions
     }
 
     // Update existing draft or create new
+    const rawRole = (user.value?.role && typeof user.value.role === 'object') ? user.value.role.name : user.value?.role
+    const roleName = String(rawRole || '').toLowerCase()
+    
     if (formData.value.draftId) {
-      await api.put(`/secretary/memos/${formData.value.draftId}`, payload)
+      // Update existing draft
+      if (roleName === 'secretary') {
+        await api.put(`/secretary/memos/${formData.value.draftId}`, payload)
+      } else {
+        // For admin/others, use general update endpoint
+        payload.is_draft = true
+        await api.put(`/memos/${formData.value.draftId}`, payload)
+      }
     } else {
-      const response = await api.post('/secretary/memos/draft', payload)
-      formData.value.draftId = response.data.data.id
+      // Create new draft
+      if (roleName === 'secretary') {
+        const response = await api.post('/secretary/memos/draft', payload)
+        formData.value.draftId = response.data.data.id
+      } else {
+        // For admin/others, use general store endpoint with is_draft=true
+        payload.is_draft = true
+        const response = await api.post('/memos', payload)
+        formData.value.draftId = response.data.data.id
+      }
     }
 
     lastSaved.value = new Date()
@@ -377,6 +483,8 @@ const resetForm = () => {
     subject: '',
     signature: 'None',
     signatureId: null,
+    signatureIds: [],
+    signaturePositions: {},
     department: 'Department',
     departmentId: null,
     priority: 'Medium',
@@ -445,6 +553,14 @@ watch(() => props.initialData, (newVal) => {
       ...formData.value,
       ...data
     }
+
+    // Ensure attachments have unique IDs for Vue keys if they don't have them
+    if (formData.value.attachments && Array.isArray(formData.value.attachments)) {
+      formData.value.attachments = formData.value.attachments.map(a => ({
+        ...a,
+        id: a.id || (Date.now() + Math.random())
+      }))
+    }
   }
 }, { immediate: true })
 
@@ -460,6 +576,15 @@ watch(() => recipientSearch.value, (newVal) => {
     showUserSuggestions.value = true
   } else {
     showUserSuggestions.value = false
+  }
+})
+
+// Refetch data when modal opens so new signatures/templates appear immediately
+watch(() => props.isOpen, (val) => {
+  if (val) {
+    fetchUsers()
+    fetchDepartments()
+    fetchSignatures()
   }
 })
 </script>
@@ -479,6 +604,7 @@ watch(() => recipientSearch.value, (newVal) => {
           <X :size="20" />
         </button>
       </div>
+
       <!-- Fixed Metadata Section (Not Scrollable) -->
       <div class="px-10 pt-8 pb-4 space-y-6 shrink-0 bg-base-100">
         <!-- To Field (Inline) -->
@@ -532,16 +658,25 @@ watch(() => recipientSearch.value, (newVal) => {
 
         <!-- Controls Row -->
         <div class="flex flex-wrap items-center gap-6 py-2">
-          <!-- Signature Dropdown -->
+          <!-- Signature Dropdown with Multiple Selection -->
           <div class="dropdown">
             <div tabindex="0" role="button" class="btn btn-sm bg-base-200 border-none px-4 rounded-lg font-black text-[10px] uppercase tracking-wider hover:bg-base-300 text-base-content/70">
-              Signature: {{ formData.signature }}
+              Signatures: {{ formData.signatureIds.length }} selected
               <span class="ml-2 opacity-40 text-[8px]">▼</span>
             </div>
-            <ul tabindex="0" class="dropdown-content z-50 menu p-2 shadow-2xl bg-base-100 border border-base-300 rounded-xl w-52 mt-2">
-              <li @click="formData.signature = 'None'; formData.signatureId = null"><a class="font-bold">None</a></li>
-              <li v-for="sig in signatures" :key="sig.id" @click="formData.signature = sig.name; formData.signatureId = sig.id">
-                <a class="font-bold">{{ sig.name }}</a>
+            <ul tabindex="0" class="dropdown-content z-50 menu p-2 shadow-2xl bg-base-100 border border-base-300 rounded-xl w-64 mt-2 max-h-60 overflow-y-auto">
+              <li @click="formData.signatureIds = []; formData.signatureId = null; formData.signature = 'None'">
+                <a class="font-bold flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" class="checkbox checkbox-xs" :checked="formData.signatureIds.length === 0" readonly />
+                  None
+                </a>
+              </li>
+              <li v-for="sig in signatures" :key="sig.id" @click="toggleSignature(sig)">
+                <a class="font-bold flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" class="checkbox checkbox-xs" :checked="isSignatureSelected(sig.id)" readonly />
+                  <span class="truncate">{{ sig.name }}</span>
+                  <span v-if="sig.is_default" class="badge badge-primary badge-xs">Default</span>
+                </a>
               </li>
             </ul>
           </div>
@@ -596,21 +731,22 @@ watch(() => recipientSearch.value, (newVal) => {
           <Paperclip :size="16" class="opacity-60" />
           <span class="text-xs font-bold uppercase opacity-60">Attachments ({{ attachmentCount }})</span>
         </div>
-        <div class="flex flex-wrap gap-2">
-          <div 
-            v-for="(attachment, index) in formData.attachments" 
-            :key="attachment.id"
-            class="flex items-center gap-2 bg-base-200 px-3 py-2 rounded-lg"
-          >
-            <FileText :size="16" class="opacity-60" />
-            <div class="flex flex-col">
-              <span class="text-xs font-medium max-w-[150px] truncate">{{ attachment.name }}</span>
-              <span class="text-[10px] opacity-40">{{ formatFileSize(attachment.size) }}</span>
+        <div class="flex flex-wrap gap-3">
+          <template v-for="(attachment, index) in formData.attachments" :key="attachment.id">
+            <!-- All Attachments - Show as filename link only -->
+            <div class="flex items-center gap-2 bg-base-200 px-3 py-2 rounded-lg group">
+              <FileText :size="16" class="opacity-60" />
+              <div class="flex flex-col">
+                <a :href="attachment.url" target="_blank" class="text-xs font-medium max-w-[200px] truncate hover:text-primary hover:underline transition-colors">
+                  {{ attachment.name }}
+                </a>
+                <span class="text-[10px] opacity-40">{{ formatFileSize(attachment.size) }}</span>
+              </div>
+              <button @click="removeAttachment(index)" class="btn btn-ghost btn-xs btn-circle text-error opacity-0 group-hover:opacity-100 transition-opacity">
+                <X :size="14" />
+              </button>
             </div>
-            <button @click="removeAttachment(index)" class="btn btn-ghost btn-xs btn-circle text-error">
-              <X :size="14" />
-            </button>
-          </div>
+          </template>
         </div>
       </div>
 
@@ -663,6 +799,7 @@ watch(() => recipientSearch.value, (newVal) => {
       </div>
     </div>
     <div class="modal-backdrop bg-base-100/5 backdrop-blur-3xl transition-all duration-700" @click="closeModal"></div>
+    </div>
 
     <!-- Schedule Modal -->
     <ScheduleMemoModal 
@@ -673,7 +810,7 @@ watch(() => recipientSearch.value, (newVal) => {
     />
 
     <!-- Preview Modal -->
-    <div v-if="showPreviewModal" class="modal modal-open z-100">
+    <div v-if="showPreviewModal" class="modal modal-open z-[99999]">
       <div class="modal-box max-w-2xl bg-white p-12 rounded-none shadow-2xl flex flex-col gap-8 relative">
         <button @click="showPreviewModal = false" class="absolute top-4 right-4 btn btn-ghost btn-circle btn-sm"><X :size="20" /></button>
         
@@ -708,34 +845,100 @@ watch(() => recipientSearch.value, (newVal) => {
         </div>
 
         <!-- Memo Content -->
-        <div class="py-10 text-[15px] leading-relaxed min-h-[300px] whitespace-pre-wrap font-bold text-black border-y border-black/5">
+        <!-- Memo Content -->
+        <div class="py-10 mb-8 text-[15px] leading-relaxed min-h-[300px] whitespace-pre-wrap font-bold text-black block">
           {{ formData.content || 'Write your memo content here...' }}
         </div>
 
-        <!-- Attachments Preview -->
-        <div v-if="formData.attachments.length > 0" class="border-t border-black/10 pt-4">
-          <p class="text-[9px] font-bold uppercase opacity-60 mb-2">Attachments:</p>
-          <div class="flex flex-wrap gap-2">
-            <div v-for="attachment in formData.attachments" :key="attachment.id" class="flex items-center gap-2 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-sm">
-              <Paperclip :size="10" class="opacity-60" />
-              <span class="text-[10px]">{{ attachment.name }}</span>
-            </div>
+        <!-- Separator 1: Always between content and next section -->
+        <div class="w-full border-b-2 border-black my-8"></div>
+
+        <!-- Attachments Preview - Images shown below content -->
+        <!-- Attachments Preview - Images shown below content -->
+        <div v-if="formData.attachments.length > 0" class="block clear-both">
+          <p class="text-[9px] font-bold uppercase opacity-60 mb-6">Attached Files & Images:</p>
+          
+          <!-- Debug info - remove in production -->
+          <pre v-if="false" class="text-[8px] bg-gray-100 p-2 mb-2 overflow-auto">{{ formData.attachments }}</pre>
+          
+          <!-- Image Attachments - Display full width -->
+          <div class="space-y-8 mb-8 flex flex-col items-center w-full">
+            <template v-for="(attachment, index) in formData.attachments" :key="attachment.id + '-img'">
+              <div v-if="isImageAttachment(attachment)" class="w-full flex justify-center">
+                <!-- clickable image for full view -->
+                <a :href="attachment.url" target="_blank" class="block w-full max-w-3xl cursor-zoom-in hover:opacity-95 transition-opacity">
+                  <img :src="attachment.url" :alt="attachment.name" class="w-full h-auto rounded-none shadow-sm border border-gray-100" @error="(e) => { console.error('Image failed to load:', attachment.url); e.target.style.display = 'none' }" />
+                </a>
+              </div>
+            </template>
           </div>
+
+          
+          <!-- Non-image Attachments - Show as links -->
+          <div class="flex flex-wrap gap-2">
+            <template v-for="attachment in formData.attachments" :key="attachment.id + '-file'">
+              <a v-if="!isImageAttachment(attachment)" :href="attachment.url" target="_blank" class="flex items-center gap-2 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-sm hover:bg-gray-100 transition-colors">
+                <Paperclip :size="10" class="opacity-60" />
+                <span class="text-[10px]">{{ attachment.name }}</span>
+              </a>
+            </template>
+          </div>
+          
+          <!-- Separator 2: Only after attachments if they exist -->
+          <div class="w-full border-b-2 border-black my-8"></div>
         </div>
 
-        <!-- Signature Space -->
-        <div class="mt-auto pt-10 flex flex-col items-end text-black">
-          <div class="w-48 h-20 border-b-2 border-black flex items-center justify-center p-2">
-            <span class="text-[10px] text-black/30 font-black italic">SIGNATURE HERE</span>
+        <!-- Multiple Signatures Preview - Horizontal Inline Layout -->
+        <div v-if="selectedSignatures.length > 0" class="mt-8">
+          <div class="flex flex-wrap gap-8 justify-end items-end">
+            <template v-for="(sig, index) in selectedSignatures" :key="sig.id">
+              <div class="flex flex-col items-center w-48">
+                <!-- Signature Box -->
+                <div class="w-full h-20 flex items-center justify-center p-2 relative bg-white -mb-2 z-10">
+                  <img 
+                    v-if="sig.signature_data" 
+                    :src="sig.signature_data" 
+                    class="max-w-full max-h-full object-contain mix-blend-multiply scale-125 origin-bottom" 
+                  />
+                  <span v-else class="text-[10px] text-black/30 font-black italic">SIGNATURE HERE</span>
+                </div>
+                <!-- Name Field (Editable) -->
+                <div class="w-full border-b-2 border-black px-1 pb-1 z-20">
+                  <input 
+                    type="text" 
+                    v-model="sig.name" 
+                    class="w-full text-center text-[12px] font-black uppercase tracking-widest bg-transparent border-none focus:outline-none p-0 text-black placeholder:text-black/30" 
+                    placeholder="Name"
+                  />
+                </div>
+                <!-- Position Field (Editable) -->
+                <input 
+                  type="text" 
+                  v-model="formData.signaturePositions[sig.id]"
+                  class="w-full mt-1 text-center text-[10px] font-bold uppercase bg-transparent border-none focus:outline-none p-0 text-black" 
+                  placeholder="Position"
+                />
+              </div>
+            </template>
           </div>
-          <p class="text-[11px] font-black uppercase tracking-widest mt-2">{{ formData.signature }}</p>
-          <p class="text-[9px] font-bold text-black/60">{{ formData.department }}</p>
+          <!-- Department -->
+          <p class="text-[9px] font-bold text-black/60 text-right mt-4">{{ formData.department }}</p>
+        </div>
+        <div v-else class="mt-8 flex flex-col items-end text-black">
+          <div class="flex flex-col items-center w-48">
+            <div class="w-full h-20 flex items-center justify-center p-2 relative -mb-2">
+              <span class="text-[10px] text-black/30 font-black italic">SIGNATURE HERE</span>
+            </div>
+            <div class="w-full border-b-2 border-black px-1 pb-1">
+              <p class="text-[12px] font-black uppercase tracking-widest text-center">{{ formData.signature !== 'None' ? formData.signature : 'NAME' }}</p>
+            </div>
+            <p class="text-[10px] font-bold text-black mt-1 uppercase text-center">{{ formData.department || 'POSITION' }}</p>
+          </div>
         </div>
 
         <button @click="showPreviewModal = false" class="btn btn-neutral btn-outline btn-block rounded-lg font-bold uppercase tracking-widest text-[10px] mt-8">Back to Edit</button>
       </div>
       <div class="modal-backdrop bg-black/40 backdrop-blur-sm" @click="showPreviewModal = false"></div>
-    </div>
     </div>
   </Teleport>
 </template>

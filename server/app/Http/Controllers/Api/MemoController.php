@@ -6,37 +6,49 @@ use App\Http\Controllers\Controller;
 use App\Models\Memo;
 use App\Models\RollbackLog;
 use App\Services\ActivityLogger;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class MemoController extends Controller
 {
     protected $activityLogger;
+    protected $notificationService;
 
-    public function __construct(ActivityLogger $activityLogger)
+    public function __construct(ActivityLogger $activityLogger, NotificationService $notificationService)
     {
         $this->activityLogger = $activityLogger;
+        $this->notificationService = $notificationService;
     }
 
+    /**
+     * Display a listing of memos with pagination and eager loading.
+     * 
+     * PERFORMANCE: Uses paginate() with eager loading to prevent N+1 queries.
+     */
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = Memo::query();
+        $perPage = min((int) $request->get('per_page', 15), 50);
+        $query = Memo::with(['sender:_id,id,first_name,last_name,email', 'recipient:_id,id,first_name,last_name,email', 'department:_id,id,name']);
+
+        // Use string ID for comparison to be safe with MongoDB driver
+        $userId = (string) $user->id;
 
         // Scope: Sent, Received, or Drafts
         if ($request->scope === 'sent') {
-            $query->where('sender_id', $user->id)->where('is_draft', false);
+            $query->where('sender_id', $userId)->where('is_draft', false);
         } elseif ($request->scope === 'drafts') {
-            $query->where('created_by', $user->id)->where('is_draft', true);
+            $query->where('created_by', $userId)->where('is_draft', true);
         } else {
             // Default: All (Received + Sent + Drafts)
-            $query->where(function ($q) use ($user) {
+            $query->where(function ($q) use ($userId) {
                 // Received
-                $q->where('recipient_id', $user->id)
+                $q->where('recipient_id', $userId)
                   ->where('is_draft', false);
                 
                 // Sent + Drafts
-                $q->orWhere('sender_id', $user->id);
+                $q->orWhere('sender_id', $userId);
             });
         }
 
@@ -48,14 +60,18 @@ class MemoController extends Controller
         // Sort
         $query->orderBy('created_at', 'desc');
 
-        return response()->json($query->paginate(15));
+        $result = $query->paginate($perPage);
+
+        return response()->json($result);
     }
 
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'recipient_id' => 'required_without:department_id|exists:users,id',
-            'department_id' => 'required_without:recipient_id|exists:departments,id',
+            'recipient_id' => 'nullable|exists:users,id',
+            'recipient_ids' => 'nullable|array',
+            'recipient_ids.*' => 'exists:users,id',
+            'department_id' => 'nullable|exists:departments,id',
             'subject' => 'required|string|max:255',
             'message' => 'required|string',
             'priority' => 'required|in:urgent,high,normal,low',
@@ -65,6 +81,8 @@ class MemoController extends Controller
             'schedule_end_at' => 'nullable|date',
             'all_day_event' => 'nullable|boolean',
             'signature_id' => 'nullable|exists:user_signatures,id',
+            'signature_ids' => 'nullable|array',
+            'signature_positions' => 'nullable|array',
             'attachment_path' => 'nullable|string'
         ]);
 
@@ -76,34 +94,82 @@ class MemoController extends Controller
             if (empty($userIds)) {
                 return response()->json(['message' => 'No users found in this department'], 422);
             }
+        } elseif (!empty($request->recipient_ids)) {
+            $userIds = $request->recipient_ids;
+        } elseif ($request->recipient_id) {
+            $userIds = [$request->recipient_id];
         } else {
-            $userIds = [$validated['recipient_id']];
+             return response()->json(['message' => 'No recipients specified'], 422);
         }
 
-        foreach ($userIds as $recipientId) {
+        $userId = (string) $request->user()->id;
+
+        if ($validated['is_draft'] ?? false) {
+            // SINGLE record for drafts
             $memo = Memo::create([
-                'created_by' => $request->user()->id,
-                'sender_id' => $request->user()->id,
-                'recipient_id' => $recipientId,
+                'created_by' => $userId,
+                'sender_id' => $userId,
+                'recipient_id' => (count($userIds) === 1) ? (string) $userIds[0] : null,
+                'recipient_ids' => array_map('strval', $userIds), // Store all recipients in the draft as strings
                 'department_id' => $request->department_id ?? null,
                 'signature_id' => $request->signature_id ?? null,
+                'signature_ids' => $request->signature_ids ?? null,
+                'signature_positions' => $request->signature_positions ?? null,
                 'subject' => $validated['subject'],
                 'message' => $validated['message'],
                 'priority' => $validated['priority'],
                 'attachments' => $validated['attachments'] ?? [],
-                'status' => $validated['is_draft'] ? 'draft' : 'sent',
-                'is_draft' => $validated['is_draft'] ?? false,
+                'status' => 'draft',
+                'is_draft' => true,
                 'version' => 1,
-                'scheduled_send_at' => $validated['scheduled_send_at'] ?? null,
                 'attachment_path' => $validated['attachment_path'] ?? null
             ]);
-
-            // Create calendar event if memo is scheduled
-            if (!empty($validated['scheduled_send_at']) && !$memo->is_draft) {
-                $this->createCalendarEventForMemo($memo, $validated, $request->user()->id);
-            }
-
             $memos[] = $memo;
+        } else {
+            // MULTIPLE records for sent memos (one per recipient)
+            $userId = (string) $request->user()->id;
+            
+            foreach ($userIds as $recipientId) {
+                $memo = Memo::create([
+                    'created_by' => $userId,
+                    'sender_id' => $userId,
+                    'recipient_id' => (string) $recipientId,
+                    'department_id' => $request->department_id ?? null,
+                    'signature_id' => $request->signature_id ?? null,
+                    'signature_ids' => $request->signature_ids ?? null,
+                    'signature_positions' => $request->signature_positions ?? null,
+                    'subject' => $validated['subject'],
+                    'message' => $validated['message'],
+                    'priority' => $validated['priority'],
+                    'attachments' => $validated['attachments'] ?? [],
+                    'status' => 'sent',
+                    'is_draft' => false,
+                    'version' => 1,
+                    'scheduled_send_at' => $validated['scheduled_send_at'] ?? null,
+                    'attachment_path' => $validated['attachment_path'] ?? null
+                ]);
+
+                // Create calendar event if memo is scheduled
+                if (!empty($validated['scheduled_send_at']) && !$memo->is_draft) {
+                    $this->createCalendarEventForMemo($memo, $validated, $request->user()->id);
+                }
+
+                // Create acknowledgment record
+                \App\Models\MemoAcknowledgment::create([
+                    'memo_id' => $memo->id,
+                    'recipient_id' => $recipientId,
+                    'is_acknowledged' => false,
+                    'sent_at' => now()
+                ]);
+
+                // Notify this specific recipient
+                $recipient = \App\Models\User::find($recipientId);
+                if ($recipient) {
+                    $this->notificationService->notifyMemoReceived($request->user(), $recipient, $memo);
+                }
+
+                $memos[] = $memo;
+            }
         }
 
         $action = ($validated['is_draft'] ?? false) ? 'create_draft_memo' : 'create_memo';
@@ -165,9 +231,20 @@ class MemoController extends Controller
         return $mapping[$priority] ?? 'standard';
     }
 
+    /**
+     * Display the specified memo with eager-loaded relationships.
+     * 
+     * PERFORMANCE: Uses with() for eager loading to prevent N+1 queries.
+     */
     public function show($id)
     {
-        $memo = Memo::with(['sender', 'recipient'])->findOrFail($id);
+        $memo = Memo::with(['sender:id,first_name,last_name,email,role,department', 
+                           'recipient:id,first_name,last_name,email,role,department',
+                           'department:id,name',
+                           'signature:id,signature_data,user_id',
+                           'acknowledgments',
+                           'calendarEvents'])
+                    ->findOrFail($id);
         $user = auth()->user();
 
         // Admin check OR ownership/recipient check

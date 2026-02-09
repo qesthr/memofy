@@ -8,7 +8,7 @@ class UserSignature extends Model
 {
     protected $table = 'user_signatures';
 
-    protected $fillable = ['user_id', 'name', 'signature_data', 'is_default'];
+    protected $fillable = ['user_id', 'name', 'position', 'signature_data', 'is_default'];
 
     public function user()
     {

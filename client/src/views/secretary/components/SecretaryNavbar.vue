@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue'
-import { Search, Bell, User, LogOut, Settings, Palette, Check, Camera } from 'lucide-vue-next'
+import { Search, Bell, User, LogOut, Settings, Sun, Moon, Check, Camera } from 'lucide-vue-next'
 import { useAuth } from '@/composables/useAuth'
 import { useTheme } from '@/composables/useTheme'
 import ProfilePhotoModal from '@/components/profile/ProfilePhotoModal.vue'
@@ -41,25 +41,21 @@ const getInitials = (name) => {
 
         <!-- Theme Selector -->
         <div class="dropdown dropdown-end">
-          <button tabindex="0" class="btn btn-ghost btn-circle" title="Change Theme">
-            <Palette :size="20" />
+          <button tabindex="0" class="btn btn-ghost btn-circle" title="Toggle Theme">
+            <Sun v-if="theme === 'dark'" :size="20" />
+            <Moon v-else :size="20" />
           </button>
-          <ul tabindex="0" class="dropdown-content z-[2] menu p-2 shadow-2xl bg-base-100 border border-base-300 rounded-xl w-56 mt-4 max-h-[70vh] overflow-y-auto custom-scrollbar flex-nowrap">
+          <ul tabindex="0" class="dropdown-content z-[2] menu p-2 shadow-2xl bg-base-100 border border-base-300 rounded-xl w-40 mt-4 max-h-[70vh] overflow-y-auto custom-scrollbar flex-nowrap">
             <li class="menu-title px-4 py-2 opacity-60 text-[10px] uppercase tracking-wider font-bold">Select Theme</li>
-            <li v-for="t in availableThemes" :key="t">
+            <li v-for="t in ['light', 'dark']" :key="t">
               <button 
                 @click="setTheme(t)"
                 :class="{ 'active bg-primary text-primary-content': theme === t }"
                 class="flex items-center justify-between py-2 px-4 group text-base-content"
-                :data-theme="t"
               >
                 <div class="flex items-center gap-3">
-                   <div class="flex gap-0.5">
-                      <div class="w-2 h-4 rounded-full bg-primary"></div>
-                      <div class="w-2 h-4 rounded-full bg-secondary"></div>
-                      <div class="w-2 h-4 rounded-full bg-accent"></div>
-                      <div class="w-2 h-4 rounded-full bg-neutral"></div>
-                   </div>
+                   <Sun v-if="t === 'light'" :size="16" />
+                   <Moon v-else :size="16" />
                    <span class="capitalize text-sm font-medium">{{ t }}</span>
                 </div>
                 <Check v-if="theme === t" :size="14" />

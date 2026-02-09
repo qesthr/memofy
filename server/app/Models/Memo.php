@@ -33,12 +33,16 @@ class Memo extends Model
         'approved_at',
         'rejected_by',
         'rejected_at',
-        'rejection_reason'
+        'rejection_reason',
+        'signature_ids',
+        'signature_positions'
     ];
 
     protected $casts = [
         'attachments' => 'array',
         'recipient_ids' => 'array',
+        'signature_ids' => 'array',
+        'signature_positions' => 'array',
         'is_draft' => 'boolean',
         'version' => 'integer',
         'scheduled_send_at' => 'datetime',

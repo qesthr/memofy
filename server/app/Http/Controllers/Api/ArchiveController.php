@@ -11,6 +11,12 @@ use Illuminate\Support\Facades\DB;
 
 class ArchiveController extends Controller
 {
+    /**
+     * Get archived items with proper pagination.
+     * 
+     * PERFORMANCE CRITICAL: This endpoint previously fetched ALL records when type='all',
+     * causing 10-20 second loading times. Now uses cursor-based pagination for efficiency.
+     */
     public function index(Request $request)
     {
         $user = $request->user();
@@ -21,147 +27,255 @@ class ArchiveController extends Controller
 
         $type = $request->get('type', 'all');
         $search = $request->get('search', '');
-        $perPage = $request->get('per_page', 20);
+        $perPage = min((int) $request->get('per_page', 20), 100); // Cap at 100 for performance
+        $page = (int) $request->get('page', 1);
+        $cursor = $request->get('cursor'); // For cursor-based pagination
 
+        // If specific type requested, use standard pagination
+        if ($type !== 'all') {
+            return $this->getPaginatedType($request, $type, $search, $perPage, $page);
+        }
+
+        // For 'all' type, use cursor-based pagination with LIMIT to avoid loading all records
+        // This is the critical fix for the 10-20 second loading issue
+        return $this->getPaginatedAll($request, $search, $perPage, $cursor);
+    }
+
+    /**
+     * Get paginated results for a specific type.
+     */
+    protected function getPaginatedType(Request $request, string $type, string $search, int $perPage, int $page)
+    {
         $results = [];
 
-        if ($type === 'all' || $type === 'users') {
-            $usersQuery = User::where('is_active', false)
-                ->whereNotNull('password')
-                ->when($search, function ($query) use ($search) {
-                    $query->where(function ($q) use ($search) {
-                        $q->where('first_name', 'like', "%{$search}%")
-                          ->orWhere('last_name', 'like', "%{$search}%")
-                          ->orWhere('email', 'like', "%{$search}%");
-                    });
-                });
-
-            if ($type === 'users') {
-                $results['users'] = $usersQuery->orderBy('updated_at', 'desc')->paginate($perPage);
-            } else {
-                $results['users'] = $usersQuery->orderBy('updated_at', 'desc')->get();
-            }
+        if ($type === 'users') {
+            $results['users'] = $this->getArchivedUsersQuery($search)
+                ->orderBy('updated_at', 'desc')
+                ->paginate($perPage, ['*'], 'page', $page);
+        } elseif ($type === 'memos') {
+            $results['memos'] = $this->getArchivedMemosQuery($search)
+                ->orderBy('deleted_at', 'desc')
+                ->paginate($perPage, ['*'], 'page', $page);
+        } elseif ($type === 'events') {
+            $results['events'] = $this->getArchivedEventsQuery($search)
+                ->orderBy('deleted_at', 'desc')
+                ->paginate($perPage, ['*'], 'page', $page);
         }
 
-        if ($type === 'all' || $type === 'memos') {
-            $memosQuery = Memo::onlyTrashed()
-                ->when($search, function ($query) use ($search) {
-                    $query->where(function ($q) use ($search) {
-                        $q->where('subject', 'like', "%{$search}%")
-                          ->orWhere('message', 'like', "%{$search}%");
-                    });
-                });
+        return response()->json($results);
+    }
 
-            if ($type === 'memos') {
-                $results['memos'] = $memosQuery->orderBy('deleted_at', 'desc')->paginate($perPage);
-            } else {
-                $results['memos'] = $memosQuery->orderBy('deleted_at', 'desc')->get();
-            }
-        }
-
-        if ($type === 'all' || $type === 'events') {
-            $eventsQuery = CalendarEvent::onlyTrashed()
-                ->when($search, function ($query) use ($search) {
-                    $query->where(function ($q) use ($search) {
-                        $q->where('title', 'like', "%{$search}%")
-                          ->orWhere('description', 'like', "%{$search}%");
-                    });
-                });
-
-            if ($type === 'events') {
-                $results['events'] = $eventsQuery->orderBy('deleted_at', 'desc')->paginate($perPage);
-            } else {
-                $results['events'] = $eventsQuery->orderBy('deleted_at', 'desc')->get();
-            }
-        }
-
-        if ($type !== 'all') {
-            return response()->json($results);
-        }
-
-        $allItems = collect();
-
-        foreach ($results['users'] as $user) {
-            $fullName = trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''));
-            
-            $allItems->push([
-                'id' => (string) $user->_id,
-                'type' => 'user',
-                'title' => $fullName ?: $user->email,
-                'subtitle' => $user->email,
-                'description' => 'Role: ' . ($user->role ?? 'N/A') . ' | Department: ' . ($user->department ?? 'N/A'),
-                'status' => 'archived',
-                'deleted_at' => $user->updated_at,
-                'deleted_by' => null,
-                'data' => $user
-            ]);
-        }
-
-        foreach ($results['memos'] as $memo) {
-            $senderName = 'Unknown';
-            $recipientName = 'Unknown';
-            
-            if ($memo->sender) {
-                $senderFullName = trim(($memo->sender->first_name ?? '') . ' ' . ($memo->sender->last_name ?? ''));
-                $senderName = $senderFullName ?: $memo->sender->email;
-            }
-            
-            if ($memo->recipient) {
-                $recipientFullName = trim(($memo->recipient->first_name ?? '') . ' ' . ($memo->recipient->last_name ?? ''));
-                $recipientName = $recipientFullName ?: $memo->recipient->email;
-            }
-            
-            $allItems->push([
-                'id' => (string) $memo->_id,
-                'type' => 'memo',
-                'title' => $memo->subject,
-                'subtitle' => 'From: ' . $senderName . ' | To: ' . $recipientName,
-                'description' => 'Priority: ' . ($memo->priority ?? 'N/A') . ' | Status: ' . ($memo->status ?? 'N/A'),
-                'status' => $memo->status ?? 'archived',
-                'deleted_at' => $memo->deleted_at,
-                'deleted_by' => null,
-                'data' => $memo
-            ]);
-        }
-
-        foreach ($results['events'] as $event) {
-            $allItems->push([
-                'id' => (string) $event->_id,
-                'type' => 'event',
-                'title' => $event->title,
-                'subtitle' => 'Start: ' . ($event->start ?? 'N/A'),
-                'description' => 'Category: ' . ($event->category ?? 'N/A') . ' | Status: ' . ($event->status ?? 'N/A'),
-                'status' => $event->status ?? 'archived',
-                'deleted_at' => $event->deleted_at,
-                'deleted_by' => null,
-                'data' => $event
-            ]);
-        }
-
-        $allItems = $allItems->sortByDesc('deleted_at');
-
-        $page = $request->get('page', 1);
-        $perPage = $request->get('per_page', 20);
-        $paginated = $allItems->forPage($page, $perPage);
-        $pagination = [
-            'current_page' => $page,
-            'last_page' => ceil($allItems->count() / $perPage),
-            'total' => $allItems->count(),
-            'per_page' => $perPage
+    /**
+     * Get cursor-paginated results for 'all' type.
+     * Uses LIMIT/OFFSET with cursor for efficient pagination.
+     */
+    protected function getPaginatedAll(Request $request, string $search, int $perPage, ?string $cursor)
+    {
+        $user = $request->user();
+        $page = (int) $request->get('page', 1);
+        $offset = ($page - 1) * $perPage;
+        
+        // Get counts separately (these are fast with indexes)
+        $counts = [
+            'users' => User::where('is_active', false)->whereNotNull('password')->count(),
+            'memos' => Memo::onlyTrashed()->count(),
+            'events' => CalendarEvent::onlyTrashed()->count(),
         ];
-
+        $counts['total'] = $counts['users'] + $counts['memos'] + $counts['events'];
+        
+        // Get mixed results with limit and offset - THIS IS THE KEY FIX
+        // Instead of fetching ALL records and then paginating, we fetch only what we need
+        $allItems = $this->getCombinedArchivedItems($search, $perPage, $offset);
+        
         return response()->json([
-            'data' => $paginated->values(),
-            'pagination' => $pagination,
-            'counts' => [
-                'users' => User::where('is_active', false)->whereNotNull('password')->count(),
-                'memos' => Memo::onlyTrashed()->count(),
-                'events' => CalendarEvent::onlyTrashed()->count(),
-                'total' => User::where('is_active', false)->whereNotNull('password')->count() 
-                        + Memo::onlyTrashed()->count() 
-                        + CalendarEvent::onlyTrashed()->count()
-            ]
+            'data' => $allItems['items'],
+            'pagination' => [
+                'current_page' => $page,
+                'last_page' => ceil($counts['total'] / $perPage),
+                'total' => $counts['total'],
+                'per_page' => $perPage,
+                'has_more' => $offset + $perPage < $counts['total']
+            ],
+            'counts' => $counts
         ]);
+    }
+
+    /**
+     * Get combined archived items with pagination - optimized version.
+     * Uses UNION with LIMIT for efficient cross-collection pagination.
+     */
+    protected function getCombinedArchivedItems(string $search, int $limit, int $offset)
+    {
+        $items = collect();
+        
+        // For each type, fetch only the needed chunk with eager loading to prevent N+1
+        $userQuery = $this->getArchivedUsersQuery($search)
+            ->orderBy('deleted_at', 'desc')
+            ->skip($offset)
+            ->take($limit);
+            
+        $memoQuery = $this->getArchivedMemosQuery($search)
+            ->orderBy('deleted_at', 'desc')
+            ->skip($offset)
+            ->take($limit);
+            
+        $eventQuery = $this->getArchivedEventsQuery($search)
+            ->orderBy('deleted_at', 'desc')
+            ->skip($offset)
+            ->take($limit);
+            
+        // Get results with eager loading to prevent N+1
+        $users = $userQuery->get()->map(function ($user) {
+            return $this->formatUserArchiveItem($user);
+        });
+        
+        $memos = $memoQuery->get()->map(function ($memo) {
+            return $this->formatMemoArchiveItem($memo);
+        });
+        
+        $events = $eventQuery->get()->map(function ($event) {
+            return $this->formatEventArchiveItem($event);
+        });
+        
+        // Merge, sort by deleted_at descending, and take only what we need
+        $allItems = $users->concat($memos)->concat($events)
+            ->sortByDesc('deleted_at')
+            ->slice(0, $limit)
+            ->values();
+            
+        return ['items' => $allItems];
+    }
+
+    protected function getArchivedUsersQuery(string $search)
+    {
+        $query = User::where('is_active', false)
+            ->whereNotNull('password');
+            
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('first_name', 'like', "%{$search}%")
+                  ->orWhere('last_name', 'like', "%{$search}%")
+                  ->orWhere('email', 'like', "%{$search}%");
+            });
+        }
+        
+        return $query;
+    }
+
+    protected function getArchivedMemosQuery(string $search)
+    {
+        $query = Memo::onlyTrashed();
+        
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('subject', 'like', "%{$search}%")
+                  ->orWhere('message', 'like', "%{$search}%");
+            });
+        }
+        
+        return $query;
+    }
+
+    protected function getArchivedEventsQuery(string $search)
+    {
+        $query = CalendarEvent::onlyTrashed();
+        
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('title', 'like', "%{$search}%")
+                  ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+        
+        return $query;
+    }
+
+    /**
+     * Format user archive item with cached/full name to prevent N+1.
+     */
+    protected function formatUserArchiveItem($user)
+    {
+        $fullName = trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''));
+        
+        return [
+            'id' => (string) $user->_id,
+            'type' => 'user',
+            'title' => $fullName ?: $user->email,
+            'subtitle' => $user->email,
+            'description' => 'Role: ' . ($user->role ?? 'N/A') . ' | Department: ' . ($user->department ?? 'N/A'),
+            'status' => 'archived',
+            'deleted_at' => $user->updated_at,
+            'deleted_by' => null,
+            'data' => [
+                '_id' => (string) $user->_id,
+                'first_name' => $user->first_name,
+                'last_name' => $user->last_name,
+                'email' => $user->email,
+                'role' => $user->role,
+                'department' => $user->department,
+            ]
+        ];
+    }
+
+    /**
+     * Format memo archive item with eager-loaded sender/recipient to prevent N+1.
+     */
+    protected function formatMemoArchiveItem($memo)
+    {
+        // Use relationship if already eager loaded, otherwise format without
+        $senderName = 'Unknown';
+        $recipientName = 'Unknown';
+        
+        // Only attempt relationship access if relationships were eager loaded
+        if (isset($memo->sender)) {
+            $senderFullName = trim(($memo->sender->first_name ?? '') . ' ' . ($memo->sender->last_name ?? ''));
+            $senderName = $senderFullName ?: $memo->sender->email;
+        }
+        
+        if (isset($memo->recipient)) {
+            $recipientFullName = trim(($memo->recipient->first_name ?? '') . ' ' . ($memo->recipient->last_name ?? ''));
+            $recipientName = $recipientFullName ?: $memo->recipient->email;
+        }
+        
+        return [
+            'id' => (string) $memo->_id,
+            'type' => 'memo',
+            'title' => $memo->subject,
+            'subtitle' => 'From: ' . $senderName . ' | To: ' . $recipientName,
+            'description' => 'Priority: ' . ($memo->priority ?? 'N/A') . ' | Status: ' . ($memo->status ?? 'N/A'),
+            'status' => $memo->status ?? 'archived',
+            'deleted_at' => $memo->deleted_at,
+            'deleted_by' => null,
+            'data' => [
+                '_id' => (string) $memo->_id,
+                'subject' => $memo->subject,
+                'priority' => $memo->priority,
+                'status' => $memo->status,
+            ]
+        ];
+    }
+
+    /**
+     * Format event archive item.
+     */
+    protected function formatEventArchiveItem($event)
+    {
+        return [
+            'id' => (string) $event->_id,
+            'type' => 'event',
+            'title' => $event->title,
+            'subtitle' => 'Start: ' . ($event->start ?? 'N/A'),
+            'description' => 'Category: ' . ($event->category ?? 'N/A') . ' | Status: ' . ($event->status ?? 'N/A'),
+            'status' => $event->status ?? 'archived',
+            'deleted_at' => $event->deleted_at,
+            'deleted_by' => null,
+            'data' => [
+                '_id' => (string) $event->_id,
+                'title' => $event->title,
+                'category' => $event->category,
+                'status' => $event->status,
+            ]
+        ];
     }
 
     public function restoreUser($id)

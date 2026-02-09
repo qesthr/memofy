@@ -49,8 +49,27 @@ const roles = [
   { value: 'faculty', label: 'Faculty' }
 ]
 
+const visiblePages = computed(() => {
+  const current = pagination.value.current_page
+  const last = pagination.value.last_page
+  const delta = 2
+  const pages = []
+  
+  if (last <= 7) {
+    for (let i = 1; i <= last; i++) pages.push(i)
+  } else {
+    pages.push(1)
+    const start = Math.max(2, current - delta)
+    const end = Math.min(last - 1, current + delta)
+    if (start > 2) pages.push('...')
+    for (let i = start; i <= end; i++) pages.push(i)
+    if (end < last - 1) pages.push('...')
+    if (last > 1) pages.push(last)
+  }
+  return pages
+})
+
 const fetchLogs = async () => {
-  loading.value = true
   try {
     const params = new URLSearchParams()
     if (filters.value.search) params.append('search', filters.value.search)
@@ -299,10 +318,11 @@ onMounted(() => {
             Previous
           </button>
           <button 
-            v-for="page in pagination.last_page" 
+            v-for="page in visiblePages" 
             :key="page"
-            @click="changePage(page)"
-            :class="['join-item btn btn-xs', pagination.current_page === page ? 'btn-active' : 'btn-ghost']"
+            @click="page !== '...' && changePage(page)"
+            :class="['join-item btn btn-xs', pagination.current_page === page ? 'btn-active' : 'btn-ghost', page === '...' ? 'disabled:cursor-default' : '']"
+            :disabled="page === '...'"
           >
             {{ page }}
           </button>

@@ -21,6 +21,7 @@ class UserSignatureController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string',
+            'position' => 'nullable|string',
             'signature_data' => 'required|string',
             'is_default' => 'boolean'
         ]);
@@ -33,6 +34,7 @@ class UserSignatureController extends Controller
         $signature = UserSignature::create([
             'user_id' => Auth::id(),
             'name' => $validated['name'],
+            'position' => $validated['position'] ?? null,
             'signature_data' => $validated['signature_data'],
             'is_default' => $validated['is_default'] ?? false
         ]);

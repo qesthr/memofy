@@ -61,6 +61,9 @@ Route::middleware('auth:sanctum')->prefix('calendar')->group(function () {
 // OAuth Callback (must be public as Google redirects here without auth headers)
 Route::get('/calendar/auth/callback', [App\Http\Controllers\Api\GoogleCalendarController::class, 'callback']);
 
+// Public File Serving (Replaces storage:link behavior)
+Route::get('/files/serve/{path}', [FileController::class, 'serve'])->where('path', '.*')->name('api.files.serve');
+
 // Protected Routes
 Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     // Auth Management
@@ -170,10 +173,10 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     // Memo Customization
     Route::apiResource('departments', DepartmentController::class);
     
-    Route::get('/signatures', [UserSignatureController::class, 'index']);
-    Route::post('/signatures', [UserSignatureController::class, 'store']);
-    Route::delete('/signatures/{userSignature}', [UserSignatureController::class, 'destroy']);
-    Route::post('/signatures/{userSignature}/default', [UserSignatureController::class, 'setDefault']);
+    Route::get('/user-signatures', [UserSignatureController::class, 'index']);
+    Route::post('/user-signatures', [UserSignatureController::class, 'store']);
+    Route::delete('/user-signatures/{userSignature}', [UserSignatureController::class, 'destroy']);
+    Route::post('/user-signatures/{userSignature}/default', [UserSignatureController::class, 'setDefault']);
     
     Route::apiResource('memo-templates', MemoTemplateController::class);
     

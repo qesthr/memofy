@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { Search, CheckCircle, Clock, Eye, Archive } from 'lucide-vue-next'
+import { Search, CheckCircle, Clock, Eye, Archive, FileText } from 'lucide-vue-next'
 import api from '@/services/api'
 import Swal from 'sweetalert2'
 
@@ -309,16 +309,17 @@ onMounted(() => {
         </div>
         
         <div v-if="selectedMemo.attachments?.length" class="mt-4 pt-4 border-t border-base-200">
-          <p class="text-sm opacity-60 mb-2">Attachments:</p>
+          <p class="text-sm opacity-60 mb-2 font-bold uppercase tracking-wider text-[10px]">Attachments:</p>
           <div class="flex flex-wrap gap-2">
             <a 
               v-for="attachment in selectedMemo.attachments" 
-              :key="attachment.name"
+              :key="attachment.path || attachment.name"
               :href="attachment.url"
               target="_blank"
-              class="btn btn-sm btn-outline"
+              class="btn btn-sm btn-ghost bg-base-200 hover:bg-base-300 gap-2 font-bold text-[10px] uppercase group"
             >
-              📎 {{ attachment.name }}
+              <FileText :size="14" class="opacity-60 group-hover:opacity-100" />
+              {{ attachment.name }}
             </a>
           </div>
         </div>

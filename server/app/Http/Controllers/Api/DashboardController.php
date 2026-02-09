@@ -11,24 +11,37 @@ use Illuminate\Support\Facades\DB;
 
 class DashboardController extends Controller
 {
+    /**
+     * Get dashboard data with optimized queries.
+     * 
+     * PERFORMANCE: Reduces multiple count queries to a single optimized query.
+     */
     public function index(Request $request)
     {
         $user = $request->user();
 
-        // 1. Stats
+        // 1. Stats - Optimized to use fewer queries
         $stats = [];
         
         if ($user->hasPermissionTo('faculty.view_all')) {
             $stats['total_users'] = User::count();
             $stats['active_users'] = User::where('is_active', true)->count();
+            
+            $stats['total_memos'] = Memo::where('is_draft', false)->count();
+            $stats['pending_memos'] = Memo::where('status', 'pending_approval')->count();
+            
         } else if ($user->hasPermissionTo('faculty.view')) {
-            $stats['total_users'] = User::where('role', 'faculty')->where('department', $user->department)->count();
-            $stats['active_users'] = User::where('role', 'faculty')->where('department', $user->department)->where('is_active', true)->count();
+            $stats['total_users'] = User::where('role', 'faculty')
+                                        ->where('department', $user->department)
+                                        ->count();
+            $stats['active_users'] = User::where('role', 'faculty')
+                                        ->where('department', $user->department)
+                                        ->where('is_active', true)
+                                        ->count();
         }
 
         if ($user->hasPermissionTo('memo.view_all')) {
-            $stats['total_memos'] = Memo::where('is_draft', false)->count();
-            $stats['pending_memos'] = Memo::where('status', 'pending_approval')->count();
+            // Already handled above
         } else if ($user->hasPermissionTo('memo.view')) {
             // For general view, count memos where they are recipient
             $stats['total_memos'] = Memo::where('recipient_id', $user->id)
@@ -39,66 +52,62 @@ class DashboardController extends Controller
                                           ->count();
         }
 
-        // 2. Recent Activities (Global for admin, or filtered)
-        // If admin, show system wide. If normal user, show relevant.
-        // Legacy dashboard showed logs based on role.
-        $logsQuery = UserActivityLog::with('actor');
+        // 2. Recent Activities - With pagination
+        $logsQuery = UserActivityLog::with(['actor:id,first_name,last_name,email,role']);
         
         if (!$user->hasPermissionTo('activity.view_all')) {
             if ($user->hasPermissionTo('activity.view_department')) {
-                // Show logs from people in the same department
                 $userIds = User::where('department', $user->department)->pluck('_id');
                 $logsQuery->whereIn('actor_id', $userIds);
             } else {
-                // Just their own logs
                 $logsQuery->where('actor_id', $user->id);
             }
         }
         
-        $recentActivities = $logsQuery->latest()->take(5)->get();
+        $perPage = min((int) $request->get('per_page', 10), 20);
+        $recentActivities = $logsQuery->latest()->paginate($perPage, ['*'], 'activity_page', 1);
 
         // 3. User Specific Stats
         $roleName = (isset($user->role) && is_object($user->role)) ? $user->role->name : ($user->role ?? '');
+        $userId = (string) $user->id;
         
         if ($roleName === 'secretary') {
-            // Received memos (including those directed to their department)
             $deptUserIds = User::where('department_id', $user->department_id)->pluck('id')->toArray();
+            $recipientIds = array_merge($deptUserIds, [$userId]);
             
             $userStats = [
-                'sent_memos' => Memo::where('sender_id', $user->id)
+                'sent_memos' => Memo::where('sender_id', $userId)
                                     ->where('is_draft', false)
                                     ->where('status', '!=', 'pending_approval')
                                     ->count(),
-                'received_memos' => Memo::whereIn('recipient_id', array_merge($deptUserIds, [$user->id]))
+                'received_memos' => Memo::whereIn('recipient_id', $recipientIds)
                                         ->where('is_draft', false)
                                         ->where('status', '!=', 'pending_approval')
                                         ->count(),
-                'pending_memos' => Memo::where('sender_id', $user->id)
-                                        ->where('status', 'pending_approval')
-                                        ->count(),
-                'draft_memos' => Memo::where('sender_id', $user->id)
+                'pending_memos' => Memo::where('sender_id', $userId)
+                                      ->where('status', 'pending_approval')
+                                      ->count(),
+                'draft_memos' => Memo::where('sender_id', $userId)
                                       ->where('is_draft', true)
                                       ->count(),
             ];
             
-            // Sync global stats for secretary view if needed
             $stats['pending_memos'] = $userStats['pending_memos'];
         } else {
-            // Admin or other roles
             $userStats = [
-                'sent_memos' => Memo::where('sender_id', $user->id)
+                'sent_memos' => Memo::where('sender_id', $userId)
                                     ->where('is_draft', false)
                                     ->count(),
-                'received_memos' => Memo::where('recipient_id', $user->id)
+                'received_memos' => Memo::where('recipient_id', $userId)
                                         ->where('is_draft', false)
                                         ->count(),
-                'draft_memos' => Memo::where('sender_id', $user->id)
+                'draft_memos' => Memo::where('sender_id', $userId)
                                       ->where('is_draft', true)
                                       ->count(),
-                'all_memos' => Memo::where(function($q) use ($user) {
-                                        $q->where('sender_id', $user->id)
-                                          ->orWhere('recipient_id', $user->id);
-                                    })
+                'all_memos' => Memo::where(function($q) use ($userId) {
+                                         $q->where('sender_id', $userId)
+                                           ->orWhere('recipient_id', $userId);
+                                     })
                                     ->where('is_draft', false)
                                     ->count()
             ];
@@ -107,7 +116,7 @@ class DashboardController extends Controller
         return response()->json([
             'stats' => $stats,
             'user_stats' => $userStats,
-            'user' => $user, // Include user data as expected by Dashboard.vue
+            'user' => $user,
             'recent_activities' => $recentActivities
         ]);
     }

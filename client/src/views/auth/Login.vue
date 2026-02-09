@@ -23,6 +23,8 @@ const rememberMe = ref(false)
 const recaptchaVerified = ref(false)
 const recaptchaToken = ref('')
 const isDev = import.meta.env.MODE === 'development'
+const isRecaptchaActive = ref(false)
+const isRecaptchaLoaded = ref(false)
 
 const { user: authUser, token: authTokenRef } = useAuth()
 
@@ -31,7 +33,13 @@ const togglePassword = () => {
 }
 
 const handleLogin = async () => {
-  if (!recaptchaVerified.value) {
+  // Ensure reCAPTCHA is active if user tries to login directly
+  if (!isRecaptchaActive.value) {
+    activateRecaptcha()
+    return
+  }
+
+  if (!recaptchaVerified.value && !isDev) {
     error.value = 'Please verify that you are not a robot before continuing.'
     Swal.fire({
       icon: 'error',
@@ -175,16 +183,6 @@ const handleMessage = (event) => {
          router.push('/unauthorized')
       }
     })
-  } else if (event.data.type === 'GOOGLE_LOGIN_FAILURE') {
-    const errorMsg = event.data.error || 'Google login failed'
-    error.value = errorMsg
-    
-    if (window.grecaptcha) {
-      window.grecaptcha.reset()
-      recaptchaVerified.value = false
-      recaptchaToken.value = ''
-    }
-
     Swal.fire({
       icon: 'error',
       title: 'Google Auth Error',
@@ -194,16 +192,6 @@ const handleMessage = (event) => {
 }
 
 const openGoogleLogin = () => {
-  if (!recaptchaVerified.value) {
-    error.value = 'Please verify that you are not a robot before continuing.'
-    Swal.fire({
-      icon: 'error',
-      title: 'Verification Required',
-      text: error.value
-    })
-    return
-  }
-
   googleLoginSuccess.value = false
   const width = 500
   const height = 600
@@ -254,11 +242,45 @@ const onRecaptchaExpired = () => {
 
 // Load reCAPTCHA script
 const loadRecaptchaScript = () => {
+  if (isRecaptchaLoaded.value || document.querySelector('script[src*="recaptcha/api.js"]')) {
+    isRecaptchaLoaded.value = true
+    return
+  }
+  
   const script = document.createElement('script')
   script.src = 'https://www.google.com/recaptcha/api.js'
   script.async = true
   script.defer = true
+  script.onload = () => {
+    isRecaptchaLoaded.value = true
+  }
   document.head.appendChild(script)
+}
+
+const activateRecaptcha = () => {
+  if (isRecaptchaActive.value) return
+  isRecaptchaActive.value = true
+  
+  if (window.grecaptcha) {
+    isRecaptchaLoaded.value = true
+    // Wait for v-if to add element to DOM
+    setTimeout(() => {
+      const el = document.querySelector('.g-recaptcha')
+      if (el && !el.innerHTML.trim()) {
+        try {
+          window.grecaptcha.render(el, {
+            sitekey: app.appContext.config.globalProperties.$recaptchaSiteKey || '6LeBIdwrAAAAAOIONOkF3vk31VJTzoN1ElEUOhBV',
+            callback: 'onRecaptchaVerify',
+            'expired-callback': 'onRecaptchaExpired'
+          })
+        } catch (e) {
+          console.error('Manual reCAPTCHA render failed:', e)
+        }
+      }
+    }, 100)
+  } else {
+    loadRecaptchaScript()
+  }
 }
 
 onMounted(() => {
@@ -268,7 +290,9 @@ onMounted(() => {
   localStorage.removeItem('role')
   
   window.addEventListener('message', handleMessage)
-  loadRecaptchaScript()
+  
+  // reCAPTCHA is now lazy-loaded on interaction
+  // loadRecaptchaScript() 
   
   // Make callbacks available globally for reCAPTCHA
   window.onRecaptchaVerify = onRecaptchaVerify
@@ -368,7 +392,7 @@ onUnmounted(() => {
            <button 
             type="submit" 
             class="w-full bg-[#4285F4] hover:bg-[#3367D6] text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            :disabled="isLoading || (!recaptchaVerified && !isDev)"
+            :disabled="isLoading || (isRecaptchaActive && !recaptchaVerified && !isDev)"
           >
             <span v-if="isLoading" class="loading loading-spinner loading-sm"></span>
             <span v-else>Login</span>
@@ -392,16 +416,17 @@ onUnmounted(() => {
             type="button"
             @click="openGoogleLogin"
             class="w-full btn btn-outline border-gray-300 hover:bg-gray-50 hover:border-gray-400 normal-case text-base font-medium text-gray-700 space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            :disabled="!recaptchaVerified && !isDev"
+            :disabled="isLoading"
           >
             <img src="../../assets/images/images/google.png" alt="Google" class="w-5 h-5" />
             <span>Sign in with Google</span>
           </button>
 
-          <!-- Real Google reCAPTCHA -->
-          <div class="flex justify-center mt-6">
+          <!-- Real Google reCAPTCHA (Lazy Loaded) -->
+          <div v-if="isRecaptchaActive" class="flex justify-center mt-6 min-h-[78px]">
             <div 
-              class="g-recaptcha" 
+              class="g-recaptcha"
+              v-show="isRecaptchaLoaded" 
               :data-sitekey="$recaptchaSiteKey || '6LeBIdwrAAAAAOIONOkF3vk31VJTzoN1ElEUOhBV'"
               data-callback="onRecaptchaVerify"
               data-expired-callback="onRecaptchaExpired"

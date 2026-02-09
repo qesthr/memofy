@@ -143,12 +143,19 @@ class ReportController extends Controller
         $totalMemosThisPeriod = Memo::where('created_at', '>=', $startDate)->count();
         $totalActivities = UserActivityLog::where('created_at', '>=', $startDate)->count();
 
-        $memosByStatus = Memo::select('status')
-            ->get()
-            ->groupBy('status')
-            ->map
-            ->count()
-            ->toArray();
+        // Optimized aggregation for memos by status
+        $rawStatusStats = Memo::raw(function ($collection) {
+            return $collection->aggregate([
+                ['$group' => ['_id' => '$status', 'count' => ['$sum' => 1]]]
+            ]);
+        });
+        
+        $memosByStatus = [];
+        foreach ($rawStatusStats as $stat) {
+            if (isset($stat['_id'])) {
+                $memosByStatus[$stat['_id']] = $stat['count'];
+            }
+        }
 
         return [
             'total_users' => $totalUsers,
@@ -163,40 +170,49 @@ class ReportController extends Controller
     private function getUserStats($user, $startDate)
     {
         $newUsersThisPeriod = User::where('created_at', '>=', $startDate)->count();
+
+        // Optimized active users count (actors in logs)
         $activeUsersThisPeriod = UserActivityLog::where('created_at', '>=', $startDate)
             ->distinct('actor_id')
-            ->count(); // MongoDB distinct count
+            ->count();
 
-        $topActiveUsers = UserActivityLog::where('created_at', '>=', $startDate)
-            ->get(['actor_id'])
-            ->groupBy('actor_id')
-            ->map(function ($events, $actorId) {
-                return [
-                    'actor_id' => $actorId,
-                    'count' => $events->count()
-                ];
-            })
-            ->sortByDesc('count')
-            ->take(5)
-            ->map(function ($stat) {
-                 $user = User::find($stat['actor_id']);
-                 if (!$user) return null;
-                 return [
+        // Optimized top active users using aggregation
+        $rawTopUsers = UserActivityLog::raw(function ($collection) use ($startDate) {
+            return $collection->aggregate([
+                ['$match' => ['created_at' => ['$gte' => new \MongoDB\BSON\UTCDateTime($startDate->timestamp * 1000)]]],
+                ['$group' => ['_id' => '$actor_id', 'count' => ['$sum' => 1]]],
+                ['$sort' => ['count' => -1]],
+                ['$limit' => 5]
+            ]);
+        });
+
+        $topActiveUsers = [];
+        foreach ($rawTopUsers as $stat) {
+            $user = User::find($stat['_id']);
+            if ($user) {
+                $topActiveUsers[] = [
                     'id' => $user->_id,
                     'name' => $user->name,
                     'email' => $user->email,
                     'avatar' => $user->avatar,
                     'activity_count' => $stat['count'],
-                 ];
-            })
-            ->filter()
-            ->values();
+                ];
+            }
+        }
 
-        $usersByDepartment = User::get(['department'])
-            ->groupBy('department')
-            ->map
-            ->count()
-            ->toArray();
+        // Optimized users by department using aggregation
+        $rawDeptStats = User::raw(function ($collection) {
+            return $collection->aggregate([
+                ['$group' => ['_id' => '$department', 'count' => ['$sum' => 1]]]
+            ]);
+        });
+        
+        $usersByDepartment = [];
+        foreach ($rawDeptStats as $stat) {
+             if (isset($stat['_id'])) {
+                $usersByDepartment[$stat['_id']] = $stat['count'];
+             }
+        }
 
         return [
             'new_users' => $newUsersThisPeriod,
@@ -210,23 +226,39 @@ class ReportController extends Controller
     {
         $totalMemos = Memo::count();
         $memosThisPeriod = Memo::where('created_at', '>=', $startDate)->count();
-        $draftMemos = Memo::where('status', 'draft')->count();
-        $sentMemos = Memo::where('status', 'sent')->count();
-        $readMemos = Memo::where('status', 'read')->count();
+        
+        // Single aggregation for status counts
+        $statusCounts = Memo::raw(function ($collection) {
+            return $collection->aggregate([
+                ['$group' => ['_id' => '$status', 'count' => ['$sum' => 1]]]
+            ]);
+        });
+        
+        $counts = ['draft' => 0, 'sent' => 0, 'read' => 0];
+        foreach ($statusCounts as $stat) {
+            if (isset($stat['_id']) && isset($counts[$stat['_id']])) {
+                $counts[$stat['_id']] = $stat['count'];
+            }
+        }
 
-        $byPriority = Memo::select('priority')->get()
-            ->groupBy('priority')
-            ->map->count()
-            ->toArray();
+        // Optimized priority distribution
+        $priorityCounts = Memo::raw(function ($collection) {
+            return $collection->aggregate([
+                ['$group' => ['_id' => '$priority', 'count' => ['$sum' => 1]]]
+            ]);
+        });
+        
+        $byPriority = [];
+        foreach ($priorityCounts as $stat) {
+            if (isset($stat['_id'])) {
+                $byPriority[$stat['_id']] = $stat['count'];
+            }
+        }
 
         return [
             'total' => $totalMemos,
             'this_period' => $memosThisPeriod,
-            'by_status' => [
-                'draft' => $draftMemos,
-                'sent' => $sentMemos,
-                'read' => $readMemos,
-            ],
+            'by_status' => $counts,
             'by_priority' => $byPriority,
         ];
     }
@@ -235,11 +267,21 @@ class ReportController extends Controller
     {
         $totalActivities = UserActivityLog::where('created_at', '>=', $startDate)->count();
 
-        $activitiesByType = UserActivityLog::select('action')->where('created_at', '>=', $startDate)->get()
-            ->groupBy('action')
-            ->map->count()
-            ->sortDesc()
-            ->toArray();
+        // Optimized aggregation for action types
+        $rawActionStats = UserActivityLog::raw(function ($collection) use ($startDate) {
+            return $collection->aggregate([
+                ['$match' => ['created_at' => ['$gte' => new \MongoDB\BSON\UTCDateTime($startDate->timestamp * 1000)]]],
+                ['$group' => ['_id' => '$action', 'count' => ['$sum' => 1]]],
+                ['$sort' => ['count' => -1]]
+            ]);
+        });
+
+        $activitiesByType = [];
+        foreach ($rawActionStats as $stat) {
+            if (isset($stat['_id'])) {
+                $activitiesByType[$stat['_id']] = $stat['count'];
+            }
+        }
 
         $recentActivities = UserActivityLog::with('actor:id,name,email,avatar')
             ->where('created_at', '>=', $startDate)
@@ -252,10 +294,10 @@ class ReportController extends Controller
                     'action' => $item->action,
                     'description' => $item->description,
                     'actor' => [
-                        'id' => $item->actor->_id,
-                        'name' => $item->actor->name,
-                        'email' => $item->actor->email,
-                        'avatar' => $item->actor->avatar,
+                        'id' => $item->actor->_id ?? null,
+                        'name' => $item->actor->name ?? 'Unknown',
+                        'email' => $item->actor->email ?? '',
+                        'avatar' => $item->actor->avatar ?? '',
                     ],
                     'created_at' => $item->created_at,
                 ];
@@ -272,14 +314,37 @@ class ReportController extends Controller
     {
         $departments = Department::all();
         $departmentData = [];
+        
+        // 1. Get user counts per department
+        $userCountsRaw = User::raw(function($c) {
+            return $c->aggregate([['$group' => ['_id' => '$department', 'count' => ['$sum' => 1]]]]);
+        });
+        $userCounts = [];
+        foreach($userCountsRaw as $r) { if(isset($r['_id'])) $userCounts[$r['_id']] = $r['count']; }
+
+        // 2. Get total memos per department
+        $memoCountsRaw = Memo::raw(function($c) {
+            return $c->aggregate([['$group' => ['_id' => '$department', 'count' => ['$sum' => 1]]]]);
+        });
+        $memoCounts = [];
+        foreach($memoCountsRaw as $r) { if(isset($r['_id'])) $memoCounts[$r['_id']] = $r['count']; }
+
+        // 3. Get recent memos per department
+        $recentMemoCountsRaw = Memo::raw(function($c) use ($startDate) {
+            return $c->aggregate([
+                ['$match' => ['created_at' => ['$gte' => new \MongoDB\BSON\UTCDateTime($startDate->timestamp * 1000)]]],
+                ['$group' => ['_id' => '$department', 'count' => ['$sum' => 1]]]
+            ]);
+        });
+        $recentMemoCounts = [];
+        foreach($recentMemoCountsRaw as $r) { if(isset($r['_id'])) $recentMemoCounts[$r['_id']] = $r['count']; }
 
         foreach ($departments as $dept) {
-            $departmentData[$dept->name] = [
-                'total_users' => User::where('department', $dept->name)->count(),
-                'total_memos' => Memo::where('department', $dept->name)->count(),
-                'memos_this_period' => Memo::where('department', $dept->name)
-                    ->where('created_at', '>=', $startDate)
-                    ->count(),
+            $deptName = $dept->name;
+            $departmentData[$deptName] = [
+                'total_users' => $userCounts[$deptName] ?? 0,
+                'total_memos' => $memoCounts[$deptName] ?? 0,
+                'memos_this_period' => $recentMemoCounts[$deptName] ?? 0,
             ];
         }
 
@@ -288,16 +353,34 @@ class ReportController extends Controller
 
     private function getUserActivityTimeline($user, $startDate)
     {
+        // Use MongoDB aggregation to group by date
+        $timelineRaw = UserActivityLog::raw(function($collection) use ($startDate) {
+            return $collection->aggregate([
+                ['$match' => ['created_at' => ['$gte' => new \MongoDB\BSON\UTCDateTime($startDate->timestamp * 1000)]]],
+                ['$group' => [
+                    '_id' => ['$dateToString' => ['format' => '%Y-%m-%d', 'date' => '$created_at']],
+                    'count' => ['$sum' => 1]
+                ]],
+                ['$sort' => ['_id' => 1]]
+            ]);
+        });
+        
+        $timelineMap = [];
+        foreach ($timelineRaw as $item) {
+            $timelineMap[$item['_id']] = $item['count'];
+        }
+
+        // Fill in missing dates
         $timeline = [];
         $currentDate = clone $startDate;
-
-        while ($currentDate->lte(Carbon::now())) {
+        $now = Carbon::now();
+        
+        while ($currentDate->lte($now)) {
             $dateStr = $currentDate->format('Y-m-d');
-            $count = UserActivityLog::whereDate('created_at', $dateStr)->count();
             $timeline[] = [
                 'date' => $dateStr,
                 'label' => $currentDate->format('M d'),
-                'count' => $count,
+                'count' => $timelineMap[$dateStr] ?? 0,
             ];
             $currentDate->addDay();
         }
@@ -307,10 +390,19 @@ class ReportController extends Controller
 
     private function getMemoStatusDistribution($user, $startDate)
     {
-        $distribution = Memo::select('status')->get()
-            ->groupBy('status')
-            ->map->count()
-            ->toArray();
+        // Already optimized in getOverviewStats, but specific method requested here
+        $distributionRaw = Memo::raw(function ($collection) {
+            return $collection->aggregate([
+                ['$group' => ['_id' => '$status', 'count' => ['$sum' => 1]]]
+            ]);
+        });
+        
+        $distribution = [];
+        foreach ($distributionRaw as $stat) {
+            if (isset($stat['_id'])) {
+                $distribution[$stat['_id']] = $stat['count'];
+            }
+        }
 
         return [
             'labels' => array_keys($distribution),
@@ -326,16 +418,33 @@ class ReportController extends Controller
 
     private function getDailyMemos($user, $startDate)
     {
+        // Use MongoDB aggregation to group by date
+        $dailyRaw = Memo::raw(function($collection) use ($startDate) {
+            return $collection->aggregate([
+                ['$match' => ['created_at' => ['$gte' => new \MongoDB\BSON\UTCDateTime($startDate->timestamp * 1000)]]],
+                ['$group' => [
+                    '_id' => ['$dateToString' => ['format' => '%Y-%m-%d', 'date' => '$created_at']],
+                    'count' => ['$sum' => 1]
+                ]],
+                ['$sort' => ['_id' => 1]]
+            ]);
+        });
+        
+        $dailyMap = [];
+        foreach ($dailyRaw as $item) {
+            $dailyMap[$item['_id']] = $item['count'];
+        }
+
         $daily = [];
         $currentDate = clone $startDate;
+        $now = Carbon::now();
 
-        while ($currentDate->lte(Carbon::now())) {
+        while ($currentDate->lte($now)) {
             $dateStr = $currentDate->format('Y-m-d');
-            $count = Memo::whereDate('created_at', $dateStr)->count();
             $daily[] = [
                 'date' => $dateStr,
                 'label' => $currentDate->format('M d'),
-                'count' => $count,
+                'count' => $dailyMap[$dateStr] ?? 0,
             ];
             $currentDate->addDay();
         }

@@ -15,44 +15,44 @@ return new class extends Migration
         Schema::table('memos', function (Blueprint $table) {
             // Approval workflow fields
             if (!Schema::hasColumn('memos', 'status')) {
-                $table->string('status')->default('sent')->after('priority');
+                $table->string('status')->default('sent');
             }
             
             if (!Schema::hasColumn('memos', 'approved_by')) {
-                $table->unsignedBigInteger('approved_by')->nullable()->after('status');
+                $table->unsignedBigInteger('approved_by')->nullable();
             }
             
             if (!Schema::hasColumn('memos', 'approved_at')) {
-                $table->timestamp('approved_at')->nullable()->after('approved_by');
+                $table->timestamp('approved_at')->nullable();
             }
             
             if (!Schema::hasColumn('memos', 'rejected_by')) {
-                $table->unsignedBigInteger('rejected_by')->nullable()->after('approved_at');
+                $table->unsignedBigInteger('rejected_by')->nullable();
             }
             
             if (!Schema::hasColumn('memos', 'rejected_at')) {
-                $table->timestamp('rejected_at')->nullable()->after('rejected_by');
+                $table->timestamp('rejected_at')->nullable();
             }
             
             if (!Schema::hasColumn('memos', 'rejection_reason')) {
-                $table->text('rejection_reason')->nullable()->after('rejected_at');
+                $table->text('rejection_reason')->nullable();
             }
             
             // Additional memo fields
             if (!Schema::hasColumn('memos', 'department_id')) {
-                $table->unsignedBigInteger('department_id')->nullable()->after('recipient_id');
+                $table->unsignedBigInteger('department_id')->nullable();
             }
             
             if (!Schema::hasColumn('memos', 'all_day_event')) {
-                $table->boolean('all_day_event')->default(false)->after('scheduled_send_at');
+                $table->boolean('all_day_event')->default(false);
             }
             
             if (!Schema::hasColumn('memos', 'schedule_end_at')) {
-                $table->timestamp('schedule_end_at')->nullable()->after('scheduled_send_at');
+                $table->timestamp('schedule_end_at')->nullable();
             }
             
             if (!Schema::hasColumn('memos', 'signature_id')) {
-                $table->unsignedBigInteger('signature_id')->nullable()->after('department_id');
+                $table->unsignedBigInteger('signature_id')->nullable();
             }
         });
     }

@@ -24,16 +24,25 @@ class CalendarController extends Controller
         $this->notificationService = $notificationService;
     }
     /**
-     * Display a listing of the resource.
+     * Display a listing of the resource with pagination.
+     * 
+     * PERFORMANCE CRITICAL: Previously fetched ALL events without pagination,
+     * causing slow loading times. Now uses cursor-based pagination.
      */
     public function index(Request $request)
     {
         $user = $request->user();
         $start = $request->input('start');
         $end = $request->input('end');
+        $perPage = min((int) $request->get('per_page', 50), 200); // Cap at 200
+        $page = (int) $request->get('page', 1);
+        
+        // For calendar views, we typically need all events in a date range
+        // But for very large datasets, we should paginate
+        $offset = ($page - 1) * $perPage;
 
-        // 1. Get Memofy Events (Created by user OR invited to)
-        $memofyEvents = CalendarEvent::where(function ($query) use ($user) {
+        // 1. Get Memofy Events with pagination
+        $memofyEventsQuery = CalendarEvent::where(function ($query) use ($user) {
                 $query->where('created_by', $user->id)
                       ->orWhereHas('participants', function ($pQuery) use ($user) {
                           $pQuery->where('user_id', $user->id);
@@ -49,27 +58,25 @@ class CalendarController extends Controller
                                 ->where('end', '>', $end . ' 23:59:59');
                       });
                 });
-            })
+            });
+        
+        // Get total count for pagination info
+        $totalMemofyEvents = $memofyEventsQuery->count();
+        
+        // Apply pagination
+        $memofyEvents = $memofyEventsQuery->orderBy('start', 'asc')
+            ->skip($offset)
+            ->take($perPage)
             ->get()
             ->map(function ($event) use ($user) {
-                $event->source = 'MEMOFY';
-                $event->is_editable = $event->created_by === $user->id;
-                
-                // Get invitation status for current user if not creator
-                if (!$event->is_editable) {
-                    $participant = $event->participants->where('user_id', $user->id)->first();
-                    $event->invitation_status = $participant ? $participant->status : null;
-                }
-                
-                return $event;
+                return $this->formatCalendarEvent($event, $user);
             });
 
-        // 2. Get Google Events if connected
+        // 2. Get Google Events if connected (no pagination for Google as API handles it)
         $googleEvents = [];
         if ($user->google_calendar_token) {
             try {
                 $googleController = new GoogleCalendarController();
-                // We wrap the request to simulate what listEvents expects
                 $googleRequest = new Request([
                     'start' => $start,
                     'end' => $end
@@ -79,21 +86,109 @@ class CalendarController extends Controller
                 $response = $googleController->listEvents($googleRequest);
                 $googleEvents = json_decode($response->getContent(), true) ?: [];
                 
-                // Tag as GOOGLE source
                 foreach ($googleEvents as &$ge) {
                     $ge['source'] = 'GOOGLE';
                     $ge['is_editable'] = false;
                 }
             } catch (\Exception $e) {
-                // Silently fail or log for Google sync errors
                 \Log::error("Google Calendar Sync Error: " . $e->getMessage());
             }
         }
 
-        // 3. Merge and Return
+        // 3. Merge results
+        $allEvents = array_merge($memofyEvents->toArray(), $googleEvents);
+        
+        // Sort by start date
+        usort($allEvents, function ($a, $b) {
+            return strtotime($a['start']) - strtotime($b['start']);
+        });
+
         return response()->json([
-            'events' => array_merge($memofyEvents->toArray(), $googleEvents)
+            'events' => $allEvents,
+            'pagination' => [
+                'current_page' => $page,
+                'per_page' => $perPage,
+                'total_memofy_events' => $totalMemofyEvents,
+                'total_google_events' => count($googleEvents),
+                'has_more' => $offset + $perPage < $totalMemofyEvents
+            ]
         ]);
+    }
+
+    /**
+     * Format calendar event for response.
+     */
+    protected function formatCalendarEvent($event, $user)
+    {
+        $event->source = 'MEMOFY';
+        $event->is_editable = $event->created_by === $user->id;
+        
+        if (!$event->is_editable) {
+            $participant = $event->participants->where('user_id', $user->id)->first();
+            $event->invitation_status = $participant ? $participant->status : null;
+        }
+        
+        $creatorData = null;
+        if ($event->creator) {
+            $creatorData = [
+                'id' => $event->creator->id,
+                'first_name' => $event->creator->first_name,
+                'last_name' => $event->creator->last_name,
+            ];
+        }
+        
+        $participantsData = $event->participants->map(function ($p) {
+            $userData = null;
+            if ($p->user) {
+                $userData = [
+                    'id' => $p->user->id,
+                    'first_name' => $p->user->first_name,
+                    'last_name' => $p->user->last_name,
+                ];
+            }
+            return [
+                'id' => $p->id,
+                'user_id' => $p->user_id,
+                'status' => $p->status,
+                'user' => $userData,
+            ];
+        });
+        
+        return [
+            'id' => $event->id,
+            'title' => $event->title,
+            'start' => $event->start,
+            'end' => $event->end,
+            'allDay' => $event->all_day,
+            'color' => $this->getEventColor($event->category),
+            'description' => $event->description ?? '',
+            'source' => 'MEMOFY',
+            'is_editable' => $event->is_editable,
+            'invitation_status' => $event->invitation_status ?? null,
+            'category' => $event->category,
+            'priority' => $event->priority,
+            'memo_id' => $event->memo_id,
+            'creator' => $creatorData,
+            'participants' => $participantsData,
+        ];
+    }
+
+    /**
+     * Get event color based on category.
+     */
+    protected function getEventColor($category)
+    {
+        $colors = [
+            'urgent' => '#EF4444',    // Red
+            'high' => '#F97316',       // Orange
+            'meeting' => '#3B82F6',    // Blue
+            'deadline' => '#EF4444',   // Red
+            'reminder' => '#8B5CF6',   // Purple
+            'standard' => '#10B981',   // Green
+            'low' => '#6B7280',        // Gray
+        ];
+        
+        return $colors[$category] ?? '#3B82F6'; // Default blue
     }
 
     /**

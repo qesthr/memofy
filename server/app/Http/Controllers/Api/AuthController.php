@@ -28,24 +28,28 @@ class AuthController extends Controller
      */
     public function login(Request $request)
     {
+        $bypassRecaptcha = config('services.recaptcha.bypass', false);
+
         $request->validate([
             'email' => 'required|email',
             'password' => 'required',
-            'recaptcha_token' => 'required'
+            'recaptcha_token' => $bypassRecaptcha ? 'nullable' : 'required'
         ]);
 
         // reCAPTCHA Validation
-        $response = \Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
-            'secret' => env('RECAPTCHA_SECRET'),
-            'response' => $request->recaptcha_token,
-            'remoteip' => $request->ip(),
-        ]);
+        if (!$bypassRecaptcha) {
+            $response = \Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
+                'secret' => config('services.recaptcha.secret'),
+                'response' => $request->recaptcha_token,
+                'remoteip' => $request->ip(),
+            ]);
 
-        if (!$response->json('success')) {
-            return response()->json([
-                'success' => false,
-                'message' => 'reCAPTCHA verification failed. Please try again.'
-            ], 422);
+            if (!$response->json('success')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'reCAPTCHA verification failed. Please try again.'
+                ], 422);
+            }
         }
 
         $user = User::where('email', $request->email)->first();

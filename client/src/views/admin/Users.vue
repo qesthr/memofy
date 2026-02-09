@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import { Plus, Pencil, Archive, X, Lock, Unlock, Clock, Users } from 'lucide-vue-next'
 import api from '../../services/api'
 import Swal from 'sweetalert2'
@@ -27,6 +27,35 @@ let lockCheckInterval = null
 
 const HEARTBEAT_INTERVAL = 30000
 const LOCK_CHECK_INTERVAL = 1000
+
+// Pagination state
+const pagination = ref({
+  current_page: 1,
+  last_page: 1,
+  per_page: 50,
+  total: 0
+})
+
+// Smart pagination visible pages
+const visiblePages = computed(() => {
+  const current = pagination.value.current_page
+  const last = pagination.value.last_page
+  const delta = 2
+  const pages = []
+  
+  if (last <= 7) {
+    for (let i = 1; i <= last; i++) pages.push(i)
+  } else {
+    pages.push(1)
+    const start = Math.max(2, current - delta)
+    const end = Math.min(last - 1, current + delta)
+    if (start > 2) pages.push('...')
+    for (let i = start; i <= end; i++) pages.push(i)
+    if (end < last - 1) pages.push('...')
+    if (last > 1) pages.push(last)
+  }
+  return pages
+})
 
 const formData = ref({
   name: '',
@@ -58,7 +87,11 @@ const filters = [
 
 const fetchUsers = async () => {
   try {
-    const params = { status: 'active' }
+    const params = { 
+      status: 'active',
+      page: pagination.value.current_page,
+      per_page: pagination.value.per_page
+    }
     if (activeFilter.value !== 'all') {
       params.role = activeFilter.value
     }
@@ -71,10 +104,32 @@ const fetchUsers = async () => {
       name: user.name || `${user.first_name || ''} ${user.last_name || ''}`.trim(),
       roleColor: getRoleColor(user.role)
     }))
+    
+    // Update pagination from response
+    if (response.data.current_page) {
+      pagination.value = {
+        current_page: response.data.current_page || 1,
+        last_page: response.data.last_page || 1,
+        per_page: response.data.per_page || 50,
+        total: response.data.total || 0
+      }
+    }
   } catch (error) {
     console.error('Error fetching users:', error)
   }
 }
+
+const changePage = (page) => {
+  if (page >= 1 && page <= pagination.value.last_page) {
+    pagination.value.current_page = page
+    fetchUsers()
+  }
+}
+
+watch(activeFilter, () => {
+  pagination.value.current_page = 1
+  fetchUsers()
+})
 
 const fetchLockSettings = async () => {
   try {
@@ -621,6 +676,38 @@ onUnmounted(() => {
             </tr>
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- Pagination -->
+    <div v-if="pagination.last_page > 1" class="mt-4 flex items-center justify-between">
+      <span class="text-sm text-base-content/60">
+        Page {{ pagination.current_page }} of {{ pagination.last_page }} ({{ pagination.total }} total)
+      </span>
+      <div class="join">
+        <button 
+          @click="changePage(pagination.current_page - 1)" 
+          class="join-item btn btn-xs btn-ghost" 
+          :disabled="pagination.current_page === 1"
+        >
+          Previous
+        </button>
+        <button 
+          v-for="page in visiblePages" 
+          :key="page"
+          @click="page !== '...' && changePage(page)"
+          :class="['join-item btn btn-xs', pagination.current_page === page ? 'btn-active' : 'btn-ghost', page === '...' ? 'disabled:cursor-default' : '']"
+          :disabled="page === '...'"
+        >
+          {{ page }}
+        </button>
+        <button 
+          @click="changePage(pagination.current_page + 1)" 
+          class="join-item btn btn-xs btn-ghost" 
+          :disabled="pagination.current_page === pagination.last_page"
+        >
+          Next
+        </button>
       </div>
     </div>
 
