@@ -125,12 +125,12 @@ onMounted(() => {
         </div>
 
         <div class="p-6 space-y-6">
-          <div class="bg-blue-50/50 rounded-lg p-4 border border-blue-100">
+          <div class="bg-blue-40/50 rounded-lg p-4 border border-blue-100">
             <div class="flex items-start gap-3">
-              <AlertCircle class="text-blue-500 mt-0.5" :size="18" />
+              <AlertCircle class="mt-0.5" :size="18" />
               <div>
-                <h3 class="font-semibold text-blue-700 text-sm">About Two-Phase Locking</h3>
-                <p class="text-sm text-blue-600 mt-1">
+                <h3 class="font-semibold text-sm">About Two-Phase Locking</h3>
+                <p class="text-sm mt-1">
                   When an admin starts editing a user, a lock is acquired to prevent other admins from editing the same user simultaneously.
                   The lock automatically expires after the configured duration if not renewed.
                 </p>
