@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
-import { Plus, Pencil, Archive, X, Lock, Unlock, Clock, Users } from 'lucide-vue-next'
+import { Plus, Pencil, Archive, X, Lock, Unlock, Clock, Users, User, Mail, Building2, Shield, RefreshCw, Copy, Eye, EyeOff } from 'lucide-vue-next'
 import api from '../../services/api'
 import Swal from 'sweetalert2'
 
@@ -62,7 +62,43 @@ const formData = ref({
   email: '',
   department: '',
   role: '',
-  is_active: true
+  is_active: true,
+  password: ''
+})
+
+const generatedPassword = ref('')
+const showPassword = ref(false)
+
+// Generate random password
+const generatePassword = () => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+-=[]{}|;:,.<>?'
+  let password = ''
+  for (let i = 0; i < 12; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  generatedPassword.value = password
+  formData.value.password = password
+}
+
+// Copy password to clipboard
+const copyPassword = async () => {
+  try {
+    await navigator.clipboard.writeText(generatedPassword.value)
+    await Swal.fire({
+      icon: 'success',
+      title: 'Copied!',
+      text: 'Password copied to clipboard',
+      timer: 1500,
+      showConfirmButton: false
+    })
+  } catch (err) {
+    console.error('Failed to copy:', err)
+  }
+}
+
+// Initialize with generated password
+onMounted(() => {
+  generatePassword()
 })
 
 const departments = [
@@ -712,109 +748,228 @@ onUnmounted(() => {
     </div>
 
     <div v-if="showAddUserModal" class="modal modal-open">
-      <div class="modal-box max-w-md">
-        <div class="flex items-center justify-between mb-6">
-          <h3 class="font-bold text-xl flex items-center gap-2">
-            <Lock v-if="isEditing" class="text-warning" :size="20" />
-            {{ isEditing ? 'Edit User' : 'Add New User' }}
-          </h3>
-          <button @click="closeModal" class="btn btn-sm btn-circle btn-ghost">
+      <div class="modal-box max-w-lg p-0 overflow-hidden">
+        <!-- Modal Header with decorative background -->
+        <div class="bg-gradient-to-r from-primary via-primary/90 to-blue-600 p-6 text-primary-content relative overflow-hidden">
+          <!-- Decorative circles -->
+          <div class="absolute -top-10 -right-10 w-32 h-32 bg-white/10 rounded-full"></div>
+          <div class="absolute -bottom-10 -left-10 w-24 h-24 bg-white/10 rounded-full"></div>
+          
+          <div class="relative flex items-center gap-4">
+            <div class="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
+              <User v-if="!isEditing" :size="28" />
+              <Pencil v-else :size="28" />
+            </div>
+            <div>
+              <h3 class="font-bold text-2xl">{{ isEditing ? 'Edit User' : 'Add New User' }}</h3>
+              <p class="text-white/80 text-sm">{{ isEditing ? 'Update user information below' : 'Fill in the details to invite a new user' }}</p>
+            </div>
+          </div>
+          <button @click="closeModal" class="absolute top-4 right-4 btn btn-ghost btn-sm btn-circle text-white hover:bg-white/20">
             <X :size="20" />
           </button>
         </div>
 
-        <div v-if="isEditing" class="mb-4 p-3 bg-warning/10 border border-warning/20 rounded-lg">
-          <div class="flex items-center gap-2 text-warning">
-            <Clock :size="16" />
-            <span class="text-sm font-medium">Edit Session Active</span>
+        <div v-if="isEditing" class="bg-warning/10 border-b border-warning/20 p-4">
+          <div class="flex items-center gap-3 text-warning">
+            <Clock :size="18" />
+            <span class="font-medium">Edit Session Active</span>
           </div>
-          <p class="text-xs text-base-content/60 mt-1">
-            Session expires in: <span class="font-mono font-bold text-warning">{{ formatSecondsRemaining(currentSessionExpiresAt) }}</span>
+          <p class="text-sm text-base-content/70 mt-1 ml-7">
+            Session expires in: <span class="font-mono font-bold">{{ formatSecondsRemaining(currentSessionExpiresAt) }}</span>
           </p>
         </div>
 
-        <div class="space-y-4">
+        <!-- Modal Body -->
+        <div class="p-6 space-y-5">
+          <!-- Name Field -->
           <div class="form-control">
-            <label class="label">
-              <span class="label-text font-medium">Name <span class="text-error">*</span></span>
+            <label class="label py-1">
+              <span class="label-text font-semibold flex items-center gap-2">
+                <User :size="14" class="text-primary" />
+                Full Name <span class="text-error">*</span>
+              </span>
             </label>
-            <input 
-              v-model="formData.name"
-              type="text" 
-              placeholder="Enter full name" 
-              class="input input-bordered w-full"
-            />
+            <div class="relative">
+              <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none transition-colors group-focus-within:text-primary">
+                <User :size="16" class="text-base-content/40" />
+              </div>
+              <input 
+                v-model="formData.name"
+                type="text" 
+                placeholder="e.g. John Doe" 
+                class="input input-bordered w-full pl-11 bg-base-200 border-base-300 focus:bg-base-100 focus:border-primary transition-all rounded-xl"
+              />
+            </div>
           </div>
 
+          <!-- Email Field -->
           <div class="form-control">
-            <label class="label">
-              <span class="label-text font-medium">Email <span class="text-error">*</span></span>
+            <label class="label py-1">
+              <span class="label-text font-semibold flex items-center gap-2">
+                <Mail :size="14" class="text-primary" />
+                Email Address <span class="text-error">*</span>
+              </span>
             </label>
-            <input 
-              v-model="formData.email"
-              type="email" 
-              placeholder="user@buksu.edu.ph" 
-              class="input input-bordered w-full"
-            />
-            <label class="label">
-              <span class="label-text-alt text-base-content/60">Only @buksu.edu.ph and @student.buksu.edu.ph allowed</span>
-            </label>
+            <div class="relative">
+              <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none transition-colors group-focus-within:text-primary">
+                <Mail :size="16" class="text-base-content/40" />
+              </div>
+              <input 
+                v-model="formData.email"
+                type="email" 
+                placeholder="e.g. j.doe@buksu.edu.ph" 
+                class="input input-bordered w-full pl-11 bg-base-200 border-base-300 focus:bg-base-100 focus:border-primary transition-all rounded-xl"
+              />
+            </div>
+            <p class="text-[10px] text-base-content/50 mt-1 ml-1 italic">
+              Only BukSU domain emails (@buksu.edu.ph or @student.buksu.edu.ph) are accepted.
+            </p>
           </div>
 
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text font-medium">Department <span class="text-error">*</span></span>
-            </label>
-            <select v-model="formData.department" class="select select-bordered w-full">
-              <option value="" disabled>Select department</option>
-              <option v-for="dept in departments" :key="dept" :value="dept">
-                {{ dept }}
-              </option>
-            </select>
-          </div>
-
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text font-medium">Role <span class="text-error">*</span></span>
-            </label>
-            <select v-model="formData.role" class="select select-bordered w-full">
-              <option value="" disabled>Select role</option>
-              <option v-for="role in roles" :key="role.value" :value="role.value">
-                {{ role.label }}
-              </option>
-            </select>
-          </div>
-
-          <div v-if="isEditing" class="form-control">
-            <label class="label">
-              <span class="label-text font-medium">Account Status</span>
-            </label>
-            <div class="flex items-center gap-4 bg-slate-50/50 p-3 rounded-lg border border-base-200">
-                <span class="text-sm" :class="formData.is_active ? 'text-success font-bold' : 'text-error font-bold'">
-                    {{ formData.is_active ? 'Active' : 'Inactive' }}
+          <!-- Department & Role Row -->
+          <div class="grid grid-cols-2 gap-4">
+            <!-- Department -->
+            <div class="form-control">
+              <label class="label py-1">
+                <span class="label-text font-semibold flex items-center gap-2">
+                  <Building2 :size="14" class="text-primary" />
+                  Department <span class="text-error">*</span>
                 </span>
-                <input 
-                    type="checkbox" 
-                    v-model="formData.is_active" 
-                    class="toggle toggle-primary" 
-                />
+              </label>
+              <select v-model="formData.department" class="select select-bordered w-full bg-base-200 border-base-300 focus:border-primary rounded-xl">
+                <option value="" disabled>Select</option>
+                <option v-for="dept in departments" :key="dept" :value="dept">
+                  {{ dept }}
+                </option>
+              </select>
+            </div>
+
+            <!-- Role -->
+            <div class="form-control">
+              <label class="label py-1">
+                <span class="label-text font-semibold flex items-center gap-2">
+                  <Shield :size="14" class="text-primary" />
+                  Role <span class="text-error">*</span>
+                </span>
+              </label>
+              <select v-model="formData.role" class="select select-bordered w-full bg-base-200 border-base-300 focus:border-primary rounded-xl" :disabled="isEditing">
+                <option value="" disabled>Select</option>
+                <option v-for="role in roles" :key="role.value" :value="role.value">
+                  {{ role.label }}
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Auto-Generated Password (Add Mode Only) -->
+          <div v-if="!isEditing" class="form-control">
+            <label class="label py-1">
+              <span class="label-text font-semibold flex items-center gap-2">
+                <Lock :size="14" class="text-primary" />
+                Auto-Generated Password
+              </span>
+              <span class="label-text-alt text-primary font-medium">Will be sent to user via email</span>
+            </label>
+            <div class="relative">
+              <input 
+                v-model="generatedPassword"
+                :type="showPassword ? 'text' : 'password'"
+                readonly
+                class="input input-bordered w-full pr-24 bg-base-200 border-base-300 focus:border-primary rounded-xl font-mono"
+              />
+              <div class="absolute inset-y-0 right-0 flex items-center gap-1 pr-2">
+                <button 
+                  @click="copyPassword"
+                  class="btn btn-ghost btn-xs btn-square text-base-content/60 hover:text-primary"
+                  title="Copy password"
+                >
+                  <Copy :size="14" />
+                </button>
+                <button 
+                  @click="generatePassword"
+                  class="btn btn-ghost btn-xs btn-square text-base-content/60 hover:text-primary"
+                  title="Regenerate password"
+                >
+                  <RefreshCw :size="14" class="animate-spin-once" />
+                </button>
+                <button 
+                  @click="showPassword = !showPassword"
+                  class="btn btn-ghost btn-xs btn-square text-base-content/60 hover:text-primary"
+                  title="Toggle visibility"
+                >
+                  <EyeOff v-if="showPassword" :size="14" />
+                  <Eye v-else :size="14" />
+                </button>
+              </div>
+            </div>
+            <p class="text-[10px] text-base-content/50 mt-1 ml-1">
+              A secure 12-character password will be automatically generated and sent to the user's email.
+            </p>
+          </div>
+
+          <!-- Account Status (Edit Mode Only) -->
+          <div v-if="isEditing" class="form-control">
+            <label class="label py-1">
+              <span class="label-text font-semibold flex items-center gap-2">
+                <Shield :size="14" class="text-primary" />
+                Account Status
+              </span>
+            </label>
+            <div class="flex items-center justify-between bg-base-200 p-4 rounded-xl border border-base-300">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg flex items-center justify-center" :class="formData.is_active ? 'bg-success/10 text-success' : 'bg-error/10 text-error'">
+                  <Users v-if="formData.is_active" :size="20" />
+                  <Lock v-else :size="20" />
+                </div>
+                <div>
+                  <span class="font-semibold" :class="formData.is_active ? 'text-success' : 'text-error'">
+                    {{ formData.is_active ? 'Active' : 'Inactive' }}
+                  </span>
+                  <p class="text-xs text-base-content/60">{{ formData.is_active ? 'User can log in' : 'User cannot log in' }}</p>
+                </div>
+              </div>
+              <input 
+                type="checkbox" 
+                v-model="formData.is_active" 
+                class="toggle toggle-lg toggle-success" 
+              />
+            </div>
+          </div>
+
+          <!-- Role Info Badge -->
+          <div v-if="!isEditing" class="bg-primary/5 rounded-xl p-4 border border-primary/10">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Mail :size="18" class="text-primary" />
+              </div>
+              <div class="flex-1">
+                <p class="font-semibold text-sm text-primary">Invitation will be sent via email</p>
+                <p class="text-xs text-base-content/60">The user will receive login credentials and setup instructions at their email address.</p>
+              </div>
             </div>
           </div>
         </div>
 
-        <div class="modal-action mt-6">
-          <button @click="closeModal" class="btn btn-ghost">Cancel</button>
+        <!-- Modal Footer -->
+        <div class="bg-base-200/50 p-4 flex justify-end gap-3 border-t border-base-200">
+          <button @click="closeModal" class="btn btn-ghost rounded-xl px-6">
+            Cancel
+          </button>
           <button 
             @click="saveUser" 
-            class="btn btn-primary text-white"
+            class="btn btn-primary text-white rounded-xl px-6 shadow-lg shadow-primary/20"
             :disabled="isLoading"
           >
             <span v-if="isLoading" class="loading loading-spinner loading-sm"></span>
-            <span v-else>{{ isEditing ? 'Save Changes' : 'Send Invitation' }}</span>
+            <span v-else class="flex items-center gap-2">
+              <Mail v-if="!isEditing" :size="16" />
+              <span>{{ isEditing ? 'Save Changes' : 'Send Invitation' }}</span>
+            </span>
           </button>
         </div>
       </div>
-      <div class="modal-backdrop" @click="closeModal"></div>
+      <div class="modal-backdrop bg-black/40 backdrop-blur-[2px]" @click="closeModal"></div>
     </div>
   </div>
 </template>
@@ -828,5 +983,22 @@ onUnmounted(() => {
 
 .modal-backdrop {
   @apply bg-black/50;
+}
+
+.animate-spin-once {
+  animation: spin-once 0.5s ease-out;
+}
+
+@keyframes spin-once {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.input:focus {
+  @apply ring-4 ring-primary/10 border-primary outline-none;
 }
 </style>

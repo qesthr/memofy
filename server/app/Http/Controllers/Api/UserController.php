@@ -9,6 +9,7 @@ use App\Services\ActivityLogger;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\UserInvitationMail;
 
@@ -351,7 +352,6 @@ class UserController extends Controller
         }
 
         $isSecretary = $currentUser->role === 'secretary';
-        $isAdmin = $currentUser->role === 'admin';
 
         // 1. Strict Validation
         $rules = [
@@ -374,10 +374,14 @@ class UserController extends Controller
             $rules['department'] = 'required|string|exists:departments,name';
         }
 
+        // Password is optional - will be auto-generated if not provided
+        $rules['password'] = 'nullable|string|min:8';
+
         $request->validate($rules, [
             'email.unique' => 'An account with this email already exists.',
             'department.exists' => 'Invalid department selection.',
             'role.in' => 'Invalid role selection.',
+            'password.min' => 'Password must be at least 8 characters.',
         ]);
 
         try {
@@ -409,7 +413,11 @@ class UserController extends Controller
             $firstName = $parts[0];
             $lastName = $parts[1] ?? '';
 
-            // 5. Create User record (inactive, no password)
+            // 5. Generate or use provided password
+            $password = $request->password ?: $this->generateSecurePassword();
+            $hashedPassword = Hash::make($password);
+
+            // 6. Create User record (inactive, but with password for email)
             $userData = [
                 'first_name' => $firstName,
                 'last_name' => $lastName,
@@ -417,7 +425,7 @@ class UserController extends Controller
                 'role' => $role,
                 'department' => $department,
                 'is_active' => false, 
-                'password' => null
+                'password' => $hashedPassword
             ];
 
             // Sync department_id
@@ -428,10 +436,10 @@ class UserController extends Controller
 
             $user = User::create($userData);
 
-            // 5. Generate Token
+            // 7. Generate Token
             $token = Str::random(64);
 
-            // 6. Create Invitation
+            // 8. Create Invitation with plain password for email
             $invitation = UserInvitation::create([
                 'user_id' => $user->id,
                 'email' => $user->email,
@@ -443,9 +451,11 @@ class UserController extends Controller
                 'status' => 'pending'
             ]);
 
-            // 7. Send Email
+            // 9. Send Email with password
             try {
-                Mail::to($invitation->email)->send(new UserInvitationMail($invitation));
+                // Eager load relationships for email
+                $invitation->load('user', 'inviter');
+                Mail::to($invitation->email)->send(new UserInvitationMail($invitation, $password));
             } catch (\Exception $e) {
                 \Log::error('Invitation email failed: ' . $e->getMessage());
                 return response()->json([
@@ -474,6 +484,19 @@ class UserController extends Controller
                 'message' => 'An unexpected error occurred. Please try again later.'
             ], 500);
         }
+    }
+
+    /**
+     * Generate a secure random password
+     */
+    private function generateSecurePassword(): string
+    {
+        $chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+-=[]{}|;:,.<>?';
+        $password = '';
+        for ($i = 0; $i < 12; $i++) {
+            $password .= $chars[random_int(0, strlen($chars) - 1)];
+        }
+        return $password;
     }
 
     public function restoreAll(Request $request)

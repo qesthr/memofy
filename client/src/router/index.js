@@ -211,11 +211,27 @@ router.beforeEach(async (to, from, next) => {
 
       if ((userRole === 'admin' || userRole === 'super_admin') && requiredRole === 'admin') {
       } else if (requiredRole !== userRole) {
+        const Swal = (await import('sweetalert2')).default
+        await Swal.fire({
+          title: 'Unauthorized Access',
+          text: 'You do not have permission to access this section.',
+          icon: 'error',
+          confirmButtonColor: '#3b82f6',
+          confirmButtonText: 'Understood'
+        })
         return next({ name: 'Unauthorized' })
       }
     }
 
     if (to.meta.permission && !can(to.meta.permission)) {
+      const Swal = (await import('sweetalert2')).default
+      await Swal.fire({
+        title: 'Unauthorized Access',
+        text: 'You do not have permission to view this page.',
+        icon: 'error',
+        confirmButtonColor: '#3b82f6',
+        confirmButtonText: 'Understood'
+      })
       return next({ name: 'Unauthorized' })
     }
 
