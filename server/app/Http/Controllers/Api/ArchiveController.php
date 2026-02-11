@@ -280,6 +280,10 @@ class ArchiveController extends Controller
 
     public function restoreUser($id)
     {
+        if (!request()->user()->hasPermissionTo('archive.restore')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $user = User::findOrFail($id);
         
         if ($user->is_active) {
@@ -296,6 +300,10 @@ class ArchiveController extends Controller
 
     public function restoreMemo($id)
     {
+        if (!request()->user()->hasPermissionTo('archive.restore')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $memo = Memo::withTrashed()->findOrFail($id);
         
         if (!$memo->trashed()) {
@@ -312,6 +320,10 @@ class ArchiveController extends Controller
 
     public function restoreEvent($id)
     {
+        if (!request()->user()->hasPermissionTo('archive.restore')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $event = CalendarEvent::withTrashed()->findOrFail($id);
         
         if (!$event->trashed()) {
@@ -328,6 +340,10 @@ class ArchiveController extends Controller
 
     public function restoreAll(Request $request)
     {
+        if (!$request->user()->hasPermissionTo('archive.restore_all')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $type = $request->get('type', 'all');
         $restoredCounts = [
             'users' => 0,
@@ -368,6 +384,10 @@ class ArchiveController extends Controller
 
     public function forceDeleteUser($id)
     {
+        if (!request()->user()->hasPermissionTo('archive.delete_permanently')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $user = User::findOrFail($id);
         $user->delete();
 
@@ -376,6 +396,10 @@ class ArchiveController extends Controller
 
     public function forceDeleteMemo($id)
     {
+        if (!request()->user()->hasPermissionTo('archive.delete_permanently')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $memo = Memo::withTrashed()->findOrFail($id);
         $memo->forceDelete();
 
@@ -384,6 +408,10 @@ class ArchiveController extends Controller
 
     public function forceDeleteEvent($id)
     {
+        if (!request()->user()->hasPermissionTo('archive.delete_permanently')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         $event = CalendarEvent::withTrashed()->findOrFail($id);
         $event->forceDelete();
 

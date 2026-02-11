@@ -1,21 +1,17 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { Plus, Search, ChevronDown, Calendar, X, Settings2, CheckCircle, Clock, Eye, Send } from 'lucide-vue-next'
 import ComposeMemoModal from '@/components/memos/ComposeMemoModal.vue'
 import CustomizeMemoModal from '@/components/memos/CustomizeMemoModal.vue'
+import MemoInboxCard from '@/components/memos/MemoInboxCard.vue'
 import api from '@/services/api'
 import Swal from 'sweetalert2'
 
 // Filter states
 const departmentFilter = ref('All Departments')
-const priorityFilter = ref('All Priorities')
 const sortFilter = ref('Newest')
 const dateFilter = ref('')
 const activeTab = ref('all') // all, sent, pending, drafts
-const searchQuery = ref('')
-
-// Additional data
-const departments = ref([])
 
 // Modal states
 const showComposeModal = ref(false)
@@ -24,90 +20,35 @@ const templateData = ref(null)
 const selectedMemo = ref(null)
 const showDetailModal = ref(false)
 
-// Data states
-const memos = ref([])
-const loading = ref(false)
-const pagination = ref({
-  current_page: 1,
-  last_page: 1,
-  per_page: 15,
-  total: 0
+// Additional data
+const departments = ref([])
+
+// Memo inbox ref for refreshing
+const memoInboxRef = ref(null)
+
+// Scope mapping for tabs
+const scopeMapping = {
+  'all': '',
+  'sent': 'sent',
+  'pending': 'pending',
+  'drafts': 'drafts'
+}
+
+// Additional params for secretary API
+const additionalParams = computed(() => {
+  const params = {
+    department: departmentFilter.value !== 'All Departments' ? departmentFilter.value : undefined,
+    sort: sortFilter.value === 'Oldest' ? 'asc' : 'desc',
+    date: dateFilter.value || undefined
+  }
+  return params
 })
 
-// Stats
-const stats = ref({
-  received: 0,
-  sent: 0,
-  pending: 0,
-  drafts: 0
-})
-
-// Debounce timer for search
-let searchTimeout = null
-
-const fetchMemos = async () => {
-  try {
-    loading.value = true
-    const params = {
-      scope: activeTab.value === 'all' ? '' : activeTab.value,
-      page: pagination.value.current_page,
-      per_page: pagination.value.per_page,
-      search: searchQuery.value || undefined,
-      department: departmentFilter.value !== 'All Departments' ? departmentFilter.value : undefined,
-      priority: priorityFilter.value !== 'All Priorities' ? priorityFilter.value.toLowerCase() : undefined,
-      sort: sortFilter.value === 'Oldest' ? 'asc' : 'desc',
-      date: dateFilter.value || undefined
-    }
-    
-    const response = await api.get('/secretary/memos', { params })
-    memos.value = response.data.data || []
-    pagination.value = {
-      current_page: response.data.current_page || 1,
-      last_page: response.data.last_page || 1,
-      per_page: response.data.per_page || 15,
-      total: response.data.total || 0
-    }
-  } catch (error) {
-    console.error('Error fetching memos:', error)
-    Swal.fire('Error', 'Failed to load memos', 'error')
-  } finally {
-    loading.value = false
-  }
-}
-
-const handleSearch = () => {
-  // Debounce search to avoid too many API calls
-  if (searchTimeout) clearTimeout(searchTimeout)
-  searchTimeout = setTimeout(() => {
-    pagination.value.current_page = 1
-    fetchMemos()
-  }, 300)
-}
-
-const handleFilterChange = () => {
-  pagination.value.current_page = 1
-  fetchMemos()
-}
-
-// Watch for filter changes
-const applyFilters = () => {
-  pagination.value.current_page = 1
-  fetchMemos()
-}
-
-const fetchStats = async () => {
-  try {
-    const response = await api.get('/secretary/memos/stats')
-    stats.value = response.data
-  } catch (error) {
-    console.error('Error fetching stats:', error)
-  }
-}
 
 const fetchDepartments = async () => {
   try {
     const response = await api.get('/departments')
-    departments.value = response.data.data || []
+    departments.value = response.data
   } catch (error) {
     console.error('Error fetching departments:', error)
   }
@@ -119,76 +60,30 @@ const handleTemplateApply = (data) => {
   showComposeModal.value = true
 }
 
-const editMemo = (memo) => {
-  templateData.value = {
-    ...memo,
-    recipientIds: memo.recipient_ids || (memo.recipient_id ? [memo.recipient_id] : []),
-    draftId: memo.id,
-    content: memo.message
-  }
-  showComposeModal.value = true
-}
-
-const handleSendMemo = async (memoData) => {
+const handleSendMemo = async (result) => {
   try {
-    // For secretaries, memos go to pending approval first
-    await api.post('/secretary/memos/submit-for-approval', memoData)
-    
     await Swal.fire({
-      title: 'Submitted for Approval!',
-      text: 'Your memo has been submitted to Admin for approval before distribution.',
+      title: 'Success!',
+      text: result.message || 'Memo has been sent successfully.',
       icon: 'success',
-      confirmButtonText: 'OK',
-      customClass: {
-        confirmButton: 'btn btn-primary'
-      }
+      confirmButtonText: 'OK'
     })
     
     showComposeModal.value = false
     templateData.value = null
-    fetchMemos()
-    fetchStats()
+    
+    // Refresh memo inbox
+    if (memoInboxRef.value) {
+      memoInboxRef.value.refresh()
+    }
   } catch (error) {
-    console.error('Error sending memo:', error)
-    Swal.fire('Error', error.response?.data?.message || 'Failed to submit memo for approval', 'error')
+    console.error('Error handling sent memo:', error)
   }
 }
 
 const viewMemo = (memo) => {
   selectedMemo.value = memo
   showDetailModal.value = true
-  
-  // Mark as read if received
-  if (activeTab.value === 'received' && memo.status === 'sent') {
-    markAsRead(memo.id)
-  }
-}
-
-const markAsRead = async (memoId) => {
-  try {
-    await api.post(`/memos/${memoId}/acknowledge`)
-    const memo = memos.value.find(m => m.id === memoId)
-    if (memo) memo.status = 'read'
-  } catch (error) {
-    console.error('Error marking as read:', error)
-  }
-}
-
-const acknowledgeMemo = async (memoId) => {
-  try {
-    await api.post(`/memos/${memoId}/acknowledge`)
-    await Swal.fire({
-      title: 'Acknowledged!',
-      text: 'Memo has been acknowledged.',
-      icon: 'success',
-      timer: 1500,
-      showConfirmButton: false
-    })
-    fetchMemos()
-    fetchStats()
-  } catch (error) {
-    console.error('Error acknowledging memo:', error)
-  }
 }
 
 const formatDate = (date) => {
@@ -212,262 +107,110 @@ const getPriorityClass = (priority) => {
   const classes = {
     urgent: 'badge-error',
     high: 'badge-warning',
+    medium: 'badge-info',
     normal: 'badge-info',
     low: 'badge-success'
   }
   return classes[priority] || 'badge-info'
 }
 
-const getStatusIcon = (status) => {
-  const icons = {
-    sent: Send,
-    read: CheckCircle,
-    pending: Clock
+// Custom params handler for secretary API
+const getParams = () => {
+  const baseParams = {
+    scope: scopeMapping[activeTab.value] || '',
+    per_page: 15
   }
-  return icons[status] || Send
+  return { ...baseParams, ...additionalParams.value }
 }
 
+// Watch tab changes to refresh memo inbox
+watch(activeTab, () => {
+  if (memoInboxRef.value) {
+    memoInboxRef.value.refresh()
+  }
+})
+
 const tabs = [
-  { key: 'all', label: 'All Memos', icon: 'inbox' },
-  { key: 'sent', label: 'Sent', icon: 'send' },
-  { key: 'pending', label: 'Pending Approval', icon: 'clock' },
-  { key: 'drafts', label: 'Drafts', icon: 'file' }
+  { key: 'all', label: 'ALL' },
+  { key: 'pending', label: 'PENDING' },
+  { key: 'sent', label: 'SENT' },
+  { key: 'drafts', label: 'DRAFTS' }
 ]
 
 onMounted(() => {
-  fetchMemos()
-  fetchStats()
   fetchDepartments()
 })
 </script>
 
 <template>
-  <div class="view-container">
+  <div class="view-container no-scroll">
     <!-- Page Header -->
-    <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
+    <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 p-4">
       <div>
         <h1 class="text-2xl font-bold text-base-content">Memos</h1>
-        <p class="text-sm text-base-content/60">Manage memos for your department</p>
+        <p class="text-sm text-base-content/60">Manage and distribute memos</p>
       </div>
       <div class="flex gap-2">
         <button @click="showCustomizeModal = true" class="btn btn-ghost btn-sm border border-base-300 px-4 hover:bg-base-200">
           <Settings2 :size="16" class="mr-2" /> Template
         </button>
         <button @click="showComposeModal = true; templateData = null" class="btn btn-primary btn-sm text-white px-6">
-          <span class="mr-1">✎</span> Compose
+          <Plus :size="16" class="mr-1" /> Compose
         </button>
       </div>
     </div>
 
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-      <div 
-        v-for="(count, key) in stats" 
-        :key="key"
-        @click="activeTab = key === 'received' ? 'all' : key"
-        class="card bg-base-100 border border-base-200 cursor-pointer hover:border-primary/50 transition-all font-inter"
-        :class="{ 'border-primary ring-2 ring-primary/20': activeTab === (key === 'received' ? 'all' : key) }"
-      >
-        <div class="card-body p-4">
-          <div class="flex items-center justify-between">
-            <span class="text-[10px] font-black uppercase tracking-[0.2em] opacity-50">{{ key === 'received' ? 'all' : key }}</span>
-            <span class="badge badge-primary badge-sm font-black">{{ count }}</span>
-          </div>
-        </div>
-      </div>
-    </div>
 
     <!-- Tabs -->
-    <div class="tabs tabs-boxed bg-base-200/50 mb-4 p-1 w-fit">
+    <div class="tabs tabs-boxed bg-base-200/50 mb-4 p-1 w-fit ml-4">
       <button 
         v-for="tab in tabs" 
         :key="tab.key"
         @click="activeTab = tab.key"
-        class="tab font-black text-[10px] uppercase tracking-widest"
+        class="tab font-bold text-xs uppercase tracking-wider"
         :class="{ 'tab-active bg-primary text-white': activeTab === tab.key }"
       >
         {{ tab.label }}
       </button>
     </div>
 
-    <!-- Toolbar -->
-    <div class="flex flex-col md:flex-row items-center gap-4 mb-4 bg-base-100 p-2 rounded-xl border border-base-200 shadow-sm">
-      <!-- Filters -->
-      <div class="flex-1 flex flex-wrap items-center gap-2 w-full">
-        <select 
-          v-model="departmentFilter" 
-          @change="handleFilterChange"
-          class="select select-sm select-bordered w-full md:w-auto bg-base-100"
+    <!-- Additional Filters for Secretary -->
+    <div class="flex flex-wrap items-center gap-3 px-4 mb-4">
+      <select v-model="departmentFilter" class="select select-sm select-bordered bg-base-100">
+        <option value="All Departments">All Departments</option>
+        <option 
+          v-for="dept in departments" 
+          :key="dept.id" 
+          :value="dept.name"
         >
-          <option value="All Departments">All Departments</option>
-          <option v-for="dept in departments" :key="dept.id" :value="dept.name">{{ dept.name }}</option>
-        </select>
-        
-        <select 
-          v-model="priorityFilter" 
-          @change="handleFilterChange"
-          class="select select-sm select-bordered w-full md:w-auto bg-base-100"
-        >
-          <option value="All Priorities">All Priorities</option>
-          <option value="High">High</option>
-          <option value="Normal">Normal</option>
-          <option value="Low">Low</option>
-        </select>
-        
-        <select 
-          v-model="sortFilter" 
-          @change="handleFilterChange"
-          class="select select-sm select-bordered w-full md:w-auto bg-base-100"
-        >
-          <option value="Newest">Newest</option>
-          <option value="Oldest">Oldest</option>
-        </select>
-        
-        <!-- Date Picker -->
-        <div class="relative w-full md:w-auto">
-          <input 
-            v-model="dateFilter"
-            @change="handleFilterChange"
-            type="date" 
-            class="input input-sm input-bordered w-full pr-8 bg-base-100" 
-          />
-          <button 
-            v-if="dateFilter"
-            @click="dateFilter = ''; handleFilterChange()"
-            class="absolute right-2 top-1/2 -translate-y-1/2 text-base-content/40 hover:text-base-content"
-          >
-            <X :size="14" />
-          </button>
-        </div>
-        
-        <button 
-          v-if="departmentFilter !== 'All Departments' || priorityFilter !== 'All Priorities' || dateFilter"
-          @click="() => { departmentFilter = 'All Departments'; priorityFilter = 'All Priorities'; dateFilter = ''; handleFilterChange(); }"
-          class="btn btn-sm btn-ghost text-error"
-        >
-          Clear
-        </button>
-      </div>
-
-      <!-- Search -->
-      <div class="relative w-full md:w-64">
-        <input 
-          v-model="searchQuery"
-          @input="handleSearch"
-          type="text" 
-          placeholder="Search memos..." 
-          class="input input-sm input-bordered w-full pr-8 bg-base-100" 
-        />
-        <Search :size="14" class="absolute right-3 top-1/2 -translate-y-1/2 opacity-40" />
-        <button 
-          v-if="searchQuery"
-          @click="searchQuery = ''; handleSearch()"
-          class="absolute right-8 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100"
-        >
-          <X :size="14" />
-        </button>
-      </div>
+          {{ dept.name }}
+        </option>
+      </select>
+      
+      <select v-model="sortFilter" class="select select-sm select-bordered bg-base-100">
+        <option value="Newest">Newest First</option>
+        <option value="Oldest">Oldest First</option>
+      </select>
+      
+      <input 
+        v-model="dateFilter"
+        type="date" 
+        class="input input-sm input-bordered bg-base-100"
+        placeholder="Filter by date"
+      />
     </div>
 
-    <!-- Memos List -->
-    <div v-if="loading" class="flex justify-center py-12">
-      <span class="loading loading-spinner loading-lg text-primary"></span>
-    </div>
-
-    <div v-else-if="memos.length === 0" class="flex flex-col items-center justify-center py-20 bg-base-100 rounded-xl border border-base-200">
-      <div class="text-6xl mb-4">📭</div>
-      <p class="text-base-content/40 font-medium">No memos found</p>
-      <p class="text-sm text-base-content/30 mt-1">Memos will appear here when received or sent</p>
-    </div>
-
-    <div v-else class="space-y-2">
-      <div 
-        v-for="memo in memos" 
-        :key="memo.id"
-        @click="viewMemo(memo)"
-        class="card bg-base-100 border border-base-200 hover:border-primary/30 hover:shadow-md transition-all cursor-pointer"
-      >
-        <div class="card-body p-4">
-          <div class="flex items-start gap-4">
-            <!-- Priority Badge -->
-            <div class="flex flex-col items-center gap-1">
-              <div 
-                class="w-3 h-3 rounded-full"
-                :class="{
-                  'bg-error': memo.priority === 'urgent',
-                  'bg-warning': memo.priority === 'high',
-                  'bg-info': memo.priority === 'normal',
-                  'bg-success': memo.priority === 'low'
-                }"
-              ></div>
-            </div>
-            
-            <!-- Content -->
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center justify-between gap-2">
-                <h3 class="font-bold truncate" :class="{ 'text-base-content/60': memo.status === 'read' }">
-                  {{ memo.subject }}
-                </h3>
-                <span class="badge badge-sm" :class="getPriorityClass(memo.priority)">
-                  {{ memo.priority }}
-                </span>
-              </div>
-              
-              <div class="flex items-center gap-4 mt-1 text-sm text-base-content/60">
-                <span v-if="memo.sender">
-                  From: {{ memo.sender.first_name }} {{ memo.sender.last_name }}
-                </span>
-                <span>{{ formatDate(memo.created_at) }}</span>
-                <span v-if="memo.is_draft" class="text-gray-400 flex items-center gap-1">
-                  <Eye :size="12" /> Draft
-                </span>
-                <span v-else-if="memo.status === 'pending_approval' || memo.status === 'pending'" class="text-warning flex items-center gap-1">
-                  <Clock :size="12" /> Pending Approval
-                </span>
-              </div>
-            </div>
-
-            <!-- Actions -->
-            <div class="flex items-center gap-2">
-              <button 
-                v-if="memo.is_draft"
-                @click.stop="editMemo(memo)"
-                class="btn btn-sm btn-primary btn-outline"
-              >
-                Edit Draft
-              </button>
-              <button 
-                v-if="activeTab === 'received' && memo.status === 'sent'"
-                @click.stop="acknowledgeMemo(memo.id)"
-                class="btn btn-sm btn-primary btn-outline"
-              >
-                Acknowledge
-              </button>
-              <Eye :size="18" class="opacity-40" />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Pagination -->
-    <div v-if="pagination.last_page > 1" class="flex justify-center mt-6">
-      <div class="join">
-        <button 
-          @click="pagination.current_page--; fetchMemos()"
-          class="join-item btn btn-sm"
-          :disabled="pagination.current_page === 1"
-        >
-          Previous
-        </button>
-        <button class="join-item btn btn-sm">Page {{ pagination.current_page }} of {{ pagination.last_page }}</button>
-        <button 
-          @click="pagination.current_page++; fetchMemos()"
-          class="join-item btn btn-sm"
-          :disabled="pagination.current_page === pagination.last_page"
-        >
-          Next
-        </button>
-      </div>
+    <!-- Memo Inbox Card -->
+    <div class="px-4">
+      <MemoInboxCard 
+        ref="memoInboxRef"
+        :initial-scope="scopeMapping[activeTab]"
+        api-endpoint="/secretary/memos"
+        :max-height="'calc(100vh - 240px)'"
+        :per-page="15"
+        :custom-params="additionalParams"
+        @memo-click="viewMemo"
+      />
     </div>
 
     <!-- Customize Memo Modal -->
@@ -487,63 +230,49 @@ onMounted(() => {
 
     <!-- Memo Detail Modal -->
     <div v-if="showDetailModal && selectedMemo" class="modal modal-open z-50">
-      <div class="modal-box max-w-3xl">
-        <button @click="showDetailModal = false" class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
-        
-        <h3 class="font-bold text-lg mb-4">{{ selectedMemo.subject }}</h3>
-        
-        <div class="space-y-2 text-sm mb-4 pb-4 border-b border-base-200">
-          <div class="flex justify-between">
-            <span class="opacity-60">From:</span>
-            <span class="font-medium">
-              {{ selectedMemo.sender?.first_name }} {{ selectedMemo.sender?.last_name }}
-              <span class="text-xs opacity-60">({{ selectedMemo.sender?.role }})</span>
-            </span>
-          </div>
-          <div class="flex justify-between">
-            <span class="opacity-60">Date:</span>
-            <span class="font-medium">{{ formatDate(selectedMemo.created_at) }} {{ formatTime(selectedMemo.created_at) }}</span>
-          </div>
-          <div class="flex justify-between">
-            <span class="opacity-60">Priority:</span>
-            <span class="badge badge-sm" :class="getPriorityClass(selectedMemo.priority)">
-              {{ selectedMemo.priority }}
-            </span>
-          </div>
-          <div v-if="selectedMemo.status === 'pending'" class="flex justify-between">
-            <span class="opacity-60">Status:</span>
-            <span class="badge badge-warning">Pending Approval</span>
-          </div>
-        </div>
-        
-        <div class="prose prose-sm max-w-none">
-          <p class="whitespace-pre-wrap">{{ selectedMemo.message }}</p>
-        </div>
-        
-        <div v-if="selectedMemo.attachments?.length" class="mt-4 pt-4 border-t border-base-200">
-          <p class="text-sm opacity-60 mb-2">Attachments:</p>
-          <div class="flex flex-wrap gap-2">
-            <a 
-              v-for="attachment in selectedMemo.attachments" 
-              :key="attachment.name"
-              :href="attachment.url"
-              target="_blank"
-              class="btn btn-sm btn-outline"
-            >
-              📎 {{ attachment.name }}
-            </a>
+      <div class="modal-box max-w-3xl max-h-[80vh] flex flex-col overflow-hidden">
+        <!-- Modal Header -->
+        <div class="flex-shrink-0">
+          <button @click="showDetailModal = false" class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+          
+          <h3 class="font-bold text-lg mb-4">{{ selectedMemo.subject }}</h3>
+          
+          <div class="space-y-2 text-sm pb-4 border-b border-base-200">
+            <div class="flex justify-between">
+              <span class="opacity-60">From:</span>
+              <span class="font-medium">
+                {{ selectedMemo.sender?.first_name }} {{ selectedMemo.sender?.last_name }}
+              </span>
+            </div>
+            <div v-if="selectedMemo.recipient" class="flex justify-between">
+              <span class="opacity-60">To:</span>
+              <span class="font-medium">
+                {{ selectedMemo.recipient?.first_name }} {{ selectedMemo.recipient?.last_name }}
+              </span>
+            </div>
+            <div class="flex justify-between">
+              <span class="opacity-60">Date:</span>
+              <span class="font-medium">{{ formatDate(selectedMemo.created_at) }} {{ formatTime(selectedMemo.created_at) }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="opacity-60">Priority:</span>
+              <span class="badge badge-sm" :class="getPriorityClass(selectedMemo.priority)">
+                {{ selectedMemo.priority }}
+              </span>
+            </div>
           </div>
         </div>
         
-        <div class="modal-action">
+        <!-- Modal Body - Scrollable -->
+        <div class="flex-1 overflow-y-auto my-4">
+          <div class="prose prose-sm max-w-none">
+            <p class="whitespace-pre-wrap">{{ selectedMemo.message }}</p>
+          </div>
+        </div>
+        
+        <!-- Modal Footer -->
+        <div class="flex-shrink-0 pt-4 border-t border-base-200 modal-action-wrapper">
           <button @click="showDetailModal = false" class="btn">Close</button>
-          <button 
-            v-if="activeTab === 'received' && selectedMemo.status === 'sent'"
-            @click="acknowledgeMemo(selectedMemo.id); showDetailModal = false"
-            class="btn btn-primary"
-          >
-            Acknowledge
-          </button>
         </div>
       </div>
       <div class="modal-backdrop" @click="showDetailModal = false"></div>
@@ -552,7 +281,24 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.view-container {
-  padding: 0;
+.view-container.no-scroll {
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.view-container.no-scroll > *:not(.modal) {
+  flex-shrink: 0;
+}
+
+.modal-box {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-action-wrapper {
+  flex-shrink: 0;
 }
 </style>

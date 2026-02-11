@@ -18,10 +18,27 @@ const fetchNotifications = async () => {
   loading.value = true
   try {
     const response = await api.get('/notifications')
-    notifications.value = response.data.slice(0, props.maxItems)
-    unreadCount.value = response.data.filter(n => !n.read_at).length
+    // Handle different API response structures
+    const notificationsData = response.data.data || response.data || []
+    
+    // Ensure we have an array
+    if (Array.isArray(notificationsData)) {
+      notifications.value = notificationsData.slice(0, props.maxItems)
+      unreadCount.value = notificationsData.filter(n => !n.read_at).length
+    } else {
+      console.warn('Unexpected notifications response format:', response.data)
+      notifications.value = []
+      unreadCount.value = 0
+    }
   } catch (error) {
     console.error('Failed to fetch notifications:', error)
+    // Show more detailed error for debugging
+    if (error.response) {
+      console.error('Response status:', error.response.status)
+      console.error('Response data:', error.response.data)
+    }
+    notifications.value = []
+    unreadCount.value = 0
   } finally {
     loading.value = false
   }

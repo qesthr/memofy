@@ -209,7 +209,7 @@ router.beforeEach(async (to, from, next) => {
       const userRole = (role || '').toLowerCase()
       const requiredRole = to.meta.role.toLowerCase()
 
-      if ((userRole === 'admin' || userRole === 'super_admin') && requiredRole === 'admin') {
+      if ((userRole === 'admin' || userRole === 'superadmin' || userRole === 'super_admin') && requiredRole === 'admin') {
       } else if (requiredRole !== userRole) {
         const Swal = (await import('sweetalert2')).default
         await Swal.fire({

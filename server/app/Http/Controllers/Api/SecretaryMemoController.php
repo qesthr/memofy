@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\ActivityLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use MongoDB\BSON\ObjectId;
 
 class SecretaryMemoController extends Controller
 {
@@ -17,6 +18,25 @@ class SecretaryMemoController extends Controller
     public function __construct(ActivityLogger $activityLogger)
     {
         $this->activityLogger = $activityLogger;
+    }
+
+    /**
+     * Convert user ID to consistent format for MongoDB comparison
+     */
+    protected function normalizeUserId($userId)
+    {
+        if ($userId instanceof ObjectId) {
+            return $userId;
+        }
+        // Try to create ObjectId from string
+        if (is_string($userId) && strlen((string)$userId) === 24) {
+            try {
+                return new ObjectId((string)$userId);
+            } catch (\Exception $e) {
+                return (string)$userId;
+            }
+        }
+        return (string)$userId;
     }
 
     /**
@@ -45,23 +65,24 @@ class SecretaryMemoController extends Controller
             'department:_id,id,name'
         ]);
         
-        $userId = (string) $user->id;
+        // Normalize user ID for MongoDB comparison
+        $userId = $this->normalizeUserId($user->id);
 
         switch ($scope) {
             case 'sent':
                 $query->where('sender_id', $userId)
                       ->where('is_draft', false)
-                      ->where('status', '!=', 'pending_approval');
+                      ->where('status', 'sent'); // STRICT: Only sent status
                 break;
 
             case 'pending':
                 $query->where('sender_id', $userId)
-                      ->where('status', 'pending_approval');
+                      ->where('status', 'pending_approval'); // STRICT: Already strict
                 break;
 
             case 'drafts':
                 $query->where('created_by', $userId)
-                      ->whereIn('is_draft', [true, 1]);
+                      ->whereIn('is_draft', [true, 1]); // STRICT: Already strict
                 break;
 
             default:
@@ -76,14 +97,11 @@ class SecretaryMemoController extends Controller
             $query->where(function ($q) use ($userId, $recipientIds) {
                 $q->whereIn('recipient_id', $recipientIds)
                   ->where('is_draft', false)
-                  ->where('status', '!=', 'pending_approval');
+                  ->whereIn('status', ['sent', 'read', 'acknowledged']); // STRICT: Received means it was sent
                   
                 $q->orWhere(function ($sq) use ($userId) {
                     $sq->where('created_by', $userId)
-                       ->where(function ($ssq) {
-                           $ssq->whereIn('is_draft', [true, 1])
-                               ->orWhere('status', 'pending_approval');
-                       });
+                       ->where('is_draft', true); // ALL also includes DRAFTS
                 });
             });
             break;
@@ -115,7 +133,9 @@ class SecretaryMemoController extends Controller
             $query->whereDate('created_at', $date);
         }
 
-        $query->orderBy('created_at', $sort);
+        // Priority sorting: Low (0), Medium (1), High (2)
+        $query->orderBy('priority', 'asc')
+              ->orderBy('created_at', $sort);
 
         $memos = $query->paginate($perPage, ['*'], 'page', $page);
 
@@ -131,15 +151,15 @@ class SecretaryMemoController extends Controller
     {
         $user = $request->user();
 
+        // Normalize user ID for MongoDB comparison
+        $userId = $this->normalizeUserId($user->id);
+
         // Get recipient IDs in department
         $recipientIds = User::where('department_id', $user->department_id)
                            ->where('id', '!=', $user->id)
                            ->pluck('id')
                            ->toArray();
         $recipientIds[] = $user->id;
-
-        // Revert to individual counts for MongoDB compatibility
-        $userId = (string) $user->id;
 
         return response()->json([
             'sent' => Memo::where('sender_id', $userId)
@@ -170,7 +190,7 @@ class SecretaryMemoController extends Controller
             'department_id' => 'required_without:recipient_ids|exists:departments,id',
             'subject' => 'required|string|max:255',
             'message' => 'required|string',
-            'priority' => 'required|in:urgent,high,normal,low',
+            'priority' => 'required|in:high,medium,low',
             'attachments' => 'nullable|array',
             'is_draft' => 'boolean',
             'scheduled_send_at' => 'nullable|date',
@@ -296,7 +316,7 @@ class SecretaryMemoController extends Controller
             'department_id' => 'nullable|exists:departments,id',
             'subject' => 'required|string|max:255',
             'message' => 'required|string',
-            'priority' => 'required|in:urgent,high,normal,low',
+            'priority' => 'required|in:high,medium,low',
             'attachments' => 'nullable|array',
             'signature_id' => 'nullable|exists:user_signatures,id',
             'attachment_path' => 'nullable|string'
@@ -380,7 +400,7 @@ class SecretaryMemoController extends Controller
             'department_id' => 'nullable|exists:departments,id',
             'subject' => 'sometimes|string|max:255',
             'message' => 'sometimes|string',
-            'priority' => 'sometimes|in:urgent,high,normal,low',
+            'priority' => 'sometimes|in:high,medium,low',
             'attachments' => 'nullable|array',
             'signature_id' => 'nullable|exists:user_signatures,id',
             'attachment_path' => 'nullable|string'

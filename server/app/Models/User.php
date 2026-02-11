@@ -172,6 +172,12 @@ class User extends Authenticatable
      */
     public function hasPermissionTo($permissionName)
     {
+        // Global bypass for Admin/Superadmin
+        $roleName = strtolower($this->getAttribute('role') ?? '');
+        if ($roleName === 'admin' || $roleName === 'superadmin' || $roleName === 'super_admin') {
+            return true;
+        }
+
         $permissions = $this->permissions;
         return is_array($permissions) && in_array($permissionName, $permissions);
     }

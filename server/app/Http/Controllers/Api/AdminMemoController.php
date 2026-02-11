@@ -11,6 +11,7 @@ use App\Services\ActivityLogger;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use MongoDB\BSON\ObjectId;
 
 class AdminMemoController extends Controller
 {
@@ -21,6 +22,25 @@ class AdminMemoController extends Controller
     {
         $this->activityLogger = $activityLogger;
         $this->notificationService = $notificationService;
+    }
+
+    /**
+     * Convert user ID to consistent format for MongoDB comparison
+     */
+    protected function normalizeUserId($userId)
+    {
+        if ($userId instanceof ObjectId) {
+            return $userId;
+        }
+        // Try to create ObjectId from string
+        if (is_string($userId) && strlen((string)$userId) === 24) {
+            try {
+                return new ObjectId((string)$userId);
+            } catch (\Exception $e) {
+                return (string)$userId;
+            }
+        }
+        return (string)$userId;
     }
 
     /**
@@ -69,8 +89,12 @@ class AdminMemoController extends Controller
             return response()->json(['message' => 'This memo is not pending approval'], 422);
         }
 
+        // Normalize IDs for comparison
+        $userDepartmentId = $this->normalizeUserId($user->department_id);
+        $memoDepartmentId = $this->normalizeUserId($memo->department_id);
+
         // Check department if not super admin
-        if (!$user->hasPermissionTo('memo.approve_all') && $memo->department_id !== $user->department_id) {
+        if (!$user->hasPermissionTo('memo.approve_all') && $memoDepartmentId != $userDepartmentId) {
             return response()->json(['message' => 'Unauthorized to approve memos from other departments'], 403);
         }
 
@@ -341,9 +365,8 @@ class AdminMemoController extends Controller
     private function mapPriorityToCategory($priority)
     {
         $mapping = [
-            'urgent' => 'urgent',
             'high' => 'high',
-            'normal' => 'standard',
+            'medium' => 'standard',
             'low' => 'low'
         ];
         return $mapping[$priority] ?? 'standard';

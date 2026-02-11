@@ -15,7 +15,7 @@ const can = (permission) => {
   const userRole = (user.value.role && typeof user.value.role === 'object') ? user.value.role.name : user.value.role
 
   // Admin bypass
-  if (userRole === 'admin' || userRole === 'superadmin') return true
+  if (userRole === 'admin' || userRole === 'superadmin' || userRole === 'super_admin') return true
 
   const permissions = user.value.permissions || user.value.permission_ids || []
   return permissions.includes(permission)

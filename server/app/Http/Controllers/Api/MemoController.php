@@ -9,6 +9,7 @@ use App\Services\ActivityLogger;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use MongoDB\BSON\ObjectId;
 
 class MemoController extends Controller
 {
@@ -22,6 +23,25 @@ class MemoController extends Controller
     }
 
     /**
+     * Convert user ID to consistent format for MongoDB comparison
+     */
+    protected function normalizeUserId($userId)
+    {
+        if ($userId instanceof ObjectId) {
+            return $userId;
+        }
+        // Try to create ObjectId from string
+        if (is_string($userId) && strlen((string)$userId) === 24) {
+            try {
+                return new ObjectId((string)$userId);
+            } catch (\Exception $e) {
+                return (string)$userId;
+            }
+        }
+        return (string)$userId;
+    }
+
+    /**
      * Display a listing of memos with pagination and eager loading.
      * 
      * PERFORMANCE: Uses paginate() with eager loading to prevent N+1 queries.
@@ -30,25 +50,75 @@ class MemoController extends Controller
     {
         $user = $request->user();
         $perPage = min((int) $request->get('per_page', 15), 50);
-        $query = Memo::with(['sender:_id,id,first_name,last_name,email', 'recipient:_id,id,first_name,last_name,email', 'department:_id,id,name']);
+        
+        // Eager load with consistent column selections
+        $query = Memo::with([
+            'sender:_id,id,first_name,last_name,email,role',
+            'recipient:_id,id,first_name,last_name,email,role',
+            'department:_id,id,name'
+        ]);
 
-        // Use string ID for comparison to be safe with MongoDB driver
-        $userId = (string) $user->id;
+        // Determine target IDs for filtering (only for non-admins)
+        $targetIds = [];
+        $isAdmin = $user->role === 'admin';
+        
+        if (!$isAdmin) {
+            $selfId = $this->normalizeUserId($user->id);
+            $selfStringId = (string) $user->id;
+            $targetIds = array_unique([$selfId, $selfStringId], SORT_REGULAR);
+        }
 
-        // Scope: Sent, Received, or Drafts
+        // Scope: Sent, Received, Drafts, or All
         if ($request->scope === 'sent') {
-            $query->where('sender_id', $userId)->where('is_draft', false);
+            if (!$isAdmin) {
+                $query->whereIn('sender_id', $targetIds);
+            }
+            $query->where('is_draft', false)
+                  ->where('status', 'sent'); // STRICT: Only sent status
+        } elseif ($request->scope === 'received') {
+            if (!$isAdmin) {
+                $query->whereIn('recipient_id', $targetIds);
+            }
+            $query->where('is_draft', false)
+                  ->whereIn('status', ['sent', 'read', 'acknowledged']);
         } elseif ($request->scope === 'drafts') {
-            $query->where('created_by', $userId)->where('is_draft', true);
+            $query->where('is_draft', true);
+            if (!$isAdmin) {
+                $query->where(function ($q) use ($targetIds) {
+                    $q->whereIn('created_by', $targetIds)
+                      ->orWhereIn('sender_id', $targetIds);
+                });
+            }
+        } elseif ($request->scope === 'pending') {
+            if (!$isAdmin) {
+                $query->whereIn('sender_id', $targetIds);
+            }
+            $query->where('status', 'pending_approval');
         } else {
-            // Default: All (Received + Sent + Drafts)
-            $query->where(function ($q) use ($userId) {
-                // Received
-                $q->where('recipient_id', $userId)
-                  ->where('is_draft', false);
-                
-                // Sent + Drafts
-                $q->orWhere('sender_id', $userId);
+            // Default: All (Received + Sent + Drafts) - EXCLUDING ONLY PENDING
+            $query->where(function ($q) use ($targetIds, $isAdmin) {
+                if ($isAdmin) {
+                    $q->where('status', '!=', 'pending_approval');
+                } else {
+                    // Regular users: restricted to self
+                    // Received/Sent memos (not pending)
+                    $q->where(function ($sq) use ($targetIds) {
+                        $sq->where('status', '!=', 'pending_approval')
+                           ->where(function ($ssq) use ($targetIds) {
+                               $ssq->whereIn('recipient_id', $targetIds)
+                                   ->orWhereIn('sender_id', $targetIds);
+                           });
+                    });
+                    
+                    // Drafts (created by or sent by user)
+                    $q->orWhere(function ($sq) use ($targetIds) {
+                        $sq->where('is_draft', true)
+                           ->where(function ($ssq) use ($targetIds) {
+                               $ssq->whereIn('created_by', $targetIds)
+                                   ->orWhereIn('sender_id', $targetIds);
+                           });
+                    });
+                }
             });
         }
 
@@ -57,8 +127,11 @@ class MemoController extends Controller
             $query->where('subject', 'like', "%{$request->search}%");
         }
 
-        // Sort
-        $query->orderBy('created_at', 'desc');
+        // Priority sorting: Low (0), Medium (1), High (2)
+        // Sort by priority first (Low to High), then by created_at
+        $sortOrder = $request->get('sort', 'desc');
+        $query->orderBy('priority', 'asc')
+              ->orderBy('created_at', $sortOrder);
 
         $result = $query->paginate($perPage);
 
@@ -74,7 +147,7 @@ class MemoController extends Controller
             'department_id' => 'nullable|exists:departments,id',
             'subject' => 'required|string|max:255',
             'message' => 'required|string',
-            'priority' => 'required|in:urgent,high,normal,low',
+            'priority' => 'required|in:high,medium,low',
             'attachments' => 'nullable|array',
             'is_draft' => 'boolean',
             'scheduled_send_at' => 'nullable|date',
@@ -222,9 +295,8 @@ class MemoController extends Controller
     private function mapPriorityToCategory($priority)
     {
         $mapping = [
-            'urgent' => 'urgent',
             'high' => 'high',
-            'normal' => 'standard',
+            'medium' => 'standard',
             'low' => 'low'
         ];
 
@@ -246,14 +318,21 @@ class MemoController extends Controller
                            'calendarEvents'])
                     ->findOrFail($id);
         $user = auth()->user();
-
+        
+        // Normalize IDs for comparison
+        $userId = $this->normalizeUserId($user->id);
+        $senderId = $this->normalizeUserId($memo->sender_id);
+        $recipientId = $this->normalizeUserId($memo->recipient_id);
+        $createdById = $this->normalizeUserId($memo->created_by);
+        
+        // Check if user is owner (sender, recipient, or creator)
+        $isOwner = ($senderId == $userId) || 
+                   ($recipientId == $userId) || 
+                   ($createdById == $userId);
+        
         // Admin check OR ownership/recipient check
-        if (!$user->hasPermissionTo('memo.view')) {
+        if (!$user->hasPermissionTo('memo.view') && !$isOwner) {
             return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
-        if ($user->role !== 'admin' && $memo->sender_id !== $user->id && $memo->recipient_id !== $user->id) {
-            return response()->json(['message' => 'Unauthorized access to this memo.'], 403);
         }
 
         return response()->json($memo);
@@ -264,13 +343,17 @@ class MemoController extends Controller
         $memo = Memo::findOrFail($id);
         $user = $request->user();
         
+        // Normalize IDs for comparison
+        $userId = $this->normalizeUserId($user->id);
+        $createdById = $this->normalizeUserId($memo->created_by);
+        
         // Permission check
         if (!$user->hasPermissionTo('memo.edit') && !$user->hasPermissionTo('memo.create')) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
         // Ownership: Only creator can update, or Admin
-        if ($memo->created_by !== $user->id && $user->role !== 'admin') {
+        if ($createdById != $userId && $user->role !== 'admin') {
             return response()->json(['message' => 'Unauthorized to edit this memo.'], 403);
         }
 
@@ -280,7 +363,7 @@ class MemoController extends Controller
         $validated = $request->validate([
             'subject' => 'sometimes|string',
             'message' => 'sometimes|string',
-            'priority' => 'sometimes|in:urgent,high,normal,low',
+            'priority' => 'sometimes|in:high,medium,low',
             'status' => 'sometimes|string',
             'is_draft' => 'sometimes|boolean',
             'scheduled_send_at' => 'nullable|date',
@@ -331,6 +414,11 @@ class MemoController extends Controller
     {
         $memo = Memo::findOrFail($id);
         $user = $request->user();
+        
+        // Normalize IDs for comparison
+        $userId = $this->normalizeUserId($user->id);
+        $createdById = $this->normalizeUserId($memo->created_by);
+        $recipientId = $this->normalizeUserId($memo->recipient_id);
 
         // Permission check
         if (!$user->hasPermissionTo('memo.archive')) {
@@ -338,7 +426,7 @@ class MemoController extends Controller
         }
 
         // Ownership or Admin or Recipient
-        if ($memo->created_by !== $user->id && $memo->recipient_id !== $user->id && $user->role !== 'admin') {
+        if ($createdById != $userId && $recipientId != $userId && $user->role !== 'admin') {
             return response()->json(['message' => 'Unauthorized to delete this memo.'], 403);
         }
 
@@ -353,8 +441,12 @@ class MemoController extends Controller
     {
         $memo = Memo::findOrFail($id);
         $user = $request->user();
+        
+        // Normalize IDs for comparison
+        $userId = $this->normalizeUserId($user->id);
+        $recipientId = $this->normalizeUserId($memo->recipient_id);
 
-        if ($memo->recipient_id !== $user->id) {
+        if ($recipientId != $userId) {
             return response()->json(['message' => 'Unauthorized to acknowledge this memo'], 403);
         }
 

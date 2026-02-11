@@ -18,7 +18,7 @@ class Memo extends Model
         'department_id',
         'subject',
         'message',
-        'priority', // urgent, high, normal, low
+        'priority', // high, medium, low
         'status', // draft, sent, read, pending_approval, rejected, archived, deleted
         'attachments',
         'version',
