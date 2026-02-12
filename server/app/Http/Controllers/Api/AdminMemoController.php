@@ -99,49 +99,65 @@ class AdminMemoController extends Controller
         }
 
         DB::transaction(function () use ($memo, $user, $request) {
+            // Determine status based on schedule
+            $isScheduled = $memo->scheduled_send_at && strtotime($memo->scheduled_send_at) > time();
+            $targetStatus = $isScheduled ? 'scheduled' : 'sent';
+
             // Update memo status
             $memo->update([
-                'status' => 'sent',
+                'status' => $targetStatus,
                 'approved_by' => $user->id,
                 'approved_at' => now()
             ]);
 
-            // Create acknowledgment records for all recipients
+            // Create acknowledgment records only if NOT scheduled for future
             $recipients = [];
-            if ($memo->department_id) {
-                // Department-wide memo - create acknowledgments for all department members
-                $departmentUsers = User::where('department_id', $memo->department_id)
-                                        ->where('id', '!=', $memo->sender_id)
-                                        ->get();
-                
-                foreach ($departmentUsers as $deptUser) {
-                    MemoAcknowledgment::create([
-                        'memo_id' => $memo->id,
-                        'recipient_id' => $deptUser->id,
-                        'is_acknowledged' => false,
-                        'sent_at' => now()
-                    ]);
-                    $recipients[] = $deptUser;
-                }
-            } else {
-                // Individual memo
-                if ($memo->recipient_id) {
-                    $recipient = User::find($memo->recipient_id);
-                    if ($recipient) {
+            if ($targetStatus === 'sent') {
+                if ($memo->department_id) {
+                    $departmentUsers = User::where('department_id', $memo->department_id)
+                                            ->where('id', '!=', $memo->sender_id)
+                                            ->get();
+                    
+                    foreach ($departmentUsers as $deptUser) {
                         MemoAcknowledgment::create([
                             'memo_id' => $memo->id,
-                            'recipient_id' => $memo->recipient_id,
+                            'recipient_id' => $deptUser->id,
                             'is_acknowledged' => false,
                             'sent_at' => now()
                         ]);
-                        $recipients[] = $recipient;
+                        $recipients[] = $deptUser;
+                    }
+                } else {
+                    if ($memo->recipient_id) {
+                        $recipient = User::find($memo->recipient_id);
+                        if ($recipient) {
+                            MemoAcknowledgment::create([
+                                'memo_id' => $memo->id,
+                                'recipient_id' => $memo->recipient_id,
+                                'is_acknowledged' => false,
+                                'sent_at' => now()
+                            ]);
+                            $recipients[] = $recipient;
+                        }
                     }
                 }
             }
 
-            // Create calendar event if scheduled
+            // Create or Update calendar event if scheduled
             if ($memo->scheduled_send_at) {
                 $this->createCalendarEventForMemo($memo, $user->id);
+            }
+
+            // Send notifications
+            $sender = User::find($memo->sender_id);
+            if ($sender) {
+                // Notify memo creator that their memo was approved
+                $this->notificationService->notifyMemoApproved($user, $sender, $memo);
+                
+                // ONLY notify recipients if sent now
+                if ($targetStatus === 'sent') {
+                    $this->notificationService->notifyMemoRecipients($user, $memo, $recipients);
+                }
             }
 
             // Send notifications to creator and recipients
@@ -331,20 +347,24 @@ class AdminMemoController extends Controller
      */
     private function createCalendarEventForMemo($memo, $userId)
     {
-        $calendarEvent = CalendarEvent::create([
-            'title' => $memo->subject,
-            'description' => $memo->message,
-            'start' => $memo->scheduled_send_at,
-            'end' => $memo->schedule_end_at ?? $memo->scheduled_send_at,
-            'all_day' => $memo->all_day_event ?? false,
-            'category' => $this->mapPriorityToCategory($memo->priority),
-            'memo_id' => $memo->id,
-            'created_by' => $userId,
-            'status' => 'scheduled',
-            'source' => 'MEMO'
-        ]);
+        $calendarEvent = CalendarEvent::updateOrCreate(
+            ['memo_id' => $memo->id],
+            [
+                'title' => $memo->subject,
+                'description' => $memo->message,
+                'start' => $memo->scheduled_send_at,
+                'end' => $memo->schedule_end_at ?? $memo->scheduled_send_at,
+                'all_day' => $memo->all_day_event ?? false,
+                'category' => $this->mapPriorityToCategory($memo->priority),
+                'created_by' => $userId,
+                'status' => $memo->scheduled_send_at && strtotime($memo->scheduled_send_at) > time() ? 'scheduled' : 'sent',
+                'source' => 'MEMO'
+            ]
+        );
 
-        // Add participants
+        // Clear and add participants
+        \App\Models\CalendarEventParticipant::where('calendar_event_id', $calendarEvent->id)->delete();
+        
         \App\Models\CalendarEventParticipant::create([
             'calendar_event_id' => $calendarEvent->id,
             'user_id' => $memo->sender_id,

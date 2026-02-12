@@ -4,6 +4,7 @@ import { CheckCircle, Archive, FileText } from 'lucide-vue-next'
 import api from '@/services/api'
 import Swal from 'sweetalert2'
 import MemoInboxCard from '@/components/memos/MemoInboxCard.vue'
+import MemoDetailModal from '@/components/memos/MemoDetailModal.vue'
 
 // Modal states
 const selectedMemo = ref(null)
@@ -99,6 +100,21 @@ const closeModal = () => {
   showDetailModal.value = false
   selectedMemo.value = null
 }
+
+// Handle acknowledged event from modal
+const handleAcknowledged = (memoId) => {
+  if (selectedMemo.value?.id === memoId) {
+    selectedMemo.value.status = 'acknowledged'
+  }
+  // Refresh the memo list would happen here if we had a ref to MemoInboxCard
+}
+
+// Handle archived event from modal
+const handleArchived = (memoId) => {
+  showDetailModal.value = false
+  selectedMemo.value = null
+  // The MemoInboxCard should refresh automatically
+}
 </script>
 
 <template>
@@ -123,78 +139,16 @@ const closeModal = () => {
       />
     </div>
 
-    <!-- Memo Detail Modal - Non-scrollable -->
-    <div v-if="showDetailModal && selectedMemo" class="modal modal-open z-50">
-      <div class="modal-box max-w-3xl max-h-[80vh] flex flex-col overflow-hidden">
-        <!-- Modal Header -->
-        <div class="flex-shrink-0">
-          <button @click="closeModal" class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
-          <h3 class="font-bold text-lg mb-4">{{ selectedMemo.subject }}</h3>
-          
-          <div class="space-y-2 text-sm pb-4 border-b border-base-200">
-            <div class="flex justify-between">
-              <span class="opacity-60">From:</span>
-              <span class="font-medium">
-                {{ selectedMemo.sender?.first_name }} {{ selectedMemo.sender?.last_name }}
-                <span class="text-xs opacity-60">({{ selectedMemo.sender?.role }})</span>
-              </span>
-            </div>
-            <div class="flex justify-between">
-              <span class="opacity-60">Date:</span>
-              <span class="font-medium">{{ formatDate(selectedMemo.created_at) }} {{ formatTime(selectedMemo.created_at) }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="opacity-60">Priority:</span>
-              <span class="badge badge-sm" :class="getPriorityClass(selectedMemo.priority)">
-                {{ selectedMemo.priority }}
-              </span>
-            </div>
-          </div>
-        </div>
-        
-        <!-- Modal Body - Scrollable Content -->
-        <div class="flex-1 overflow-y-auto my-4">
-          <div class="prose prose-sm max-w-none">
-            <p class="whitespace-pre-wrap">{{ selectedMemo.message }}</p>
-          </div>
-          
-          <div v-if="selectedMemo.attachments?.length" class="mt-4 pt-4 border-t border-base-200">
-            <p class="text-sm opacity-60 mb-2 font-bold uppercase tracking-wider text-[10px]">Attachments:</p>
-            <div class="flex flex-wrap gap-2">
-              <a 
-                v-for="attachment in selectedMemo.attachments" 
-                :key="attachment.path || attachment.name"
-                :href="attachment.url"
-                target="_blank"
-                class="btn btn-sm btn-ghost bg-base-200 hover:bg-base-300 gap-2 font-bold text-[10px] uppercase group"
-              >
-                <FileText :size="14" class="opacity-60 group-hover:opacity-100" />
-                {{ attachment.name }}
-              </a>
-            </div>
-          </div>
-        </div>
-        
-        <!-- Modal Footer - Fixed at bottom -->
-        <div class="flex-shrink-0 pt-4 border-t border-base-200 modal-action-wrapper">
-          <button @click="closeModal" class="btn">Close</button>
-          <button 
-            v-if="selectedMemo.status === 'sent'"
-            @click="handleAcknowledge(selectedMemo.id); closeModal()"
-            class="btn btn-primary"
-          >
-            Acknowledge
-          </button>
-          <button 
-            @click="handleArchive(selectedMemo.id)"
-            class="btn btn-ghost text-error"
-          >
-            Archive
-          </button>
-        </div>
-      </div>
-      <div class="modal-backdrop" @click="closeModal"></div>
-    </div>
+    <!-- Memo Detail Modal -->
+    <MemoDetailModal
+      v-if="showDetailModal && selectedMemo"
+      :memo="selectedMemo"
+      :is-open="showDetailModal"
+      user-role="faculty"
+      @close="closeModal"
+      @acknowledged="handleAcknowledged"
+      @archived="handleArchived"
+    />
   </div>
 </template>
 

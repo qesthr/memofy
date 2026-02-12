@@ -72,7 +72,7 @@ class SecretaryMemoController extends Controller
             case 'sent':
                 $query->where('sender_id', $userId)
                       ->where('is_draft', false)
-                      ->where('status', 'sent'); // STRICT: Only sent status
+                      ->whereIn('status', ['sent', 'archived']); // Include archived
                 break;
 
             case 'pending':
@@ -97,7 +97,7 @@ class SecretaryMemoController extends Controller
             $query->where(function ($q) use ($userId, $recipientIds) {
                 $q->whereIn('recipient_id', $recipientIds)
                   ->where('is_draft', false)
-                  ->whereIn('status', ['sent', 'read', 'acknowledged']); // STRICT: Received means it was sent
+                  ->whereIn('status', ['sent', 'read', 'acknowledged', 'archived']); // Include archived
                   
                 $q->orWhere(function ($sq) use ($userId) {
                     $sq->where('created_by', $userId)
@@ -248,6 +248,12 @@ class SecretaryMemoController extends Controller
                 'scheduled_send_at' => $validated['scheduled_send_at'] ?? null,
                 'attachment_path' => $validated['attachment_path'] ?? null
             ]);
+
+            // Create calendar event if scheduled (for creator's calendar reminder)
+            if ($memo->scheduled_send_at && !$memo->is_draft) {
+                $this->createCalendarEventForMemo($memo, $user->id);
+            }
+
             $memos[] = $memo;
         }
 
@@ -530,5 +536,47 @@ class SecretaryMemoController extends Controller
                 'skipped' => $skipped
             ]
         ]);
+    }
+
+    /**
+     * Create a calendar event for a scheduled memo
+     */
+    private function createCalendarEventForMemo($memo, $userId)
+    {
+        $calendarEvent = \App\Models\CalendarEvent::create([
+            'title' => "[Scheduled] " . $memo->subject,
+            'description' => $memo->message,
+            'start' => $memo->scheduled_send_at,
+            'end' => $memo->schedule_end_at ?? $memo->scheduled_send_at,
+            'all_day' => $memo->all_day_event ?? false,
+            'category' => $this->mapPriorityToCategory($memo->priority),
+            'memo_id' => $memo->id,
+            'created_by' => $userId,
+            'status' => 'scheduled',
+            'source' => 'MEMO'
+        ]);
+
+        // Add participants: only the creator for now as it's pending approval
+        \App\Models\CalendarEventParticipant::create([
+            'calendar_event_id' => $calendarEvent->id,
+            'user_id' => $userId,
+            'status' => 'accepted'
+        ]);
+
+        return $calendarEvent;
+    }
+
+    /**
+     * Map memo priority to calendar category
+     */
+    private function mapPriorityToCategory($priority)
+    {
+        $mapping = [
+            'high' => 'high',
+            'medium' => 'standard',
+            'low' => 'low'
+        ];
+
+        return $mapping[$priority] ?? 'standard';
     }
 }

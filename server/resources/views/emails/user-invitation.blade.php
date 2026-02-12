@@ -228,28 +228,29 @@
             <div class="steps">
                 <div class="step">
                     <div class="step-number">1</div>
-                    <div class="step-text"><strong>Click the button below</strong> to set up your account and create a new password if you wish to change it.</div>
+                    <div class="step-text"><strong>Click the button below</strong> to go to the login page.</div>
                 </div>
                 <div class="step">
                     <div class="step-number">2</div>
-                    <div class="step-text"><strong>Log in</strong> using your email and the password provided above.</div>
+                    <div class="step-text"><strong>Log in</strong> using your email (<strong>{{ $invitation->email }}</strong>) and the password provided above.</div>
                 </div>
                 <div class="step">
                     <div class="step-number">3</div>
-                    <div class="step-text"><strong>Complete your profile</strong> and start using Memofy.</div>
+                    <div class="step-text"><strong>Change your password</strong> anytime from your Profile Settings after logging in.</div>
                 </div>
             </div>
             
             <div style="text-align: center; margin: 30px 0;">
-                <a href="{{ url('/setup-password?token=' . $invitation->token) }}" class="button">Set Up My Account →</a>
+                <a href="{{ config('app.frontend_url', url('/')) . '/login' }}" class="button">Go to Login →</a>
             </div>
             
             <div class="info-box">
                 <p style="margin: 0 0 10px 0; font-weight: 600; color: #1e40af;">📋 Important Information:</p>
                 <ul>
-                    <li>This invitation link expires in <strong>48 hours</strong></li>
-                    <li>Your email (<strong>{{ $invitation->email }}</strong>) will be your username</li>
-                    <li>After setting your password, you'll be redirected to the 
+                    <li>Your email (<strong>{{ $invitation->email }}</strong>) is your username</li>
+                    <li>Use the password provided above for your first login</li>
+                    <li>After logging in, you can <strong>change your password</strong> in your Profile Settings</li>
+                    <li>You will be redirected to the 
                         @if($invitation->role === 'admin')
                             <strong>Admin Dashboard</strong>
                         @elseif($invitation->role === 'secretary')
@@ -258,7 +259,6 @@
                             <strong>Faculty Dashboard</strong>
                         @endif
                     </li>
-                    <li>Please save your password in a secure location</li>
                     <li>Contact your administrator if you need assistance</li>
                 </ul>
             </div>

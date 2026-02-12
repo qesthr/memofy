@@ -4,8 +4,11 @@ import { Plus, Search, ChevronDown, Calendar, X, Settings2, CheckCircle, Clock, 
 import ComposeMemoModal from '@/components/memos/ComposeMemoModal.vue'
 import CustomizeMemoModal from '@/components/memos/CustomizeMemoModal.vue'
 import MemoInboxCard from '@/components/memos/MemoInboxCard.vue'
+import MemoDetailModal from '@/components/memos/MemoDetailModal.vue'
+import MemoPdfTemplate from '@/components/memos/MemoPdfTemplate.vue'
 import api from '@/services/api'
 import Swal from 'sweetalert2'
+import html2pdf from 'html2pdf.js'
 
 // Filter states
 const activeTab = ref('all') // all, sent, drafts
@@ -142,6 +145,46 @@ const rejectMemo = async (memoId) => {
   }
 }
 
+const downloadMemoAsPdf = async (memoId) => {
+  if (!selectedMemo.value) return
+  
+  // We need to wait for the next tick to ensure the PDF template exists in DOM
+  // but since it's already in the approval modal, we can just target it.
+  // In a real app we might want a ref on the component.
+  
+  const opt = {
+    margin: 0,
+    filename: `Memo_${selectedMemo.value.subject || 'Untitled'}.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { 
+      scale: 2, 
+      useCORS: true,
+      letterRendering: true,
+      scrollY: 0
+    },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+  }
+
+  // Find the element within the modal
+  const element = document.querySelector('.modal-box .memo-a4-page')?.parentElement || document.querySelector('.modal-box .overflow-y-auto')
+  
+  if (!element) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Export Error',
+      text: 'Could not find PDF content to export.'
+    })
+    return
+  }
+
+  try {
+    await html2pdf().set(opt).from(element).save()
+  } catch (error) {
+    console.error('PDF Generation Error:', error)
+  }
+}
+
 const formatDate = (date) => {
   if (!date) return '-'
   return new Date(date).toLocaleDateString('en-US', {
@@ -267,60 +310,18 @@ onMounted(() => {
     />
 
     <!-- Memo Detail Modal -->
-    <div v-if="showDetailModal && selectedMemo" class="modal modal-open z-50">
-      <div class="modal-box max-w-3xl max-h-[80vh] flex flex-col overflow-hidden">
-        <!-- Modal Header -->
-        <div class="flex-shrink-0">
-          <button @click="showDetailModal = false" class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
-          
-          <h3 class="font-bold text-lg mb-4">{{ selectedMemo.subject }}</h3>
-          
-          <div class="space-y-2 text-sm pb-4 border-b border-base-200">
-            <div class="flex justify-between">
-              <span class="opacity-60">From:</span>
-              <span class="font-medium">
-                {{ selectedMemo.sender?.first_name }} {{ selectedMemo.sender?.last_name }}
-              </span>
-            </div>
-            <div v-if="selectedMemo.recipient" class="flex justify-between">
-              <span class="opacity-60">To:</span>
-              <span class="font-medium">
-                {{ selectedMemo.recipient?.first_name }} {{ selectedMemo.recipient?.last_name }}
-              </span>
-            </div>
-            <div class="flex justify-between">
-              <span class="opacity-60">Date:</span>
-              <span class="font-medium">{{ formatDate(selectedMemo.created_at) }} {{ formatTime(selectedMemo.created_at) }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="opacity-60">Priority:</span>
-              <span class="badge badge-sm" :class="getPriorityClass(selectedMemo.priority)">
-                {{ selectedMemo.priority }}
-              </span>
-            </div>
-          </div>
-        </div>
-        
-        <!-- Modal Body - Scrollable -->
-        <div class="flex-1 overflow-y-auto my-4">
-          <div class="prose prose-sm max-w-none">
-            <p class="whitespace-pre-wrap">{{ selectedMemo.message }}</p>
-          </div>
-        </div>
-        
-        <!-- Modal Footer -->
-        <div class="flex-shrink-0 pt-4 border-t border-base-200 modal-action-wrapper">
-          <button @click="showDetailModal = false" class="btn">Close</button>
-        </div>
-      </div>
-      <div class="modal-backdrop" @click="showDetailModal = false"></div>
-    </div>
+    <MemoDetailModal
+      v-if="showDetailModal && selectedMemo"
+      :memo="selectedMemo"
+      :is-open="showDetailModal"
+      @close="showDetailModal = false"
+    />
 
     <!-- Approval Modal -->
     <div v-if="showApprovalModal && selectedMemo" class="modal modal-open z-50">
       <div class="modal-box max-w-3xl max-h-[80vh] flex flex-col overflow-hidden">
         <!-- Modal Header -->
-        <div class="flex-shrink-0">
+        <div class="shrink-0">
           <button @click="showApprovalModal = false" class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
           
           <h3 class="font-bold text-lg mb-4">{{ selectedMemo.subject }}</h3>
@@ -346,14 +347,16 @@ onMounted(() => {
         </div>
         
         <!-- Modal Body - Scrollable -->
-        <div class="flex-1 overflow-y-auto my-4">
-          <div class="prose prose-sm max-w-none">
-            <p class="whitespace-pre-wrap">{{ selectedMemo.message }}</p>
-          </div>
+        <div class="flex-1 overflow-y-auto bg-gray-100 my-4 custom-scrollbar rounded-lg border border-base-200">
+          <MemoPdfTemplate 
+            :memo="selectedMemo" 
+            :sender="selectedMemo.sender" 
+            :isPreview="true" 
+          />
         </div>
         
         <!-- Modal Footer -->
-        <div class="flex-shrink-0 pt-4 border-t border-base-200 modal-action-wrapper flex justify-between">
+        <div class="shrink-0 pt-4 border-t border-base-200 modal-action-wrapper flex justify-between">
           <div>
             <button @click="showApprovalModal = false" class="btn btn-ghost">Close</button>
           </div>
@@ -363,6 +366,9 @@ onMounted(() => {
             </button>
             <button @click="approveMemo(selectedMemo.id)" class="btn btn-success">
               <CheckCircle :size="16" class="mr-1" /> Approve
+            </button>
+            <button @click="downloadMemoAsPdf(selectedMemo.id)" class="btn btn-primary">
+              <FileText :size="16" class="mr-1" /> Download PDF
             </button>
           </div>
         </div>

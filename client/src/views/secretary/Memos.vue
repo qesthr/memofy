@@ -1,9 +1,10 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { Plus, Search, ChevronDown, Calendar, X, Settings2, CheckCircle, Clock, Eye, Send } from 'lucide-vue-next'
 import ComposeMemoModal from '@/components/memos/ComposeMemoModal.vue'
 import CustomizeMemoModal from '@/components/memos/CustomizeMemoModal.vue'
 import MemoInboxCard from '@/components/memos/MemoInboxCard.vue'
+import MemoDetailModal from '@/components/memos/MemoDetailModal.vue'
 import api from '@/services/api'
 import Swal from 'sweetalert2'
 
@@ -229,54 +230,12 @@ onMounted(() => {
     />
 
     <!-- Memo Detail Modal -->
-    <div v-if="showDetailModal && selectedMemo" class="modal modal-open z-50">
-      <div class="modal-box max-w-3xl max-h-[80vh] flex flex-col overflow-hidden">
-        <!-- Modal Header -->
-        <div class="flex-shrink-0">
-          <button @click="showDetailModal = false" class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
-          
-          <h3 class="font-bold text-lg mb-4">{{ selectedMemo.subject }}</h3>
-          
-          <div class="space-y-2 text-sm pb-4 border-b border-base-200">
-            <div class="flex justify-between">
-              <span class="opacity-60">From:</span>
-              <span class="font-medium">
-                {{ selectedMemo.sender?.first_name }} {{ selectedMemo.sender?.last_name }}
-              </span>
-            </div>
-            <div v-if="selectedMemo.recipient" class="flex justify-between">
-              <span class="opacity-60">To:</span>
-              <span class="font-medium">
-                {{ selectedMemo.recipient?.first_name }} {{ selectedMemo.recipient?.last_name }}
-              </span>
-            </div>
-            <div class="flex justify-between">
-              <span class="opacity-60">Date:</span>
-              <span class="font-medium">{{ formatDate(selectedMemo.created_at) }} {{ formatTime(selectedMemo.created_at) }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="opacity-60">Priority:</span>
-              <span class="badge badge-sm" :class="getPriorityClass(selectedMemo.priority)">
-                {{ selectedMemo.priority }}
-              </span>
-            </div>
-          </div>
-        </div>
-        
-        <!-- Modal Body - Scrollable -->
-        <div class="flex-1 overflow-y-auto my-4">
-          <div class="prose prose-sm max-w-none">
-            <p class="whitespace-pre-wrap">{{ selectedMemo.message }}</p>
-          </div>
-        </div>
-        
-        <!-- Modal Footer -->
-        <div class="flex-shrink-0 pt-4 border-t border-base-200 modal-action-wrapper">
-          <button @click="showDetailModal = false" class="btn">Close</button>
-        </div>
-      </div>
-      <div class="modal-backdrop" @click="showDetailModal = false"></div>
-    </div>
+    <MemoDetailModal
+      v-if="showDetailModal && selectedMemo"
+      :memo="selectedMemo"
+      :is-open="showDetailModal"
+      @close="showDetailModal = false"
+    />
   </div>
 </template>
 
@@ -289,16 +248,6 @@ onMounted(() => {
 }
 
 .view-container.no-scroll > *:not(.modal) {
-  flex-shrink: 0;
-}
-
-.modal-box {
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.modal-action-wrapper {
   flex-shrink: 0;
 }
 </style>

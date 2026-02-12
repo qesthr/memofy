@@ -122,12 +122,12 @@ class RBACSeeder extends Seeder
         ];
         $secretaryRole->update(['permission_ids' => $secretaryPermissions]);
 
-        // Faculty Permissions
+        // Faculty Permissions - Read-only calendar access, no event creation
         $facultyPermissions = [
             'memo.view', 'memo.archive', 'memo.acknowledge',
             'archive.view', 'archive.restore', 'archive.delete_permanently',
             'archive.unarchive_memo', 'archive.remove_permanently',
-            'calendar.add_event', 'calendar.edit_event',
+            // Note: calendar.add_event and calendar.edit_event removed - faculty have read-only calendar access
             'nav.dashboard', 'nav.memos', 'nav.archive', 'nav.calendar', 'nav.settings'
         ];
         $facultyRole->update(['permission_ids' => $facultyPermissions]);

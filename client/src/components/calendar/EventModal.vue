@@ -9,7 +9,7 @@ import { X, Clock, MapPin, AlignLeft, Users, Trash2, CheckCircle, XCircle, Mail 
 
 const { showEventModal, activeEvent, closeEventModal, selectedDate } = useCalendar()
 const { fetchEvents } = useEvents()
-const { user: currentUser } = useAuth()
+const { user: currentUser, can } = useAuth()
 
 const isSaving = ref(false)
 const users = ref([])

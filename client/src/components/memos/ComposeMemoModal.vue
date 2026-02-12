@@ -5,6 +5,7 @@ import api from '@/services/api'
 import ScheduleMemoModal from './ScheduleMemoModal.vue'
 import { useAuth } from '@/composables/useAuth'
 import Swal from 'sweetalert2'
+import MemoPdfTemplate from './MemoPdfTemplate.vue'
 
 const { user } = useAuth()
 
@@ -36,6 +37,7 @@ const formData = ref({
 
 const scheduleData = ref(null)
 const showScheduleModal = ref(false)
+const showAttachmentsExpanded = ref(false) // Collapsible attachments state
 
 const users = ref([])
 const showUserSuggestions = ref(false)
@@ -62,8 +64,8 @@ const priorities = [
 
 // Computed
 const canSubmit = computed(() => {
-  return formData.value.subject.trim() !== '' &&
-         formData.value.content.trim() !== '' &&
+  return formData.value.subject && formData.value.subject.trim() !== '' &&
+         formData.value.content && formData.value.content.trim() !== '' &&
          (formData.value.recipientIds.length > 0 || formData.value.departmentId) &&
          !isUploading.value
 })
@@ -591,31 +593,31 @@ watch(() => props.isOpen, (val) => {
 
 <template>
   <Teleport to="body">
-    <div v-if="isOpen" class="modal modal-open items-center justify-center">
-    <div class="modal-box p-0 max-w-4xl w-full h-[85vh] overflow-hidden rounded-xl bg-base-100 shadow-2xl border border-base-300 flex flex-col">
+    <div v-if="isOpen" class="modal modal-open z-99999 items-center justify-center">
+    <div class="modal-box p-0 max-w-6xl w-[95vw] h-[85vh] overflow-hidden rounded-xl bg-base-100 shadow-2xl border border-base-300 flex flex-col">
       <!-- Fixed Header -->
-      <div class="bg-primary px-6 py-4 flex items-center justify-between text-primary-content shrink-0 z-10">
-        <div class="flex items-center gap-3">
-          <h3 class="text-xl font-bold tracking-tight uppercase">Compose Memo</h3>
+      <div class="bg-primary px-5 py-3 flex items-center justify-between text-primary-content shrink-0 z-10">
+        <div class="flex items-center gap-2">
+          <h3 class="text-lg font-bold tracking-tight uppercase">Compose Memo</h3>
           <span v-if="formData.draftId" class="badge badge-sm badge-warning">Draft</span>
-          <span v-if="lastSaved" class="text-xs opacity-70">Last saved: {{ lastSaved.toLocaleTimeString() }}</span>
+          <span v-if="lastSaved" class="text-[10px] opacity-70">{{ lastSaved.toLocaleTimeString() }}</span>
         </div>
         <button @click="closeModal" class="btn btn-ghost btn-sm btn-circle text-primary-content hover:bg-white/10">
-          <X :size="20" />
+          <X :size="18" />
         </button>
       </div>
 
-      <!-- Fixed Metadata Section (Not Scrollable) -->
-      <div class="px-10 pt-8 pb-4 space-y-6 shrink-0 bg-base-100">
-        <!-- To Field (Inline) -->
-        <div class="flex items-center gap-4 group">
-          <label class="w-20 text-xs font-black text-base-content/50 uppercase tracking-[0.2em] shrink-0">TO</label>
-          <div class="relative flex-1 flex flex-wrap items-center gap-2">
-            <!-- Selected Recipients Chips -->
-            <div v-for="recipient in formData.selectedRecipients" :key="recipient.id" class="badge badge-primary gap-2 py-3 px-3">
-              <span class="text-[10px] font-bold">{{ recipient.first_name }} {{ recipient.last_name }}</span>
+      <!-- Fixed Metadata Section (Compact) -->
+      <div class="px-5 pt-4 pb-2 space-y-2 shrink-0 bg-base-100">
+        <!-- To Field (Compact Inline) -->
+        <div class="flex items-center gap-2 group">
+          <label class="w-12 text-[10px] font-black text-base-content/50 uppercase tracking-wider shrink-0">TO</label>
+          <div class="relative flex-1 flex flex-wrap items-center gap-1">
+            <!-- Selected Recipients Chips (Compact) -->
+            <div v-for="recipient in formData.selectedRecipients" :key="recipient.id" class="badge badge-primary gap-1 py-1 px-2">
+              <span class="text-[9px] font-bold">{{ recipient.first_name }} {{ recipient.last_name }}</span>
               <button @click="removeRecipient(recipient.id)" class="hover:text-white/80 transition-colors">
-                <X :size="10" />
+                <X :size="8" />
               </button>
             </div>
 
@@ -624,19 +626,19 @@ watch(() => props.isOpen, (val) => {
               @focus="showUserSuggestions = true"
               type="text" 
               placeholder="Add recipient..." 
-              class="input input-ghost focus:bg-transparent border-transparent focus:border-transparent focus:outline-none p-0 text-base flex-1 min-w-[150px] placeholder:text-base-content/20 font-medium"
+              class="input input-ghost focus:bg-transparent border-transparent focus:border-transparent focus:outline-none p-0 text-sm flex-1 min-w-[100px] placeholder:text-base-content/20 font-medium"
             />
             <!-- Autocomplete Suggestion -->
-            <div v-if="showUserSuggestions && filteredUsers.length > 0" class="absolute left-0 top-full mt-2 w-full bg-base-100 shadow-2xl border border-base-300 rounded-xl z-60 overflow-hidden">
+            <div v-if="showUserSuggestions && filteredUsers.length > 0" class="absolute left-0 top-full mt-1 w-full bg-base-100 shadow-2xl border border-base-300 rounded-lg z-60 overflow-hidden">
               <ul class="menu p-1">
                 <li v-for="user in filteredUsers" :key="user.id">
-                  <button @click="selectUser(user)" class="flex items-center gap-3 py-3 px-4 hover:bg-base-200 rounded-lg transition-colors">
-                    <div class="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs uppercase">
+                  <button @click="selectUser(user)" class="flex items-center gap-2 py-2 px-3 hover:bg-base-200 rounded-lg transition-colors">
+                    <div class="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-[9px] uppercase">
                       {{ user.first_name[0] }}{{ user.last_name[0] }}
                     </div>
-                    <div class="flex flex-col items-start -translate-y-px">
-                      <span class="font-bold text-sm">{{ user.first_name }} {{ user.last_name }}</span>
-                      <span class="text-[10px] opacity-40 leading-none">{{ user.email }}</span>
+                    <div class="flex flex-col items-start">
+                      <span class="font-bold text-xs">{{ user.first_name }} {{ user.last_name }}</span>
+                      <span class="text-[9px] opacity-40 leading-none">{{ user.email }}</span>
                     </div>
                   </button>
                 </li>
@@ -645,34 +647,34 @@ watch(() => props.isOpen, (val) => {
           </div>
         </div>
 
-        <!-- Subject Field (Inline) -->
-        <div class="flex items-center gap-4 group">
-          <label class="w-20 text-xs font-black text-base-content/50 uppercase tracking-[0.2em] shrink-0">SUBJECT</label>
+        <!-- Subject Field (Compact Inline) -->
+        <div class="flex items-center gap-2 group">
+          <label class="w-12 text-[10px] font-black text-base-content/50 uppercase tracking-wider shrink-0">SUBJECT</label>
           <input 
             v-model="formData.subject"
             type="text" 
             placeholder="Subject" 
-            class="input input-ghost focus:bg-transparent border-transparent focus:border-transparent focus:outline-none p-0 text-base w-full placeholder:text-base-content/20 font-medium"
+            class="input input-ghost focus:bg-transparent border-transparent focus:border-transparent focus:outline-none p-0 text-sm w-full placeholder:text-base-content/20 font-medium"
           />
         </div>
 
-        <!-- Controls Row -->
-        <div class="flex flex-wrap items-center gap-6 py-2">
-          <!-- Signature Dropdown with Multiple Selection -->
+        <!-- Controls Row (Compact) -->
+        <div class="flex flex-wrap items-center gap-2 py-1">
+          <!-- Signature Dropdown (Compact) -->
           <div class="dropdown">
-            <div tabindex="0" role="button" class="btn btn-sm bg-base-200 border-none px-4 rounded-lg font-black text-[10px] uppercase tracking-wider hover:bg-base-300 text-base-content/70">
-              Signatures: {{ formData.signatureIds.length }} selected
-              <span class="ml-2 opacity-40 text-[8px]">▼</span>
+            <div tabindex="0" role="button" class="btn btn-xs bg-base-200 border-none px-2 rounded-md font-bold text-[9px] uppercase tracking-wider hover:bg-base-300 text-base-content/70">
+              Sig: {{ formData.signatureIds.length }}
+              <span class="ml-1 opacity-40 text-[7px]">▼</span>
             </div>
-            <ul tabindex="0" class="dropdown-content z-50 menu p-2 shadow-2xl bg-base-100 border border-base-300 rounded-xl w-64 mt-2 max-h-60 overflow-y-auto">
+            <ul tabindex="0" class="dropdown-content z-50 menu p-2 shadow-2xl bg-base-100 border border-base-300 rounded-lg w-56 mt-1 max-h-48 overflow-y-auto">
               <li @click="formData.signatureIds = []; formData.signatureId = null; formData.signature = 'None'">
-                <a class="font-bold flex items-center gap-2 cursor-pointer">
+                <a class="font-bold flex items-center gap-2 cursor-pointer text-xs">
                   <input type="checkbox" class="checkbox checkbox-xs" :checked="formData.signatureIds.length === 0" readonly />
                   None
                 </a>
               </li>
               <li v-for="sig in signatures" :key="sig.id" @click="toggleSignature(sig)">
-                <a class="font-bold flex items-center gap-2 cursor-pointer">
+                <a class="font-bold flex items-center gap-2 cursor-pointer text-xs">
                   <input type="checkbox" class="checkbox checkbox-xs" :checked="isSignatureSelected(sig.id)" readonly />
                   <span class="truncate">{{ sig.name }}</span>
                   <span v-if="sig.is_default" class="badge badge-primary badge-xs">Default</span>
@@ -681,15 +683,15 @@ watch(() => props.isOpen, (val) => {
             </ul>
           </div>
 
-          <!-- Department Dropdown -->
+          <!-- Department Dropdown (Compact) -->
           <div class="dropdown">
-            <div tabindex="0" role="button" class="btn btn-sm bg-base-200 border-none px-4 rounded-lg font-black text-[10px] uppercase tracking-wider hover:bg-base-300 text-base-content/70">
+            <div tabindex="0" role="button" class="btn btn-xs bg-base-200 border-none px-2 rounded-md font-bold text-[9px] uppercase tracking-wider hover:bg-base-300 text-base-content/70">
               {{ formData.department }}
-              <span class="ml-2 opacity-40 text-[8px]">▼</span>
+              <span class="ml-1 opacity-40 text-[7px]">▼</span>
             </div>
-            <ul tabindex="0" class="dropdown-content z-50 menu p-2 shadow-2xl bg-base-100 border border-base-300 rounded-xl w-64 mt-2">
+            <ul tabindex="0" class="dropdown-content z-50 menu p-2 shadow-2xl bg-base-100 border border-base-300 rounded-lg w-48 mt-1">
               <li v-for="dept in filteredDepartments" :key="dept.id" @click="selectDepartment(dept)">
-                <a class="font-bold flex justify-between">
+                <a class="font-bold flex justify-between text-xs">
                   {{ dept.name }}
                   <span class="text-[8px] opacity-40">{{ dept.code }}</span>
                 </a>
@@ -697,17 +699,17 @@ watch(() => props.isOpen, (val) => {
             </ul>
           </div>
           
-          <!-- Priority Selector -->
+          <!-- Priority Selector (Compact) -->
           <div class="dropdown">
-            <div tabindex="0" role="button" class="btn btn-sm bg-base-200 border-none px-4 rounded-lg font-black text-[10px] uppercase tracking-wider hover:bg-base-300 text-base-content/70">
-              <span class="w-2 h-2 rounded-full mr-2" :class="priorities.find(p => p.label === formData.priority).color"></span>
-              Priority: {{ formData.priority }}
-              <span class="ml-2 opacity-40 text-[8px]">▼</span>
+            <div tabindex="0" role="button" class="btn btn-xs bg-base-200 border-none px-2 rounded-md font-bold text-[9px] uppercase tracking-wider hover:bg-base-300 text-base-content/70">
+              <span class="w-1.5 h-1.5 rounded-full mr-1" :class="priorities.find(p => p.label === formData.priority).color"></span>
+              {{ formData.priority }}
+              <span class="ml-1 opacity-40 text-[7px]">▼</span>
             </div>
-            <ul tabindex="0" class="dropdown-content z-50 menu p-2 shadow-2xl bg-base-100 border border-base-300 rounded-xl w-40 mt-2">
+            <ul tabindex="0" class="dropdown-content z-50 menu p-2 shadow-2xl bg-base-100 border border-base-300 rounded-lg w-28 mt-1">
               <li v-for="p in priorities" :key="p.label" @click="formData.priority = p.label">
-                <a class="font-bold flex items-center gap-3">
-                  <span class="w-2 h-2 rounded-full" :class="p.color"></span>
+                <a class="font-bold flex items-center gap-2 text-xs">
+                  <span class="w-1.5 h-1.5 rounded-full" :class="p.color"></span>
                   {{ p.label }}
                 </a>
               </li>
@@ -716,8 +718,8 @@ watch(() => props.isOpen, (val) => {
         </div>
       </div>
 
-      <!-- Scrollable Content Field -->
-      <div class="flex-1 overflow-y-auto px-10 pb-8 custom-scrollbar bg-base-100">
+      <!-- Scrollable Content Field (Main Focus) -->
+      <div class="flex-1 overflow-y-auto px-5 pb-4 custom-scrollbar bg-base-100">
         <textarea 
           v-model="formData.content"
           placeholder="Enter memo content (plain text)..." 
@@ -725,72 +727,75 @@ watch(() => props.isOpen, (val) => {
         ></textarea>
       </div>
 
-      <!-- Attachments Section -->
-      <div v-if="formData.attachments.length > 0" class="px-10 py-4 border-t border-base-200 bg-base-50">
-        <div class="flex items-center gap-2 mb-2">
-          <Paperclip :size="16" class="opacity-60" />
-          <span class="text-xs font-bold uppercase opacity-60">Attachments ({{ attachmentCount }})</span>
+      <!-- Attachments Section (Collapsible/Compact) -->
+      <div v-if="formData.attachments.length > 0" class="px-5 py-2 border-t border-base-200 bg-base-50/50">
+        <div 
+          @click="showAttachmentsExpanded = !showAttachmentsExpanded" 
+          class="flex items-center gap-2 cursor-pointer hover:text-primary transition-colors"
+        >
+          <Paperclip :size="12" class="opacity-60" />
+          <span class="text-[10px] font-bold uppercase opacity-60">Attachments ({{ attachmentCount }})</span>
+          <span class="text-[10px] opacity-40">{{ showAttachmentsExpanded ? '▲' : '▼' }}</span>
         </div>
-        <div class="flex flex-wrap gap-3">
+        <!-- Collapsible Content -->
+        <div v-if="showAttachmentsExpanded" class="flex flex-wrap gap-2 mt-2">
           <template v-for="(attachment, index) in formData.attachments" :key="attachment.id">
-            <!-- All Attachments - Show as filename link only -->
-            <div class="flex items-center gap-2 bg-base-200 px-3 py-2 rounded-lg group">
-              <FileText :size="16" class="opacity-60" />
-              <div class="flex flex-col">
-                <a :href="attachment.url" target="_blank" class="text-xs font-medium max-w-[200px] truncate hover:text-primary hover:underline transition-colors">
-                  {{ attachment.name }}
-                </a>
-                <span class="text-[10px] opacity-40">{{ formatFileSize(attachment.size) }}</span>
-              </div>
-              <button @click="removeAttachment(index)" class="btn btn-ghost btn-xs btn-circle text-error opacity-0 group-hover:opacity-100 transition-opacity">
-                <X :size="14" />
+            <div class="flex items-center gap-1.5 bg-base-200/80 px-2 py-1 rounded group">
+              <FileText :size="12" class="opacity-60" />
+              <a :href="attachment.url" target="_blank" class="text-[10px] font-medium max-w-[120px] truncate hover:text-primary transition-colors">
+                {{ attachment.name }}
+              </a>
+              <span class="text-[8px] opacity-40">{{ formatFileSize(attachment.size) }}</span>
+              <button @click.stop="removeAttachment(index)" class="text-error opacity-0 group-hover:opacity-100 transition-opacity">
+                <X :size="10" />
               </button>
             </div>
           </template>
         </div>
       </div>
 
-      <!-- Footer (Fixed) -->
-      <div class="px-10 py-6 bg-base-100 border-t border-base-200 flex items-center justify-between shrink-0">
-        <div class="flex items-center gap-4">
+      <!-- Footer (Compact) -->
+      <div class="px-5 py-3 bg-base-100 border-t border-base-200 flex items-center justify-between shrink-0 relative z-20">
+        <div class="flex items-center gap-2">
           <input type="file" ref="fileInput" class="hidden" @change="handleFileUpload" multiple />
           <button 
             @click="triggerFileInput" 
-            class="btn btn-ghost btn-md btn-square rounded-xl hover:bg-base-200 relative" 
-            :class="{ 'text-primary bg-primary/10': formData.attachments.length > 0 }"
-            title="Attach Files (Multiple allowed)"
+            class="btn btn-ghost btn-sm btn-square rounded-lg hover:bg-base-200 relative" 
+            :class="{ 'text-primary': formData.attachments.length > 0 }"
+            title="Attach Files"
             :disabled="isUploading"
           >
-            <Paperclip :size="20" :class="{ 'opacity-100': formData.attachments.length > 0, 'opacity-60': formData.attachments.length === 0 }" />
-            <span v-if="isUploading" class="absolute -top-1 -right-1 loading loading-sm loading-primary"></span>
+            <Paperclip :size="16" :class="{ 'opacity-100': formData.attachments.length > 0, 'opacity-50': formData.attachments.length === 0 }" />
+            <span v-if="isUploading" class="absolute -top-0.5 -right-0.5 loading loading-xs loading-primary"></span>
           </button>
           
           <button 
             @click="showScheduleModal = true" 
-            class="btn btn-ghost btn-md bg-base-100 border border-base-300 hover:border-primary/50 hover:bg-primary/5 gap-3 px-6 font-black text-[10px] uppercase tracking-widest rounded-xl transition-all"
-            :class="{ 'bg-primary/10 border-primary': scheduleData }"
+            class="btn btn-ghost btn-sm gap-1 px-2 font-bold text-[9px] uppercase tracking-wider rounded-lg transition-all"
+            :class="{ 'text-primary': scheduleData }"
+            title="Schedule"
           >
-            <Calendar :size="18" class="opacity-60" />
-            Schedule
-            <span v-if="scheduleData" class="badge badge-primary badge-xs">✓</span>
+            <Calendar :size="14" />
+            <span v-if="scheduleData" class="badge badge-primary badge-xs p-0.5">✓</span>
           </button>
           
           <button 
             @click="saveAsDraft"
-            class="btn btn-ghost btn-md border border-base-300 hover:border-primary/50 hover:bg-primary/5 gap-3 px-6 font-black text-[10px] uppercase tracking-widest rounded-xl transition-all"
+            class="btn btn-ghost btn-sm gap-1 px-2 font-bold text-[9px] uppercase tracking-wider rounded-lg transition-all"
             :disabled="isSaving"
+            title="Save Draft"
           >
-            <Loader2 v-if="isSaving" :size="16" class="animate-spin" />
-            <span v-else>Save Draft</span>
+            <Loader2 v-if="isSaving" :size="12" class="animate-spin" />
+            <span v-else>Draft</span>
           </button>
         </div>
 
-        <div class="flex items-center gap-4">
-          <button @click="closeModal" class="btn btn-ghost btn-md px-6 font-black text-[10px] uppercase tracking-[0.2em] opacity-40 hover:opacity-100 transition-opacity">Cancel</button>
-          <button @click="showPreviewModal = true" class="btn btn-ghost btn-md border border-base-300 hover:border-primary/50 hover:bg-primary/5 px-8 font-black text-[10px] uppercase tracking-[0.2em] rounded-xl transition-all">Preview</button>
+        <div class="flex items-center gap-2">
+          <button @click="closeModal" class="btn btn-ghost btn-sm px-3 font-bold text-[9px] uppercase opacity-40 hover:opacity-100 transition-opacity">Cancel</button>
+          <button @click="showPreviewModal = true" class="btn btn-ghost btn-sm border border-base-300 hover:border-primary/50 px-3 font-bold text-[9px] uppercase rounded-lg transition-all">Preview</button>
           <button 
             @click="handleSend" 
-            class="btn btn-primary btn-md px-12 text-white font-black text-[11px] uppercase tracking-[0.25em] shadow-2xl shadow-primary/40 rounded-xl hover:scale-[1.02] active:scale-[0.98] transition-all"
+            class="btn btn-primary btn-sm px-6 text-white font-bold text-[10px] uppercase tracking-wider shadow-lg shadow-primary/30 rounded-lg hover:scale-[1.02] active:scale-[0.98] transition-all"
             :disabled="!canSubmit"
           >
             Send
@@ -809,136 +814,30 @@ watch(() => props.isOpen, (val) => {
       @save="handleScheduleSave"
     />
 
-    <!-- Preview Modal -->
+    <!-- Preview Modal - A4 Format -->
     <div v-if="showPreviewModal" class="modal modal-open z-[99999]">
-      <div class="modal-box max-w-2xl bg-white p-12 rounded-none shadow-2xl flex flex-col gap-8 relative">
-        <button @click="showPreviewModal = false" class="absolute top-4 right-4 btn btn-ghost btn-circle btn-sm"><X :size="20" /></button>
+      <div class="modal-box max-w-4xl w-[95vw] bg-gray-100 p-0 rounded-none shadow-2xl flex flex-col relative overflow-hidden">
+        <!-- Close Button -->
+        <button @click="showPreviewModal = false" class="absolute top-4 right-4 btn btn-ghost btn-circle btn-sm z-50 bg-white/80 hover:bg-white shadow-sm">
+          <X :size="20" />
+        </button>
         
-        <!-- Memo Header -->
-        <div class="border-b-[1px] border-black pb-2 flex justify-between items-end">
-          <h2 class="text-2xl font-black tracking-widest text-black">MEMO</h2>
-          <div class="text-right">
-            <p class="text-[9px] font-bold uppercase tracking-[0.2em] text-black/60">BukSU Memofy Official</p>
-            <p class="text-[11px] font-black text-black">{{ new Date().toLocaleDateString() }}</p>
-          </div>
+        <!-- A4 Document Container -->
+        <div class="flex-1 overflow-y-auto custom-scrollbar">
+          <MemoPdfTemplate 
+            :memo="formData" 
+            :sender="user" 
+            :isPreview="true" 
+          />
         </div>
 
-        <!-- Memo Meta -->
-        <div class="space-y-3 text-black">
-          <div class="flex gap-4"><span class="w-20 font-bold text-[10px] uppercase text-black/60">TO:</span> 
-            <span class="font-black underline uppercase flex flex-wrap gap-x-2 text-sm">
-              <template v-if="formData.selectedRecipients.length > 0">
-                <span v-for="(r, i) in formData.selectedRecipients" :key="r.id">
-                  {{ r.first_name }} {{ r.last_name }}{{ i < formData.selectedRecipients.length - 1 ? ',' : '' }}
-                </span>
-              </template>
-              <template v-else-if="formData.departmentId">
-                {{ formData.department }}
-              </template>
-              <template v-else>
-                RECIPIENT
-              </template>
-            </span>
-          </div>
-          <div class="flex gap-4"><span class="w-20 font-bold text-[10px] uppercase text-black/60">FROM:</span> <span class="font-black uppercase text-sm">ADMIN / {{ formData.department }}</span></div>
-          <div class="flex gap-4"><span class="w-20 font-bold text-[10px] uppercase text-black/60">SUBJECT:</span> <span class="font-black uppercase text-sm">{{ formData.subject || 'UNTITLED MEMO' }}</span></div>
+        <!-- Action Buttons -->
+        <div class="shrink-0 px-6 py-4 bg-white border-t border-gray-200 flex justify-end items-center">
+          <span class="text-xs text-base-content/40 mr-auto font-medium italic">Preview Mode - Exactly as the recipient will see it</span>
+          <button @click="showPreviewModal = false" class="btn btn-primary btn-sm px-8 font-bold text-[10px] uppercase tracking-widest rounded-lg shadow-lg shadow-primary/20">Back to Edit</button>
         </div>
-
-        <!-- Memo Content -->
-        <!-- Memo Content -->
-        <div class="py-10 mb-8 text-[15px] leading-relaxed min-h-[300px] whitespace-pre-wrap font-bold text-black block">
-          {{ formData.content || 'Write your memo content here...' }}
-        </div>
-
-        <!-- Separator 1: Always between content and next section -->
-        <div class="w-full border-b-2 border-black my-8"></div>
-
-        <!-- Attachments Preview - Images shown below content -->
-        <!-- Attachments Preview - Images shown below content -->
-        <div v-if="formData.attachments.length > 0" class="block clear-both">
-          <p class="text-[9px] font-bold uppercase opacity-60 mb-6">Attached Files & Images:</p>
-          
-          <!-- Debug info - remove in production -->
-          <pre v-if="false" class="text-[8px] bg-gray-100 p-2 mb-2 overflow-auto">{{ formData.attachments }}</pre>
-          
-          <!-- Image Attachments - Display full width -->
-          <div class="space-y-8 mb-8 flex flex-col items-center w-full">
-            <template v-for="(attachment, index) in formData.attachments" :key="attachment.id + '-img'">
-              <div v-if="isImageAttachment(attachment)" class="w-full flex justify-center">
-                <!-- clickable image for full view -->
-                <a :href="attachment.url" target="_blank" class="block w-full max-w-3xl cursor-zoom-in hover:opacity-95 transition-opacity">
-                  <img :src="attachment.url" :alt="attachment.name" class="w-full h-auto rounded-none shadow-sm border border-gray-100" @error="(e) => { console.error('Image failed to load:', attachment.url); e.target.style.display = 'none' }" />
-                </a>
-              </div>
-            </template>
-          </div>
-
-          
-          <!-- Non-image Attachments - Show as links -->
-          <div class="flex flex-wrap gap-2">
-            <template v-for="attachment in formData.attachments" :key="attachment.id + '-file'">
-              <a v-if="!isImageAttachment(attachment)" :href="attachment.url" target="_blank" class="flex items-center gap-2 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-sm hover:bg-gray-100 transition-colors">
-                <Paperclip :size="10" class="opacity-60" />
-                <span class="text-[10px]">{{ attachment.name }}</span>
-              </a>
-            </template>
-          </div>
-          
-          <!-- Separator 2: Only after attachments if they exist -->
-          <div class="w-full border-b-2 border-black my-8"></div>
-        </div>
-
-        <!-- Multiple Signatures Preview - Horizontal Inline Layout -->
-        <div v-if="selectedSignatures.length > 0" class="mt-8">
-          <div class="flex flex-wrap gap-8 justify-end items-end">
-            <template v-for="(sig, index) in selectedSignatures" :key="sig.id">
-              <div class="flex flex-col items-center w-48">
-                <!-- Signature Box -->
-                <div class="w-full h-20 flex items-center justify-center p-2 relative bg-white -mb-2 z-10">
-                  <img 
-                    v-if="sig.signature_data" 
-                    :src="sig.signature_data" 
-                    class="max-w-full max-h-full object-contain mix-blend-multiply scale-125 origin-bottom" 
-                  />
-                  <span v-else class="text-[10px] text-black/30 font-black italic">SIGNATURE HERE</span>
-                </div>
-                <!-- Name Field (Editable) -->
-                <div class="w-full border-b-2 border-black px-1 pb-1 z-20">
-                  <input 
-                    type="text" 
-                    v-model="sig.name" 
-                    class="w-full text-center text-[12px] font-black uppercase tracking-widest bg-transparent border-none focus:outline-none p-0 text-black placeholder:text-black/30" 
-                    placeholder="Name"
-                  />
-                </div>
-                <!-- Position Field (Editable) -->
-                <input 
-                  type="text" 
-                  v-model="formData.signaturePositions[sig.id]"
-                  class="w-full mt-1 text-center text-[10px] font-bold uppercase bg-transparent border-none focus:outline-none p-0 text-black" 
-                  placeholder="Position"
-                />
-              </div>
-            </template>
-          </div>
-          <!-- Department -->
-          <p class="text-[9px] font-bold text-black/60 text-right mt-4">{{ formData.department }}</p>
-        </div>
-        <div v-else class="mt-8 flex flex-col items-end text-black">
-          <div class="flex flex-col items-center w-48">
-            <div class="w-full h-20 flex items-center justify-center p-2 relative -mb-2">
-              <span class="text-[10px] text-black/30 font-black italic">SIGNATURE HERE</span>
-            </div>
-            <div class="w-full border-b-2 border-black px-1 pb-1">
-              <p class="text-[12px] font-black uppercase tracking-widest text-center">{{ formData.signature !== 'None' ? formData.signature : 'NAME' }}</p>
-            </div>
-            <p class="text-[10px] font-bold text-black mt-1 uppercase text-center">{{ formData.department || 'POSITION' }}</p>
-          </div>
-        </div>
-
-        <button @click="showPreviewModal = false" class="btn btn-neutral btn-outline btn-block rounded-lg font-bold uppercase tracking-widest text-[10px] mt-8">Back to Edit</button>
       </div>
-      <div class="modal-backdrop bg-black/40 backdrop-blur-sm" @click="showPreviewModal = false"></div>
+      <div class="modal-backdrop bg-black/60 backdrop-blur-md" @click="showPreviewModal = false"></div>
     </div>
   </Teleport>
 </template>

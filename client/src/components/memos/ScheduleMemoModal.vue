@@ -63,7 +63,7 @@ const closeModal = () => {
 
 <template>
   <Teleport to="body">
-    <div v-if="isOpen" class="modal modal-open z-100 items-center justify-center">
+    <div v-if="isOpen" class="modal modal-open z-99999 items-center justify-center">
     <div class="modal-box max-w-2xl w-full rounded-xl bg-base-100 shadow-2xl border border-base-300 p-0 overflow-hidden">
       <!-- Header -->
       <div class="bg-primary px-6 py-4 flex items-center justify-between text-primary-content">
@@ -179,8 +179,8 @@ const closeModal = () => {
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
             </svg>
             <div class="text-sm leading-relaxed text-info">
-              <span class="font-black">Schedule Send:</span> This memo will be sent at the scheduled start date and time, 
-              and will appear in your calendar and all recipients' calendars until the end date and time.
+              <span class="font-black">Schedule Send:</span> After admin approval, this memo will be automatically sent and archived 
+              at the scheduled date and time. It will remain visible to recipients in their inbox.
             </div>
           </div>
         </div>

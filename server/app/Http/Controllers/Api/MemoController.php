@@ -74,13 +74,13 @@ class MemoController extends Controller
                 $query->whereIn('sender_id', $targetIds);
             }
             $query->where('is_draft', false)
-                  ->where('status', 'sent'); // STRICT: Only sent status
+                  ->whereIn('status', ['sent', 'archived']); // Include archived
         } elseif ($request->scope === 'received') {
             if (!$isAdmin) {
                 $query->whereIn('recipient_id', $targetIds);
             }
             $query->where('is_draft', false)
-                  ->whereIn('status', ['sent', 'read', 'acknowledged']);
+                  ->whereIn('status', ['sent', 'read', 'acknowledged', 'archived']);
         } elseif ($request->scope === 'drafts') {
             $query->where('is_draft', true);
             if (!$isAdmin) {
@@ -450,10 +450,40 @@ class MemoController extends Controller
             return response()->json(['message' => 'Unauthorized to acknowledge this memo'], 403);
         }
 
-        $memo->update(['status' => 'read']);
+        // Update memo status to acknowledged
+        $memo->update(['status' => 'acknowledged']);
+
+        // Update or create acknowledgment record
+        $acknowledgment = \App\Models\MemoAcknowledgment::where('memo_id', $memo->id)
+            ->where('recipient_id', $user->id)
+            ->first();
+        
+        if ($acknowledgment) {
+            $acknowledgment->update([
+                'is_acknowledged' => true,
+                'acknowledged_at' => now()
+            ]);
+        } else {
+            \App\Models\MemoAcknowledgment::create([
+                'memo_id' => $memo->id,
+                'recipient_id' => $user->id,
+                'is_acknowledged' => true,
+                'acknowledged_at' => now(),
+                'sent_at' => now()
+            ]);
+        }
+
+        // Notify the memo sender (secretary) about acknowledgment
+        $sender = \App\Models\User::find($memo->sender_id);
+        if ($sender && $sender->id !== $user->id) {
+            $this->notificationService->notifyMemoAcknowledged($user, $sender, $memo);
+        }
 
         $this->activityLogger->logUserAction($user, 'acknowledge_memo', $memo, $this->activityLogger->extractRequestInfo($request));
 
-        return response()->json(['message' => 'Memo acknowledged successfully', 'memo' => $memo]);
+        return response()->json([
+            'message' => 'Memo acknowledged successfully', 
+            'memo' => $memo->fresh()
+        ]);
     }
 }
