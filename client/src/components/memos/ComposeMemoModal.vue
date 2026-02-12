@@ -332,7 +332,7 @@ const handleSend = async () => {
   try {
     const priorityMap = {
       'Low': 'low',
-      'Medium': 'normal',
+      'Medium': 'medium',
       'High': 'high'
     }
 
@@ -409,22 +409,23 @@ const handleSend = async () => {
   }
 }
 
-const saveAsDraft = async () => {
+const saveAsDraft = async (silent = false) => {
   try {
-    isSaving.value = true
+    if (!silent) isSaving.value = true
     
     const priorityMap = {
       'Low': 'low',
-      'Medium': 'normal',
+      'Medium': 'medium',
       'High': 'high'
     }
 
+    // New Draft System Payload - uses camelCase as per Draft model validation
     const payload = {
-      recipient_ids: formData.value.recipientIds.length > 0 ? formData.value.recipientIds : [],
-      department_id: formData.value.departmentId || null,
-      subject: formData.value.subject || 'Untitled Draft',
+      recipientIds: formData.value.recipientIds.length > 0 ? formData.value.recipientIds : [],
+      departmentId: formData.value.departmentId || null,
+      subject: formData.value.subject || '',
       message: formData.value.content || '',
-      priority: priorityMap[formData.value.priority] || 'normal',
+      priority: priorityMap[formData.value.priority] || 'medium',
       attachments: formData.value.attachments.map(a => ({
         name: a.name,
         path: a.path,
@@ -432,50 +433,47 @@ const saveAsDraft = async () => {
         type: a.type,
         url: a.url
       })),
-      signature_ids: formData.value.signatureIds.length > 0 ? formData.value.signatureIds : [formData.value.signatureId].filter(Boolean),
-      signature_positions: formData.value.signaturePositions
+      signatureId: formData.value.signatureId || (formData.value.signatureIds.length > 0 ? formData.value.signatureIds[0] : null)
     }
 
-    // Update existing draft or create new
     const rawRole = (user.value?.role && typeof user.value.role === 'object') ? user.value.role.name : user.value?.role
     const roleName = String(rawRole || '').toLowerCase()
     
+    let endpoint = '/drafts'
+    if (roleName === 'secretary') {
+      endpoint = '/secretary/memos/drafts'
+    } else if (roleName === 'admin') {
+      endpoint = '/admin/memos/drafts'
+    }
+
     if (formData.value.draftId) {
       // Update existing draft
-      if (roleName === 'secretary') {
-        await api.put(`/secretary/memos/${formData.value.draftId}`, payload)
-      } else {
-        // For admin/others, use general update endpoint
-        payload.is_draft = true
-        await api.put(`/memos/${formData.value.draftId}`, payload)
-      }
+      await api.put(`${endpoint}/${formData.value.draftId}`, payload)
     } else {
       // Create new draft
-      if (roleName === 'secretary') {
-        const response = await api.post('/secretary/memos/draft', payload)
-        formData.value.draftId = response.data.data.id
-      } else {
-        // For admin/others, use general store endpoint with is_draft=true
-        payload.is_draft = true
-        const response = await api.post('/memos', payload)
-        formData.value.draftId = response.data.data.id
-      }
+      const response = await api.post(endpoint, payload)
+      // Note: Backend returns data.id for new drafts
+      formData.value.draftId = response.data.data?._id || response.data.data?.id
     }
 
     lastSaved.value = new Date()
     
-    Swal.fire({
-      title: 'Draft Saved',
-      text: 'Your memo has been saved as a draft',
-      icon: 'success',
-      timer: 1500,
-      showConfirmButton: false
-    })
+    if (!silent) {
+      Swal.fire({
+        title: 'Draft Saved',
+        text: 'Your memo has been saved as a draft',
+        icon: 'success',
+        timer: 1500,
+        showConfirmButton: false
+      })
+    }
   } catch (error) {
     console.error('Error saving draft:', error)
-    Swal.fire('Error', 'Failed to save draft', 'error')
+    if (!silent) {
+      Swal.fire('Error', 'Failed to save draft', 'error')
+    }
   } finally {
-    isSaving.value = false
+    if (!silent) isSaving.value = false
   }
 }
 
@@ -503,7 +501,15 @@ const resetForm = () => {
   lastSaved.value = null
 }
 
-const closeModal = () => {
+const closeModal = async () => {
+  // Auto-save on exit if there's any content
+  if (formData.value.subject || formData.value.content) {
+    try {
+      await saveAsDraft(true)
+    } catch (e) {
+      console.error('Silent auto-save failed on close', e)
+    }
+  }
   emit('close')
 }
 
@@ -512,12 +518,32 @@ const handleScheduleSave = (schedule) => {
   showScheduleModal.value = false
 }
 
-// startAutoSave and stopAutoSave functions removed
+// Auto-save timer logic
+let autoSaveTimer = null
+const AUTO_SAVE_INTERVAL = 30000 // 30 seconds
+
+const startAutoSave = () => {
+  stopAutoSave()
+  autoSaveTimer = setInterval(() => {
+    if (formData.value.subject || formData.value.content) {
+      saveAsDraft(true)
+    }
+  }, AUTO_SAVE_INTERVAL)
+}
+
+const stopAutoSave = () => {
+  if (autoSaveTimer) {
+    clearInterval(autoSaveTimer)
+    autoSaveTimer = null
+  }
+}
 
 onMounted(() => {
   fetchUsers()
   fetchDepartments()
   fetchSignatures()
+  
+  startAutoSave()
 
   // Auto-populate department for secretaries
   const roleName = (user.value?.role && typeof user.value.role === 'object') ? user.value.role.name : user.value?.role
@@ -527,7 +553,9 @@ onMounted(() => {
   }
 })
 
-// stopAutoSave removed
+onUnmounted(() => {
+  stopAutoSave()
+})
 
 watch(() => props.initialData, (newVal) => {
   if (newVal) {

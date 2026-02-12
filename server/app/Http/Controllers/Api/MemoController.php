@@ -11,6 +11,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use MongoDB\BSON\ObjectId;
 
+use App\Models\Draft;
+use App\Models\Department;
+
 class MemoController extends Controller
 {
     protected $activityLogger;
@@ -82,13 +85,13 @@ class MemoController extends Controller
             $query->where('is_draft', false)
                   ->whereIn('status', ['sent', 'read', 'acknowledged', 'archived']);
         } elseif ($request->scope === 'drafts') {
-            $query->where('is_draft', true);
-            if (!$isAdmin) {
-                $query->where(function ($q) use ($targetIds) {
-                    $q->whereIn('created_by', $targetIds)
-                      ->orWhereIn('sender_id', $targetIds);
-                });
-            }
+            // FETCH FROM NEW DRAFT COLLECTION
+            $query = Draft::with(['sender', 'department'])
+                          ->where('creatorId', $this->normalizeUserId($user->id))
+                          ->orderBy('updatedAt', 'desc');
+            
+            $memos = $query->paginate($perPage);
+            return response()->json($memos);
         } elseif ($request->scope === 'pending') {
             if (!$isAdmin) {
                 $query->whereIn('sender_id', $targetIds);

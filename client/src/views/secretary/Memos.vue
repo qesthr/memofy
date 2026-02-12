@@ -83,8 +83,13 @@ const handleSendMemo = async (result) => {
 }
 
 const viewMemo = (memo) => {
-  selectedMemo.value = memo
-  showDetailModal.value = true
+  if (activeTab.value === 'drafts') {
+    templateData.value = memo
+    showComposeModal.value = true
+  } else {
+    selectedMemo.value = memo
+    showDetailModal.value = true
+  }
 }
 
 const formatDate = (date) => {

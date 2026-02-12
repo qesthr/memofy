@@ -5,12 +5,40 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Memo;
 use App\Models\User;
+use App\Models\Draft;
 use App\Models\UserActivityLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use MongoDB\BSON\ObjectId;
 
 class DashboardController extends Controller
 {
+    /**
+     * Convert user ID to consistent format for MongoDB comparison
+     */
+    protected function normalizeUserId($userId)
+    {
+        if ($userId instanceof ObjectId) {
+            return $userId;
+        }
+        
+        // Handle MongoDB _id if present in user object
+        if (is_object($userId) && isset($userId->_id)) {
+            return $userId->_id;
+        }
+
+        // Handle string ObjectId (24 character hex)
+        if (is_string($userId) && strlen((string)$userId) === 24 && ctype_xdigit((string)$userId)) {
+            try {
+                return new ObjectId((string)$userId);
+            } catch (\Exception $e) {
+                return (string)$userId;
+            }
+        }
+        
+        return (string)$userId;
+    }
+
     /**
      * Get dashboard data with optimized queries.
      * 

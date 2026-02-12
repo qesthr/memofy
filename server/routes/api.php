@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\ArchiveController;
 use App\Http\Controllers\Api\SecretaryMemoController;
 use App\Http\Controllers\Api\AdminMemoController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\DraftController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -140,6 +141,15 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::delete('/bulk-delete', [SecretaryMemoController::class, 'bulkDestroy']);
         Route::post('/bulk-submit', [SecretaryMemoController::class, 'bulkSubmitForApproval']);
         Route::get('/{memo}/acknowledgments', [SecretaryMemoController::class, 'acknowledgmentStatus']);
+        
+        // Secretary Draft Routes - STRICT: All queries filtered by creatorId
+        Route::get('/drafts', [SecretaryMemoController::class, 'drafts']);
+        Route::get('/drafts/stats', [SecretaryMemoController::class, 'draftStats']);
+        Route::post('/drafts', [SecretaryMemoController::class, 'storeDraftToCollection']);
+        Route::get('/drafts/{id}', [SecretaryMemoController::class, 'showDraft']);
+        Route::put('/drafts/{id}', [SecretaryMemoController::class, 'updateDraftFromCollection']);
+        Route::delete('/drafts/{id}', [SecretaryMemoController::class, 'destroyDraftFromCollection']);
+        Route::post('/drafts/{id}/submit', [SecretaryMemoController::class, 'submitDraftForApproval']);
     });
 
     // Admin Memo Approval Routes
@@ -149,6 +159,29 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('/{id}/reject', [AdminMemoController::class, 'reject']);
         Route::post('/{id}/send-reminder', [AdminMemoController::class, 'sendReminder']);
         Route::get('/{id}/acknowledgments', [AdminMemoController::class, 'acknowledgmentStats']);
+        
+        // Admin Draft Routes - STRICT: All queries filtered by creatorId
+        Route::get('/drafts', [AdminMemoController::class, 'drafts']);
+        Route::get('/drafts/stats', [AdminMemoController::class, 'draftStats']);
+        Route::post('/drafts', [AdminMemoController::class, 'storeDraft']);
+        Route::get('/drafts/{id}', [AdminMemoController::class, 'showDraft']);
+        Route::put('/drafts/{id}', [AdminMemoController::class, 'updateDraft']);
+        Route::delete('/drafts/{id}', [AdminMemoController::class, 'destroyDraft']);
+        Route::post('/drafts/{id}/send', [AdminMemoController::class, 'sendDraftAsMemo']);
+    });
+
+    // Draft Routes - Available to all authenticated users (filtered by creatorId)
+    // STRICT SECURITY: All draft queries are filtered by creatorId to ensure users only see their own drafts
+    Route::prefix('drafts')->group(function () {
+        Route::get('/', [DraftController::class, 'index']);
+        Route::get('/stats', [DraftController::class, 'stats']);
+        Route::post('/', [DraftController::class, 'store']);
+        Route::get('/{id}', [DraftController::class, 'show']);
+        Route::put('/{id}', [DraftController::class, 'update']);
+        Route::post('/{id}/auto-save', [DraftController::class, 'autoSave']);
+        Route::delete('/{id}', [DraftController::class, 'destroy']);
+        Route::post('/bulk-delete', [DraftController::class, 'bulkDestroy']);
+        Route::post('/{id}/convert-to-memo', [DraftController::class, 'convertToMemo']);
     });
 
     // Activity Logs
