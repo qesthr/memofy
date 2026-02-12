@@ -54,6 +54,12 @@ class SecretaryMemoController extends Controller
         $page = $request->get('page', 1);
         $perPage = min((int) $request->get('per_page', 15), 50);
         
+        \Illuminate\Support\Facades\Log::info('SecretaryMemoController Request', [
+            'userId' => $user->id,
+            'scope' => $scope,
+            'params' => $request->all()
+        ]);
+        
         // Filter parameters
         $search = $request->get('search');
         $department = $request->get('department');
@@ -89,6 +95,11 @@ class SecretaryMemoController extends Controller
                               ->where('creatorId', $userId)
                               ->orderBy('updatedAt', 'desc')
                               ->paginate($perPage);
+                \Illuminate\Support\Facades\Log::info('Draft Search for ' . $userId, [
+                    'count' => $memos->count(),
+                    'total' => $memos->total(),
+                    'example' => $memos->first() ? $memos->first()->toArray() : 'NONE'
+                ]);
                 return response()->json($memos);
 
             default:

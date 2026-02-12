@@ -580,8 +580,8 @@ watch(() => props.initialData, (newVal) => {
     if (data.message) data.content = data.message
     
     formData.value = {
-      ...formData.value,
-      ...data
+      ...data,
+      priority: data.priority ? (data.priority.charAt(0).toUpperCase() + data.priority.slice(1).toLowerCase()) : 'Medium'
     }
 
     // Ensure attachments have unique IDs for Vue keys if they don't have them
@@ -730,7 +730,7 @@ watch(() => props.isOpen, (val) => {
           <!-- Priority Selector (Compact) -->
           <div class="dropdown">
             <div tabindex="0" role="button" class="btn btn-xs bg-base-200 border-none px-2 rounded-md font-bold text-[9px] uppercase tracking-wider hover:bg-base-300 text-base-content/70">
-              <span class="w-1.5 h-1.5 rounded-full mr-1" :class="priorities.find(p => p.label === formData.priority).color"></span>
+              <span class="w-1.5 h-1.5 rounded-full mr-1" :class="priorities.find(p => p.label === formData.priority)?.color || 'bg-base-300'"></span>
               {{ formData.priority }}
               <span class="ml-1 opacity-40 text-[7px]">▼</span>
             </div>

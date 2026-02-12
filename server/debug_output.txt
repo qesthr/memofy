@@ -1,0 +1,18 @@
+--- START DEBUG ---
+Total Drafts: 2
+Draft #0: ID[698e0ebf53b296e9890828f5] Creator[698a11580ec8a60a9104e109] CID_Type[object] Subject[gxfgzfxg]
+Draft #1: ID[698e0f2953b296e9890828f7] Creator[698a11580ec8a60a9104e109] CID_Type[object] Subject[fydtdy]
+
+--- ALL USERS ---
+User[System Admin 1] ID[698a11570ec8a60a9104e106] Email[Admin1@buksu.edu.ph] Role[admin]
+User[System Admin 2] ID[698a11580ec8a60a9104e107] Email[Admin2@buksu.edu.ph] Role[admin]
+User[System Admin 3] ID[698a11580ec8a60a9104e108] Email[Admin3@buksu.edu.ph] Role[admin]
+User[Department Secretary 1] ID[698a11580ec8a60a9104e109] Email[Secretary1@buksu.edu.ph] Role[secretary]
+User[Department Secretary 2] ID[698a11590ec8a60a9104e10a] Email[Secretary2@buksu.edu.ph] Role[secretary]
+User[Department Secretary 3] ID[698a11590ec8a60a9104e10b] Email[Secretary3@buksu.edu.ph] Role[secretary]
+User[Juan Dela Cruz 1] ID[698a115a0ec8a60a9104e10c] Email[Faculty1@buksu.edu.ph] Role[faculty]
+User[Juan Dela Cruz 2] ID[698a115a0ec8a60a9104e10d] Email[Faculty2@buksu.edu.ph] Role[faculty]
+User[Juan Dela Cruz 3] ID[698a115a0ec8a60a9104e10e] Email[Faculty3@buksu.edu.ph] Role[faculty]
+User[Joenil Acero] ID[698c62b23050768e1c032fbc] Email[2301107552@student.buksu.edu.ph] Role[admin]
+User[Joeni Acer] ID[698ca1226648414e300a8618] Email[2301103948@student.buksu.edu.ph] Role[faculty]
+--- END DEBUG ---

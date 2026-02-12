@@ -115,9 +115,7 @@ class DashboardController extends Controller
                 'pending_memos' => Memo::where('sender_id', $userId)
                                       ->where('status', 'pending_approval')
                                       ->count(),
-                'draft_memos' => Memo::where('sender_id', $userId)
-                                      ->where('is_draft', true)
-                                      ->count(),
+                'draft_memos' => Draft::where('creatorId', $this->normalizeUserId($userId))->count(),
             ];
             
             $stats['pending_memos'] = $userStats['pending_memos'];
@@ -129,9 +127,7 @@ class DashboardController extends Controller
                 'received_memos' => Memo::where('recipient_id', $userId)
                                         ->where('is_draft', false)
                                         ->count(),
-                'draft_memos' => Memo::where('sender_id', $userId)
-                                      ->where('is_draft', true)
-                                      ->count(),
+                'draft_memos' => Draft::where('creatorId', $this->normalizeUserId($userId))->count(),
                 'all_memos' => Memo::where(function($q) use ($userId) {
                                          $q->where('sender_id', $userId)
                                            ->orWhere('recipient_id', $userId);
