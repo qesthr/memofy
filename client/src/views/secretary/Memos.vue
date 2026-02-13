@@ -2,7 +2,7 @@
 import { ref, onMounted, watch, computed } from 'vue'
 import { Plus, Search, ChevronDown, Calendar, X, Settings2, CheckCircle, Clock, Eye, Send } from 'lucide-vue-next'
 import ComposeMemoModal from '@/components/memos/ComposeMemoModal.vue'
-import CustomizeMemoModal from '@/components/memos/CustomizeMemoModal.vue'
+
 import MemoInboxCard from '@/components/memos/MemoInboxCard.vue'
 import MemoDetailModal from '@/components/memos/MemoDetailModal.vue'
 import api from '@/services/api'
@@ -12,12 +12,11 @@ import Swal from 'sweetalert2'
 const departmentFilter = ref('All Departments')
 const sortFilter = ref('Newest')
 const dateFilter = ref('')
-const activeTab = ref('all') // all, sent, pending, drafts
+const activeTab = ref('all') // all, sent, pending
 
 // Modal states
 const showComposeModal = ref(false)
-const showCustomizeModal = ref(false)
-const templateData = ref(null)
+
 const selectedMemo = ref(null)
 const showDetailModal = ref(false)
 
@@ -31,8 +30,7 @@ const memoInboxRef = ref(null)
 const scopeMapping = {
   'all': '',
   'sent': 'sent',
-  'pending': 'pending',
-  'drafts': 'drafts'
+  'pending': 'pending'
 }
 
 // Additional params for secretary API
@@ -55,11 +53,7 @@ const fetchDepartments = async () => {
   }
 }
 
-const handleTemplateApply = (data) => {
-  templateData.value = data
-  showCustomizeModal.value = false
-  showComposeModal.value = true
-}
+
 
 const handleSendMemo = async (result) => {
   try {
@@ -71,7 +65,7 @@ const handleSendMemo = async (result) => {
     })
     
     showComposeModal.value = false
-    templateData.value = null
+
     
     // Refresh memo inbox
     if (memoInboxRef.value) {
@@ -83,13 +77,8 @@ const handleSendMemo = async (result) => {
 }
 
 const viewMemo = (memo) => {
-  if (activeTab.value === 'drafts') {
-    templateData.value = memo
-    showComposeModal.value = true
-  } else {
     selectedMemo.value = memo
     showDetailModal.value = true
-  }
 }
 
 const formatDate = (date) => {
@@ -139,8 +128,7 @@ watch(activeTab, () => {
 const tabs = [
   { key: 'all', label: 'ALL' },
   { key: 'pending', label: 'PENDING' },
-  { key: 'sent', label: 'SENT' },
-  { key: 'drafts', label: 'DRAFTS' }
+  { key: 'sent', label: 'SENT' }
 ]
 
 onMounted(() => {
@@ -157,10 +145,8 @@ onMounted(() => {
         <p class="text-sm text-base-content/60">Manage and distribute memos</p>
       </div>
       <div class="flex gap-2">
-        <button @click="showCustomizeModal = true" class="btn btn-ghost btn-sm border border-base-300 px-4 hover:bg-base-200">
-          <Settings2 :size="16" class="mr-2" /> Template
-        </button>
-        <button @click="showComposeModal = true; templateData = null" class="btn btn-primary btn-sm text-white px-6">
+
+        <button @click="showComposeModal = true" class="btn btn-primary btn-sm text-white px-6">
           <Plus :size="16" class="mr-1" /> Compose
         </button>
       </div>
@@ -219,17 +205,12 @@ onMounted(() => {
       />
     </div>
 
-    <!-- Customize Memo Modal -->
-    <CustomizeMemoModal
-      :is-open="showCustomizeModal"
-      @close="showCustomizeModal = false"
-      @apply="handleTemplateApply"
-    />
+
 
     <!-- Compose Memo Modal -->
     <ComposeMemoModal 
       :is-open="showComposeModal"
-      :initial-data="templateData"
+      :initial-data="null"
       @close="showComposeModal = false"
       @send="handleSendMemo"
     />

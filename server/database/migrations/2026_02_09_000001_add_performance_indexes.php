@@ -39,20 +39,9 @@ return new class extends Migration
                     $table->index('priority', 'idx_memos_priority');
                 }
                 
-                // Composite index for the most common query pattern: sent memos
-                if (!$this->hasIndex('memos', 'idx_memos_sender_status_draft')) {
-                    $table->index(['sender_id', 'status', 'is_draft'], 'idx_memos_sender_status_draft');
-                }
+
                 
-                // Composite index for received memos pattern
-                if (!$this->hasIndex('memos', 'idx_memos_recipient_status_draft')) {
-                    $table->index(['recipient_id', 'status', 'is_draft'], 'idx_memos_recipient_status_draft');
-                }
-                
-                // Index for created_by (drafts queries)
-                if (!$this->hasIndex('memos', 'idx_memos_created_by')) {
-                    $table->index('created_by', 'idx_memos_created_by');
-                }
+
                 
                 // Index for department_id filtering
                 if (!$this->hasIndex('memos', 'idx_memos_department_id')) {
@@ -244,9 +233,7 @@ return new class extends Migration
                 'idx_memos_recipient_id',
                 'idx_memos_status',
                 'idx_memos_priority',
-                'idx_memos_sender_status_draft',
-                'idx_memos_recipient_status_draft',
-                'idx_memos_created_by',
+
                 'idx_memos_department_id',
                 'idx_memos_scheduled_send_at',
             ],

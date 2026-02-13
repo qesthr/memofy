@@ -19,10 +19,7 @@ const emit = defineEmits(['close', 'send'])
 const formData = ref({
   to: '',
   subject: '',
-  signature: 'None',
-  signatureId: null,
-  signatureIds: [], // For multiple signature selection
-  signaturePositions: {}, // { sigId: 'Position Name' } for editable positions
+
   department: 'Department',
   departmentId: null,
   priority: 'Medium',
@@ -31,8 +28,7 @@ const formData = ref({
   recipientIds: [], // For multiple selection
   selectedRecipients: [], // For UI chips
   recipientType: 'individual', // individual or department
-  attachments: [], // Array of uploaded files
-  draftId: null // For auto-save
+  attachments: [] // Array of uploaded files
 })
 
 const scheduleData = ref(null)
@@ -42,19 +38,16 @@ const showAttachmentsExpanded = ref(false) // Collapsible attachments state
 const users = ref([])
 const showUserSuggestions = ref(false)
 const isLoadingUsers = ref(false)
+const recipientSearch = ref('')
+
+
 const departments = ref([])
-const signatures = ref([])
+
 const showPreviewModal = ref(false)
 const fileInput = ref(null)
 const isUploading = ref(false)
 const isSaving = ref(false)
-const lastSaved = ref(null)
-const recipientSearch = ref('') // Search input for recipients
 
-// Auto-save timer
-// let autoSaveTimer = null
-// const AUTO_SAVE_INTERVAL = 30000 // 30 seconds
-// Auto-save logic removed as per user request
 
 const priorities = [
   { label: 'Low', color: 'bg-info' },
@@ -72,10 +65,7 @@ const canSubmit = computed(() => {
 
 const attachmentCount = computed(() => formData.value.attachments.length)
 
-// Get selected signatures for preview
-const selectedSignatures = computed(() => {
-  return signatures.value.filter(s => formData.value.signatureIds.includes(s.id))
-})
+
 
 const fetchUsers = async () => {
   try {
@@ -106,24 +96,7 @@ const fetchDepartments = async () => {
   }
 }
 
-const fetchSignatures = async () => {
-  try {
-    const response = await api.get('/user-signatures')
-    signatures.value = response.data.data
-    
-    // Check for default signature
-    const defaultSig = signatures.value.find(s => s.is_default)
-    if (defaultSig && formData.value.signatureIds.length === 0) {
-      formData.value.signatureIds.push(defaultSig.id)
-      formData.value.signature = defaultSig.name
-      formData.value.signatureId = defaultSig.id
-      // Initialize position
-      formData.value.signaturePositions[defaultSig.id] = defaultSig.position || ''
-    }
-  } catch (error) {
-    console.error('Error fetching signatures:', error)
-  }
-}
+
 
 const filteredUsers = computed(() => {
   if (!recipientSearch.value) return []
@@ -280,37 +253,7 @@ const isImageAttachment = (attachment) => {
   return false
 }
 
-// Toggle signature selection
-const toggleSignature = (sig) => {
-  const index = formData.value.signatureIds.indexOf(sig.id)
-  if (index === -1) {
-    formData.value.signatureIds.push(sig.id)
-    // Initialize position from saved signature or empty
-    if (formData.value.signaturePositions[sig.id] === undefined) {
-      formData.value.signaturePositions[sig.id] = sig.position || ''
-    }
-    // Update single signature fields for backward compatibility
-    if (!formData.value.signatureId) {
-      formData.value.signatureId = sig.id
-      formData.value.signature = sig.name
-    }
-  } else {
-    formData.value.signatureIds.splice(index, 1)
-    // Remove position for this signature
-    delete formData.value.signaturePositions[sig.id]
-    // Update single signature fields
-    if (formData.value.signatureId === sig.id) {
-      formData.value.signatureId = formData.value.signatureIds.length > 0 ? formData.value.signatureIds[0] : null
-      formData.value.signature = formData.value.signatureId ? 
-        signatures.value.find(s => s.id === formData.value.signatureId)?.name || 'None' : 'None'
-    }
-  }
-}
 
-// Check if signature is selected
-const isSignatureSelected = (sigId) => {
-  return formData.value.signatureIds.includes(sigId)
-}
 
 const triggerFileInput = () => {
   if (fileInput.value) {
@@ -350,8 +293,7 @@ const handleSend = async () => {
         url: a.url
       })),
       is_draft: false,
-      signature_ids: formData.value.signatureIds.length > 0 ? formData.value.signatureIds : [formData.value.signatureId].filter(Boolean),
-      signature_positions: formData.value.signaturePositions
+
     }
 
     // Add schedule data if present
@@ -361,22 +303,7 @@ const handleSend = async () => {
       payload.all_day_event = scheduleData.value.allDay
     }
 
-    // Clear auto-save draft if exists
-    if (formData.value.draftId) {
-      try {
-        const rawRole = (user.value?.role && typeof user.value.role === 'object') ? user.value.role.name : user.value?.role
-        const roleName = String(rawRole || '').toLowerCase()
-        
-        const deleteEndpoint = roleName === 'secretary' 
-          ? `/secretary/memos/${formData.value.draftId}`
-          : `/memos/${formData.value.draftId}`
-          
-        await api.delete(deleteEndpoint)
-      } catch (e) {
-        console.error('Error clearing draft:', e)
-      }
-      formData.value.draftId = null
-    }
+
 
     const rawRole = (user.value?.role && typeof user.value.role === 'object') ? user.value.role.name : user.value?.role
     const roleName = String(rawRole || '').toLowerCase()
@@ -409,82 +336,13 @@ const handleSend = async () => {
   }
 }
 
-const saveAsDraft = async (silent = false) => {
-  try {
-    if (!silent) isSaving.value = true
-    
-    const priorityMap = {
-      'Low': 'low',
-      'Medium': 'medium',
-      'High': 'high'
-    }
 
-    // New Draft System Payload - uses camelCase as per Draft model validation
-    const payload = {
-      recipientIds: formData.value.recipientIds.length > 0 ? formData.value.recipientIds : [],
-      departmentId: formData.value.departmentId || null,
-      subject: formData.value.subject || '',
-      message: formData.value.content || '',
-      priority: priorityMap[formData.value.priority] || 'medium',
-      attachments: formData.value.attachments.map(a => ({
-        name: a.name,
-        path: a.path,
-        size: a.size,
-        type: a.type,
-        url: a.url
-      })),
-      signatureId: formData.value.signatureId || (formData.value.signatureIds.length > 0 ? formData.value.signatureIds[0] : null)
-    }
-
-    const rawRole = (user.value?.role && typeof user.value.role === 'object') ? user.value.role.name : user.value?.role
-    const roleName = String(rawRole || '').toLowerCase()
-    
-    let endpoint = '/drafts'
-    if (roleName === 'secretary') {
-      endpoint = '/secretary/memos/drafts'
-    } else if (roleName === 'admin') {
-      endpoint = '/admin/memos/drafts'
-    }
-
-    if (formData.value.draftId) {
-      // Update existing draft
-      await api.put(`${endpoint}/${formData.value.draftId}`, payload)
-    } else {
-      // Create new draft
-      const response = await api.post(endpoint, payload)
-      // Note: Backend returns data.id for new drafts
-      formData.value.draftId = response.data.data?._id || response.data.data?.id
-    }
-
-    lastSaved.value = new Date()
-    
-    if (!silent) {
-      Swal.fire({
-        title: 'Draft Saved',
-        text: 'Your memo has been saved as a draft',
-        icon: 'success',
-        timer: 1500,
-        showConfirmButton: false
-      })
-    }
-  } catch (error) {
-    console.error('Error saving draft:', error)
-    if (!silent) {
-      Swal.fire('Error', 'Failed to save draft', 'error')
-    }
-  } finally {
-    if (!silent) isSaving.value = false
-  }
-}
 
 const resetForm = () => {
   formData.value = {
     to: '',
     subject: '',
-    signature: 'None',
-    signatureId: null,
-    signatureIds: [],
-    signaturePositions: {},
+
     department: 'Department',
     departmentId: null,
     priority: 'Medium',
@@ -493,23 +351,14 @@ const resetForm = () => {
     recipientIds: [],
     selectedRecipients: [],
     recipientType: 'individual',
-    attachments: [],
-    draftId: null
+    attachments: []
   }
   recipientSearch.value = ''
   scheduleData.value = null
-  lastSaved.value = null
 }
 
 const closeModal = async () => {
-  // Auto-save on exit if there's any content
-  if (formData.value.subject || formData.value.content) {
-    try {
-      await saveAsDraft(true)
-    } catch (e) {
-      console.error('Silent auto-save failed on close', e)
-    }
-  }
+
   emit('close')
 }
 
@@ -518,32 +367,14 @@ const handleScheduleSave = (schedule) => {
   showScheduleModal.value = false
 }
 
-// Auto-save timer logic
-let autoSaveTimer = null
-const AUTO_SAVE_INTERVAL = 30000 // 30 seconds
 
-const startAutoSave = () => {
-  stopAutoSave()
-  autoSaveTimer = setInterval(() => {
-    if (formData.value.subject || formData.value.content) {
-      saveAsDraft(true)
-    }
-  }, AUTO_SAVE_INTERVAL)
-}
-
-const stopAutoSave = () => {
-  if (autoSaveTimer) {
-    clearInterval(autoSaveTimer)
-    autoSaveTimer = null
-  }
-}
 
 onMounted(() => {
   fetchUsers()
   fetchDepartments()
-  fetchSignatures()
+
   
-  startAutoSave()
+
 
   // Auto-populate department for secretaries
   const roleName = (user.value?.role && typeof user.value.role === 'object') ? user.value.role.name : user.value?.role
@@ -553,9 +384,7 @@ onMounted(() => {
   }
 })
 
-onUnmounted(() => {
-  stopAutoSave()
-})
+
 
 watch(() => props.initialData, (newVal) => {
   if (newVal) {
@@ -576,7 +405,7 @@ watch(() => props.initialData, (newVal) => {
     }
 
     // Handle other fields from backend
-    if (data.id) data.draftId = data.id
+
     if (data.message) data.content = data.message
     
     formData.value = {
@@ -614,7 +443,7 @@ watch(() => props.isOpen, (val) => {
   if (val) {
     fetchUsers()
     fetchDepartments()
-    fetchSignatures()
+
   }
 })
 </script>
@@ -627,8 +456,6 @@ watch(() => props.isOpen, (val) => {
       <div class="bg-primary px-5 py-3 flex items-center justify-between text-primary-content shrink-0 z-10">
         <div class="flex items-center gap-2">
           <h3 class="text-lg font-bold tracking-tight uppercase">Compose Memo</h3>
-          <span v-if="formData.draftId" class="badge badge-sm badge-warning">Draft</span>
-          <span v-if="lastSaved" class="text-[10px] opacity-70">{{ lastSaved.toLocaleTimeString() }}</span>
         </div>
         <button @click="closeModal" class="btn btn-ghost btn-sm btn-circle text-primary-content hover:bg-white/10">
           <X :size="18" />
@@ -688,28 +515,7 @@ watch(() => props.isOpen, (val) => {
 
         <!-- Controls Row (Compact) -->
         <div class="flex flex-wrap items-center gap-2 py-1">
-          <!-- Signature Dropdown (Compact) -->
-          <div class="dropdown">
-            <div tabindex="0" role="button" class="btn btn-xs bg-base-200 border-none px-2 rounded-md font-bold text-[9px] uppercase tracking-wider hover:bg-base-300 text-base-content/70">
-              Sig: {{ formData.signatureIds.length }}
-              <span class="ml-1 opacity-40 text-[7px]">▼</span>
-            </div>
-            <ul tabindex="0" class="dropdown-content z-50 menu p-2 shadow-2xl bg-base-100 border border-base-300 rounded-lg w-56 mt-1 max-h-48 overflow-y-auto">
-              <li @click="formData.signatureIds = []; formData.signatureId = null; formData.signature = 'None'">
-                <a class="font-bold flex items-center gap-2 cursor-pointer text-xs">
-                  <input type="checkbox" class="checkbox checkbox-xs" :checked="formData.signatureIds.length === 0" readonly />
-                  None
-                </a>
-              </li>
-              <li v-for="sig in signatures" :key="sig.id" @click="toggleSignature(sig)">
-                <a class="font-bold flex items-center gap-2 cursor-pointer text-xs">
-                  <input type="checkbox" class="checkbox checkbox-xs" :checked="isSignatureSelected(sig.id)" readonly />
-                  <span class="truncate">{{ sig.name }}</span>
-                  <span v-if="sig.is_default" class="badge badge-primary badge-xs">Default</span>
-                </a>
-              </li>
-            </ul>
-          </div>
+
 
           <!-- Department Dropdown (Compact) -->
           <div class="dropdown">

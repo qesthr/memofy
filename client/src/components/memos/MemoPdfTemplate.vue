@@ -213,23 +213,7 @@ const contentPages = computed(() => {
                      </div>
                 </div>
 
-                <!-- Signatures -->
-                 <div class="flex flex-wrap gap-8 justify-end items-end mt-8">
-                    <!-- Sender Signature (Always present if approved/sent) -->
-                    <!-- Logic for multiple signatures needs to be handled if data exists, otherwise just sender -->
-                    <div class="flex flex-col items-center w-48">
-                         <div class="w-full h-20 flex items-center justify-center relative mb-2">
-                             <!-- If we have signature URL/Data -->
-                             <!-- Check for signature object or flat 'signature' field -->
-                             <img 
-                                v-if="memo.signature_data || memo.sender?.signature_data" 
-                                :src="memo.signature_data || memo.sender?.signature_data" 
-                                class="max-w-full max-h-full object-contain mix-blend-multiply"
-                             />
-                         </div>
-                         <!-- Signature image contains Fullname, Position and Signature info -->
-                    </div>
-                 </div>
+
 
             </div>
 

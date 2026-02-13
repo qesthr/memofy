@@ -8,9 +8,7 @@ import {
   FileText, 
   Archive, 
   Calendar, 
-  Settings,
-  LogOut,
-  User
+  LogOut
 } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -27,7 +25,7 @@ const userDept = computed(() => user.value?.department || '')
 const menuItems = [
   { name: 'Dashboard', path: '/secretary/dashboard', icon: LayoutDashboard },
   { name: 'Memos', path: '/secretary/memos', icon: FileText, permission: 'nav.memos' },
-  { name: 'Faculty', path: '/secretary/faculty', icon: User, permission: 'nav.users' },
+
   { name: 'Archive', path: '/secretary/archive', icon: Archive, permission: 'nav.archive' },
   { name: 'Calendar', path: '/secretary/calendar', icon: Calendar, permission: 'nav.calendar' }
 ]
@@ -37,7 +35,6 @@ const filteredMenuItems = computed(() => {
 })
 
 const bottomItems = [
-  { name: 'Settings', path: '/secretary/settings', icon: Settings },
   { name: 'Logout', path: '/logout', icon: LogOut }
 ]
 

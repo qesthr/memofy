@@ -11,7 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use MongoDB\BSON\ObjectId;
 
-use App\Models\Draft;
+
 use App\Models\Department;
 
 class MemoController extends Controller
@@ -76,22 +76,13 @@ class MemoController extends Controller
             if (!$isAdmin) {
                 $query->whereIn('sender_id', $targetIds);
             }
-            $query->where('is_draft', false)
-                  ->whereIn('status', ['sent', 'archived']); // Include archived
+            $query->whereIn('status', ['sent', 'archived']); // Include archived
         } elseif ($request->scope === 'received') {
             if (!$isAdmin) {
                 $query->whereIn('recipient_id', $targetIds);
             }
-            $query->where('is_draft', false)
-                  ->whereIn('status', ['sent', 'read', 'acknowledged', 'archived']);
-        } elseif ($request->scope === 'drafts') {
-            // FETCH FROM NEW DRAFT COLLECTION
-            $query = Draft::with(['sender', 'department'])
-                          ->where('creatorId', $this->normalizeUserId($user->id))
-                          ->orderBy('updatedAt', 'desc');
-            
-            $memos = $query->paginate($perPage);
-            return response()->json($memos);
+            $query->whereIn('status', ['sent', 'read', 'acknowledged', 'archived']);
+
         } elseif ($request->scope === 'pending') {
             if (!$isAdmin) {
                 $query->whereIn('sender_id', $targetIds);
@@ -114,13 +105,7 @@ class MemoController extends Controller
                     });
                     
                     // Drafts (created by or sent by user)
-                    $q->orWhere(function ($sq) use ($targetIds) {
-                        $sq->where('is_draft', true)
-                           ->where(function ($ssq) use ($targetIds) {
-                               $ssq->whereIn('created_by', $targetIds)
-                                   ->orWhereIn('sender_id', $targetIds);
-                           });
-                    });
+
                 }
             });
         }
@@ -152,7 +137,7 @@ class MemoController extends Controller
             'message' => 'required|string',
             'priority' => 'required|in:high,medium,low',
             'attachments' => 'nullable|array',
-            'is_draft' => 'boolean',
+
             'scheduled_send_at' => 'nullable|date',
             'schedule_end_at' => 'nullable|date',
             'all_day_event' => 'nullable|boolean',
@@ -180,27 +165,8 @@ class MemoController extends Controller
 
         $userId = (string) $request->user()->id;
 
-        if ($validated['is_draft'] ?? false) {
-            // SINGLE record for drafts
-            $memo = Memo::create([
-                'created_by' => $userId,
-                'sender_id' => $userId,
-                'recipient_id' => (count($userIds) === 1) ? (string) $userIds[0] : null,
-                'recipient_ids' => array_map('strval', $userIds), // Store all recipients in the draft as strings
-                'department_id' => $request->department_id ?? null,
-                'signature_id' => $request->signature_id ?? null,
-                'signature_ids' => $request->signature_ids ?? null,
-                'signature_positions' => $request->signature_positions ?? null,
-                'subject' => $validated['subject'],
-                'message' => $validated['message'],
-                'priority' => $validated['priority'],
-                'attachments' => $validated['attachments'] ?? [],
-                'status' => 'draft',
-                'is_draft' => true,
-                'version' => 1,
-                'attachment_path' => $validated['attachment_path'] ?? null
-            ]);
-            $memos[] = $memo;
+        if (false) {
+            // DRAFT LOGIC REMOVED
         } else {
             // MULTIPLE records for sent memos (one per recipient)
             $userId = (string) $request->user()->id;
@@ -219,14 +185,13 @@ class MemoController extends Controller
                     'priority' => $validated['priority'],
                     'attachments' => $validated['attachments'] ?? [],
                     'status' => 'sent',
-                    'is_draft' => false,
                     'version' => 1,
                     'scheduled_send_at' => $validated['scheduled_send_at'] ?? null,
                     'attachment_path' => $validated['attachment_path'] ?? null
                 ]);
 
                 // Create calendar event if memo is scheduled
-                if (!empty($validated['scheduled_send_at']) && !$memo->is_draft) {
+                if (!empty($validated['scheduled_send_at'])) {
                     $this->createCalendarEventForMemo($memo, $validated, $request->user()->id);
                 }
 
@@ -248,7 +213,7 @@ class MemoController extends Controller
             }
         }
 
-        $action = ($validated['is_draft'] ?? false) ? 'create_draft_memo' : 'create_memo';
+        $action = 'create_memo';
         $this->activityLogger->logUserAction($request->user(), $action, count($memos) . " memos created", $this->activityLogger->extractRequestInfo($request));
 
         return response()->json([
@@ -360,7 +325,7 @@ class MemoController extends Controller
             return response()->json(['message' => 'Unauthorized to edit this memo.'], 403);
         }
 
-        // Capture state for rollback (if not draft)
+        // Capture state for rollback
         $beforeState = $memo->toArray();
 
         $validated = $request->validate([
@@ -368,7 +333,7 @@ class MemoController extends Controller
             'message' => 'sometimes|string',
             'priority' => 'sometimes|in:high,medium,low',
             'status' => 'sometimes|string',
-            'is_draft' => 'sometimes|boolean',
+
             'scheduled_send_at' => 'nullable|date',
             'schedule_end_at' => 'nullable|date',
             'all_day_event' => 'nullable|boolean'
@@ -390,23 +355,22 @@ class MemoController extends Controller
                     'all_day' => $validated['all_day_event'] ?? $existingEvent->all_day,
                     'category' => isset($validated['priority']) ? $this->mapPriorityToCategory($validated['priority']) : $existingEvent->category
                 ]);
-            } else if (!$memo->is_draft) {
+            } else {
                 // Create new calendar event
                 $this->createCalendarEventForMemo($memo, $validated, $request->user()->id);
             }
         }
 
         // Log Rollback info if significant change
-        if (!$memo->is_draft) {
-            RollbackLog::create([
-                'operation_id' => (string) \Illuminate\Support\Str::uuid(),
-                'operation_type' => 'memo_update',
-                'before_state' => $beforeState,
-                'after_state' => $memo->toArray(),
-                'performed_by' => $request->user()->id,
-                'status' => 'completed'
-            ]);
-        }
+        // Log Rollback info if significant change
+        RollbackLog::create([
+            'operation_id' => (string) \Illuminate\Support\Str::uuid(),
+            'operation_type' => 'memo_update',
+            'before_state' => $beforeState,
+            'after_state' => $memo->toArray(),
+            'performed_by' => $request->user()->id,
+            'status' => 'completed'
+        ]);
 
         $this->activityLogger->logUserAction($request->user(), 'update_memo', $memo, $this->activityLogger->extractRequestInfo($request));
 

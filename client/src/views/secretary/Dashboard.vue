@@ -70,19 +70,7 @@ const fetchDashboardData = async () => {
     stats.value[1].value = user_stats.acknowledged_memos || 0 
     stats.value[2].value = user_stats.pending_memos || 0
     
-    // Add Drafts to stats if not present
-    if (stats.value.length === 3) {
-      stats.value.push({
-        title: 'Drafts',
-        value: user_stats.draft_memos || 0,
-        subtitle: 'Unfinished',
-        icon: FileStack,
-        iconColor: 'text-primary',
-        bgColor: 'bg-primary/10'
-      })
-    } else if (stats.value.length === 4) {
-      stats.value[3].value = user_stats.draft_memos || 0
-    }
+
     
   } catch (error) {
     console.error('Error fetching secretary dashboard:', error)

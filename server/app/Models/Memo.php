@@ -22,28 +22,26 @@ class Memo extends Model
         'status', // draft, sent, read, pending_approval, rejected, archived, deleted
         'attachments',
         'version',
-        'is_draft',
+
         'user_id',
         'scheduled_send_at',
         'schedule_end_at',
         'all_day_event',
-        'signature_id',
+
         // Approval workflow fields
         'approved_by',
         'approved_at',
         'rejected_by',
         'rejected_at',
         'rejection_reason',
-        'signature_ids',
-        'signature_positions'
+
     ];
 
     protected $casts = [
         'attachments' => 'array',
         'recipient_ids' => 'array',
-        'signature_ids' => 'array',
-        'signature_positions' => 'array',
-        'is_draft' => 'boolean',
+
+
         'version' => 'integer',
         'scheduled_send_at' => 'datetime',
         'schedule_end_at' => 'datetime',
@@ -91,10 +89,7 @@ class Memo extends Model
         return $this->belongsTo(Department::class, 'department_id');
     }
     
-    public function signature()
-    {
-        return $this->belongsTo(UserSignature::class, 'signature_id');
-    }
+
     
     public function acknowledgments()
     {

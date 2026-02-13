@@ -234,7 +234,7 @@ class ReportController extends Controller
             ]);
         });
         
-        $counts = ['draft' => 0, 'sent' => 0, 'read' => 0];
+        $counts = ['sent' => 0, 'read' => 0];
         foreach ($statusCounts as $stat) {
             if (isset($stat['_id']) && isset($counts[$stat['_id']])) {
                 $counts[$stat['_id']] = $stat['count'];
@@ -408,7 +408,7 @@ class ReportController extends Controller
             'labels' => array_keys($distribution),
             'data' => array_values($distribution),
             'colors' => [
-                'draft' => '#fbbf24',
+
                 'sent' => '#3b82f6',
                 'read' => '#10b981',
                 'archived' => '#6b7280',

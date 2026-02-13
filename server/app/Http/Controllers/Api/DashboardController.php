@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Memo;
 use App\Models\User;
-use App\Models\Draft;
+
 use App\Models\UserActivityLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -55,7 +55,7 @@ class DashboardController extends Controller
             $stats['total_users'] = User::count();
             $stats['active_users'] = User::where('is_active', true)->count();
             
-            $stats['total_memos'] = Memo::where('is_draft', false)->count();
+            $stats['total_memos'] = Memo::where('status', '!=', 'draft')->count();
             $stats['pending_memos'] = Memo::where('status', 'pending_approval')->count();
             
         } else if ($user->hasPermissionTo('faculty.view')) {
@@ -73,7 +73,7 @@ class DashboardController extends Controller
         } else if ($user->hasPermissionTo('memo.view')) {
             // For general view, count memos where they are recipient
             $stats['total_memos'] = Memo::where('recipient_id', $user->id)
-                                        ->where('is_draft', false)
+                                        ->where('status', '!=', 'draft')
                                         ->count();
             $stats['pending_memos'] = Memo::where('sender_id', $user->id)
                                           ->where('status', 'pending_approval')
@@ -105,34 +105,34 @@ class DashboardController extends Controller
             
             $userStats = [
                 'sent_memos' => Memo::where('sender_id', $userId)
-                                    ->where('is_draft', false)
+                                    ->where('status', '!=', 'draft')
                                     ->where('status', '!=', 'pending_approval')
                                     ->count(),
                 'received_memos' => Memo::whereIn('recipient_id', $recipientIds)
-                                        ->where('is_draft', false)
+                                        ->where('status', '!=', 'draft')
                                         ->where('status', '!=', 'pending_approval')
                                         ->count(),
                 'pending_memos' => Memo::where('sender_id', $userId)
                                       ->where('status', 'pending_approval')
                                       ->count(),
-                'draft_memos' => Draft::where('creatorId', $this->normalizeUserId($userId))->count(),
+
             ];
             
             $stats['pending_memos'] = $userStats['pending_memos'];
         } else {
             $userStats = [
                 'sent_memos' => Memo::where('sender_id', $userId)
-                                    ->where('is_draft', false)
+                                    ->where('status', '!=', 'draft')
                                     ->count(),
                 'received_memos' => Memo::where('recipient_id', $userId)
-                                        ->where('is_draft', false)
+                                        ->where('status', '!=', 'draft')
                                         ->count(),
-                'draft_memos' => Draft::where('creatorId', $this->normalizeUserId($userId))->count(),
+
                 'all_memos' => Memo::where(function($q) use ($userId) {
                                          $q->where('sender_id', $userId)
                                            ->orWhere('recipient_id', $userId);
                                      })
-                                    ->where('is_draft', false)
+                                    ->where('status', '!=', 'draft')
                                     ->count()
             ];
         }
