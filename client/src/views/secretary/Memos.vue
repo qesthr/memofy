@@ -1,8 +1,7 @@
 <script setup>
 import { ref, onMounted, watch, computed } from 'vue'
-import { Plus, Search, ChevronDown, Calendar, X, Settings2, CheckCircle, Clock, Eye, Send } from 'lucide-vue-next'
+import { Plus, Search, ChevronDown, Calendar, X, CheckCircle, Clock, Eye, Send, SlidersHorizontal } from 'lucide-vue-next'
 import ComposeMemoModal from '@/components/memos/ComposeMemoModal.vue'
-
 import MemoInboxCard from '@/components/memos/MemoInboxCard.vue'
 import MemoDetailModal from '@/components/memos/MemoDetailModal.vue'
 import api from '@/services/api'
@@ -12,11 +11,14 @@ import Swal from 'sweetalert2'
 const departmentFilter = ref('All Departments')
 const sortFilter = ref('Newest')
 const dateFilter = ref('')
-const activeTab = ref('all') // all, sent, pending
+const activeTab = ref('all')
+
+// Current user
+const storedUser = JSON.parse(localStorage.getItem('user') || '{}')
+const currentUserId = storedUser?.id || storedUser?._id || null
 
 // Modal states
 const showComposeModal = ref(false)
-
 const selectedMemo = ref(null)
 const showDetailModal = ref(false)
 
@@ -43,7 +45,6 @@ const additionalParams = computed(() => {
   return params
 })
 
-
 const fetchDepartments = async () => {
   try {
     const response = await api.get('/departments')
@@ -52,8 +53,6 @@ const fetchDepartments = async () => {
     console.error('Error fetching departments:', error)
   }
 }
-
-
 
 const handleSendMemo = async (result) => {
   try {
@@ -65,9 +64,7 @@ const handleSendMemo = async (result) => {
     })
     
     showComposeModal.value = false
-
     
-    // Refresh memo inbox
     if (memoInboxRef.value) {
       memoInboxRef.value.refresh()
     }
@@ -77,58 +74,26 @@ const handleSendMemo = async (result) => {
 }
 
 const viewMemo = (memo) => {
-    selectedMemo.value = memo
-    showDetailModal.value = true
+  selectedMemo.value = memo
+  showDetailModal.value = true
 }
 
-const formatDate = (date) => {
-  if (!date) return '-'
-  return new Date(date).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric'
-  })
+const clearFilters = () => {
+  departmentFilter.value = 'All Departments'
+  sortFilter.value = 'Newest'
+  dateFilter.value = ''
 }
 
-const formatTime = (date) => {
-  if (!date) return '-'
-  return new Date(date).toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-}
-
-const getPriorityClass = (priority) => {
-  const classes = {
-    urgent: 'badge-error',
-    high: 'badge-warning',
-    medium: 'badge-info',
-    normal: 'badge-info',
-    low: 'badge-success'
-  }
-  return classes[priority] || 'badge-info'
-}
-
-// Custom params handler for secretary API
-const getParams = () => {
-  const baseParams = {
-    scope: scopeMapping[activeTab.value] || '',
-    per_page: 15
-  }
-  return { ...baseParams, ...additionalParams.value }
-}
-
-// Watch tab changes to refresh memo inbox
-watch(activeTab, () => {
-  if (memoInboxRef.value) {
-    memoInboxRef.value.refresh()
-  }
+const hasActiveFilters = computed(() => {
+  return departmentFilter.value !== 'All Departments' ||
+         sortFilter.value !== 'Newest' ||
+         dateFilter.value !== ''
 })
 
 const tabs = [
-  { key: 'all', label: 'ALL' },
-  { key: 'pending', label: 'PENDING' },
-  { key: 'sent', label: 'SENT' }
+  { key: 'all', label: 'All', icon: null },
+  { key: 'pending', label: 'Pending', icon: null },
+  { key: 'sent', label: 'Sent', icon: null }
 ]
 
 onMounted(() => {
@@ -137,75 +102,81 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="view-container no-scroll">
+  <div class="memo-dashboard">
     <!-- Page Header -->
-    <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 p-4">
-      <div>
-        <h1 class="text-2xl font-bold text-base-content">Memos</h1>
-        <p class="text-sm text-base-content/60">Manage and distribute memos</p>
+    <div class="memo-header">
+      <div class="memo-header-left">
+        <h1 class="memo-title">Memos</h1>
+        <p class="memo-subtitle">Manage and distribute memos</p>
       </div>
-      <div class="flex gap-2">
-
-        <button @click="showComposeModal = true" class="btn btn-primary btn-sm text-white px-6">
-          <Plus :size="16" class="mr-1" /> Compose
+      <div class="memo-header-right">
+        <button @click="showComposeModal = true" class="memo-compose-btn">
+          <Plus :size="18" :stroke-width="2.5" />
+          <span>Compose</span>
         </button>
       </div>
     </div>
 
-
-    <!-- Tabs -->
-    <div class="tabs tabs-boxed bg-base-200/50 mb-4 p-1 w-fit ml-4">
-      <button 
-        v-for="tab in tabs" 
-        :key="tab.key"
-        @click="activeTab = tab.key"
-        class="tab font-bold text-xs uppercase tracking-wider"
-        :class="{ 'tab-active bg-primary text-white': activeTab === tab.key }"
-      >
-        {{ tab.label }}
-      </button>
-    </div>
-
-    <!-- Additional Filters for Secretary -->
-    <div class="flex flex-wrap items-center gap-3 px-4 mb-4">
-      <select v-model="departmentFilter" class="select select-sm select-bordered bg-base-100">
-        <option value="All Departments">All Departments</option>
-        <option 
-          v-for="dept in departments" 
-          :key="dept.id" 
-          :value="dept.name"
+    <!-- Tabs + Filters Row -->
+    <div class="memo-toolbar">
+      <div class="memo-pill-tabs">
+        <button 
+          v-for="tab in tabs" 
+          :key="tab.key"
+          @click="activeTab = tab.key"
+          class="memo-pill-tab"
+          :class="{ 'active': activeTab === tab.key }"
         >
-          {{ dept.name }}
-        </option>
-      </select>
-      
-      <select v-model="sortFilter" class="select select-sm select-bordered bg-base-100">
-        <option value="Newest">Newest First</option>
-        <option value="Oldest">Oldest First</option>
-      </select>
-      
-      <input 
-        v-model="dateFilter"
-        type="date" 
-        class="input input-sm input-bordered bg-base-100"
-        placeholder="Filter by date"
-      />
+          {{ tab.label }}
+        </button>
+      </div>
+
+      <div class="memo-filter-group">
+        <select v-model="departmentFilter" class="memo-filter-input memo-filter-select">
+          <option value="All Departments">All Departments</option>
+          <option v-for="dept in departments" :key="dept.id" :value="dept.name">
+            {{ dept.name }}
+          </option>
+        </select>
+
+        <select v-model="sortFilter" class="memo-filter-input memo-filter-select">
+          <option value="Newest">Newest First</option>
+          <option value="Oldest">Oldest First</option>
+        </select>
+
+        <div class="memo-filter-icon-wrapper">
+          <Calendar :size="14" class="memo-filter-icon" />
+          <input 
+            v-model="dateFilter"
+            type="date" 
+            class="memo-filter-input memo-filter-date"
+          />
+        </div>
+
+        <button 
+          v-if="hasActiveFilters"
+          @click="clearFilters"
+          class="memo-clear-btn"
+        >
+          <X :size="14" />
+          Clear
+        </button>
+      </div>
     </div>
 
     <!-- Memo Inbox Card -->
-    <div class="px-4">
+    <div class="memo-content">
       <MemoInboxCard 
         ref="memoInboxRef"
         :initial-scope="scopeMapping[activeTab]"
         api-endpoint="/secretary/memos"
-        :max-height="'calc(100vh - 240px)'"
+        max-height="100%"
         :per-page="15"
         :custom-params="additionalParams"
+        :current-user-id="currentUserId"
         @memo-click="viewMemo"
       />
     </div>
-
-
 
     <!-- Compose Memo Modal -->
     <ComposeMemoModal 
@@ -226,14 +197,142 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.view-container.no-scroll {
-  height: 100vh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+@reference "../../style.css";
+
+.memo-dashboard {
+  @apply h-screen overflow-hidden flex flex-col;
+  background: var(--color-memo-bg);
 }
 
-.view-container.no-scroll > *:not(.modal) {
-  flex-shrink: 0;
+.memo-header {
+  @apply flex flex-col md:flex-row items-start md:items-center justify-between gap-2;
+  padding: 16px 24px 0 24px;
+}
+
+.memo-header-left {
+  @apply flex flex-col;
+}
+
+.memo-title {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--color-memo-text-primary);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.memo-subtitle {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-memo-text-secondary);
+  margin-top: 2px;
+}
+
+.memo-header-right {
+  @apply flex items-center gap-3;
+}
+
+/* Toolbar: Tabs + Filters inline */
+.memo-toolbar {
+  @apply flex flex-wrap items-center justify-between gap-3;
+  padding: 12px 24px;
+}
+
+.memo-filter-group {
+  @apply flex flex-wrap items-center gap-2;
+}
+
+.memo-filter-select {
+  min-width: 140px;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%239CA3AF' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  background-position: right 8px center;
+  background-repeat: no-repeat;
+  background-size: 14px;
+  padding-right: 28px;
+  height: 34px;
+  font-size: 12px;
+}
+
+.memo-filter-icon-wrapper {
+  position: relative;
+}
+
+.memo-filter-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-memo-text-muted);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.memo-filter-date {
+  padding-left: 30px;
+  min-width: 140px;
+  height: 34px;
+  font-size: 12px;
+}
+
+.memo-clear-btn {
+  @apply inline-flex items-center gap-1;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--color-memo-border);
+  background: var(--color-memo-surface);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-memo-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.memo-clear-btn:hover {
+  color: var(--color-memo-error);
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.05);
+}
+
+/* Content — fills all remaining space */
+.memo-content {
+  @apply flex-1 min-h-0 overflow-hidden;
+  padding: 0 24px 12px 24px;
+}
+
+.memo-content > * {
+  height: 100%;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .memo-header {
+    padding: 12px 12px 0 12px;
+  }
+  
+  .memo-toolbar {
+    padding: 8px 12px;
+    @apply flex-col items-start;
+  }
+
+  .memo-pill-tabs {
+    overflow-x: auto;
+    width: 100%;
+  }
+  
+  .memo-content {
+    padding: 0 12px 8px 12px;
+  }
+  
+  .memo-compose-btn {
+    width: 100%;
+    justify-content: center;
+  }
+  
+  .memo-filter-group {
+    @apply w-full;
+  }
 }
 </style>

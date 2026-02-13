@@ -46,7 +46,7 @@ const departments = ref([])
 const showPreviewModal = ref(false)
 const fileInput = ref(null)
 const isUploading = ref(false)
-const isSaving = ref(false)
+
 
 
 const priorities = [
@@ -613,15 +613,7 @@ watch(() => props.isOpen, (val) => {
             <span v-if="scheduleData" class="badge badge-primary badge-xs p-0.5">✓</span>
           </button>
           
-          <button 
-            @click="saveAsDraft"
-            class="btn btn-ghost btn-sm gap-1 px-2 font-bold text-[9px] uppercase tracking-wider rounded-lg transition-all"
-            :disabled="isSaving"
-            title="Save Draft"
-          >
-            <Loader2 v-if="isSaving" :size="12" class="animate-spin" />
-            <span v-else>Draft</span>
-          </button>
+
         </div>
 
         <div class="flex items-center gap-2">

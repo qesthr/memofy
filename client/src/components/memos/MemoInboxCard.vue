@@ -1,6 +1,6 @@
 <script setup>
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { Search, CheckCircle, Clock, Eye, Archive, FileText, ChevronDown, Loader2 } from 'lucide-vue-next'
+import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
+import { Search, CheckCircle, Clock, Eye, Archive, FileText, Loader2, Inbox, X } from 'lucide-vue-next'
 import api from '@/services/api'
 import Swal from 'sweetalert2'
 
@@ -21,10 +21,13 @@ const props = defineProps({
     type: Number,
     default: 15
   },
-  // Additional params from parent component
   customParams: {
     type: Object,
     default: () => ({})
+  },
+  currentUserId: {
+    type: [String, Number],
+    default: null
   }
 })
 
@@ -44,10 +47,10 @@ const pagination = ref({
 
 // Filter states
 const searchQuery = ref('')
-const priorityFilter = ref('All Priorities')
+const priorityFilter = ref('all')
 const sortFilter = ref('Newest')
 
-// Sort order for priority (ascending: Low -> Medium -> High)
+// Sort order for priority
 const priorityOrder = {
   'low': 0,
   'normal': 1,
@@ -60,13 +63,10 @@ const priorityOrder = {
 const sortedMemos = computed(() => {
   let filtered = [...memos.value]
   
-  // Apply priority filter
-  if (priorityFilter.value !== 'All Priorities') {
-    const filterPriority = priorityFilter.value.toLowerCase()
-    filtered = filtered.filter(memo => memo.priority === filterPriority)
+  if (priorityFilter.value !== 'all') {
+    filtered = filtered.filter(memo => memo.priority === priorityFilter.value)
   }
   
-  // Apply search filter
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase()
     filtered = filtered.filter(memo => 
@@ -77,24 +77,18 @@ const sortedMemos = computed(() => {
     )
   }
   
-  // Sort by priority first, then by date
   filtered.sort((a, b) => {
     const priorityA = priorityOrder[a.priority] ?? 1
     const priorityB = priorityOrder[b.priority] ?? 1
     
     if (priorityA !== priorityB) {
-      return priorityA - priorityB // Ascending: Low -> Medium -> High
+      return priorityA - priorityB
     }
     
-    // Secondary sort by date
     const dateA = new Date(a.created_at || 0)
     const dateB = new Date(b.created_at || 0)
     
-    if (sortFilter.value === 'Newest') {
-      return dateB - dateA
-    } else {
-      return dateA - dateB
-    }
+    return sortFilter.value === 'Newest' ? dateB - dateA : dateA - dateB
   })
   
   return filtered
@@ -109,10 +103,9 @@ const fetchMemos = async (reset = false) => {
   
   if (loading.value || (!hasMore.value && !reset)) return
   
-  loading.value = !reset
+  loading.value = true
   
   try {
-    // Merge base params with custom params from parent
     const params = {
       scope: props.initialScope,
       page: pagination.value.current_page,
@@ -120,16 +113,12 @@ const fetchMemos = async (reset = false) => {
       ...props.customParams
     }
     
-    // Remove undefined values
     Object.keys(params).forEach(key => {
-      if (params[key] === undefined) {
-        delete params[key]
-      }
+      if (params[key] === undefined) delete params[key]
     })
     
     const response = await api.get(props.apiEndpoint, { params })
     
-    // Handle different API response structures
     const responseData = response.data.data || response.data || []
     const newMemos = Array.isArray(responseData) ? responseData : []
     
@@ -139,7 +128,6 @@ const fetchMemos = async (reset = false) => {
       memos.value = [...memos.value, ...newMemos]
     }
     
-    // Update pagination
     if (response.data) {
       pagination.value = {
         current_page: response.data.current_page || 1,
@@ -151,7 +139,6 @@ const fetchMemos = async (reset = false) => {
     }
   } catch (error) {
     console.error('Error fetching memos:', error)
-    Swal.fire('Error', 'Failed to load memos', 'error')
   } finally {
     loading.value = false
   }
@@ -195,7 +182,7 @@ const handleScroll = () => {
   if (!inboxContainer.value) return
   
   const { scrollTop, scrollHeight, clientHeight } = inboxContainer.value
-  const threshold = 100 // Load more when within 100px of bottom
+  const threshold = 100
   
   if (scrollTop + clientHeight >= scrollHeight - threshold) {
     loadMore()
@@ -208,6 +195,11 @@ const viewMemo = (memo) => {
   } else {
     emit('memo-click', memo)
   }
+}
+
+const isSender = (memo) => {
+  if (!props.currentUserId || !memo.sender) return false
+  return String(memo.sender_id || memo.sender?.id) === String(props.currentUserId)
 }
 
 const reviewMemo = (memo) => {
@@ -239,7 +231,8 @@ const archiveMemo = async (memoId) => {
     text: "You can find this in your archive later.",
     icon: 'warning',
     showCancelButton: true,
-    confirmButtonText: 'Yes, archive it!'
+    confirmButtonText: 'Yes, archive it!',
+    cancelButtonText: 'Cancel'
   })
   
   if (result.isConfirmed) {
@@ -247,7 +240,7 @@ const archiveMemo = async (memoId) => {
       await api.delete(`/memos/${memoId}`)
       memos.value = memos.value.filter(m => m.id !== memoId)
       emit('memo-archive', memoId)
-      Swal.fire('Archived!', 'Memo has been archived.', 'success')
+      Swal.fire({ title: 'Archived!', text: 'Memo has been archived.', icon: 'success', timer: 1500, showConfirmButton: false })
     } catch (error) {
       console.error('Error archiving memo:', error)
       Swal.fire('Error', 'Failed to archive memo', 'error')
@@ -257,48 +250,44 @@ const archiveMemo = async (memoId) => {
 
 const formatDate = (date) => {
   if (!date) return '-'
-  return new Date(date).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric'
-  })
-}
-
-const formatTime = (date) => {
-  if (!date) return '-'
-  return new Date(date).toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-}
-
-const getPriorityClass = (priority) => {
-  const classes = {
-    urgent: 'badge-error',
-    high: 'badge-warning',
-    medium: 'badge-info',
-    normal: 'badge-info',
-    low: 'badge-success'
+  const d = new Date(date)
+  const now = new Date()
+  const diff = now - d
+  
+  // Today
+  if (diff < 86400000 && d.getDate() === now.getDate()) {
+    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
   }
-  return classes[priority] || 'badge-info'
+  // Yesterday
+  const yesterday = new Date(now)
+  yesterday.setDate(yesterday.getDate() - 1)
+  if (d.getDate() === yesterday.getDate() && d.getMonth() === yesterday.getMonth()) {
+    return 'Yesterday'
+  }
+  // This year
+  if (d.getFullYear() === now.getFullYear()) {
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  }
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
-const getPriorityIconColor = (priority) => {
-  const colors = {
-    urgent: 'bg-error',
-    high: 'bg-warning',
-    medium: 'bg-info',
-    normal: 'bg-info',
-    low: 'bg-success'
-  }
-  return colors[priority] || 'bg-info'
+const getPriorityLabel = (priority) => {
+  const labels = { urgent: 'Urgent', high: 'High', medium: 'Medium', normal: 'Medium', low: 'Low' }
+  return labels[priority] || 'Medium'
+}
+
+const isUnread = (memo) => {
+  return memo.status === 'sent' || memo.status === 'pending_approval'
+}
+
+const clearSearch = () => {
+  searchQuery.value = ''
 }
 
 // Lifecycle
-onMounted(() => {
-  fetchMemos(true)
-  
-  // Add scroll listener to container
+onMounted(async () => {
+  await fetchMemos(true)
+  await nextTick()
   if (inboxContainer.value) {
     inboxContainer.value.addEventListener('scroll', handleScroll)
   }
@@ -310,11 +299,6 @@ onUnmounted(() => {
   }
 })
 
-// Watch for filter changes to reset
-const resetAndFetch = () => {
-  fetchMemos(true)
-}
-
 watch(() => props.initialScope, () => {
   fetchMemos(true)
 })
@@ -325,173 +309,367 @@ defineExpose({
 </script>
 
 <template>
-  <div class="memo-inbox-card card bg-base-100 border border-base-200 shadow-lg overflow-hidden">
-    <!-- Card Header -->
-    <div class="card-header p-4 border-b border-base-200 bg-base-50">
-      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div>
-          <h2 class="text-lg font-bold text-base-content">Memos Inbox</h2>
-          <p class="text-xs text-base-content/60">
-            {{ sortedMemos.length }} memo{{ sortedMemos.length !== 1 ? 's' : '' }}
-          </p>
-        </div>
-        
-        <!-- Filters -->
-        <div class="flex flex-wrap items-center gap-2">
-          <select v-model="priorityFilter" @change="resetAndFetch" class="select select-sm select-bordered bg-base-100">
-            <option value="All Priorities">All Priorities</option>
-            <option value="High">High</option>
-            <option value="Medium">Medium</option>
-            <option value="Low">Low</option>
-          </select>
-          
-          <select v-model="sortFilter" @change="resetAndFetch" class="select select-sm select-bordered bg-base-100">
-            <option value="Newest">Newest First</option>
-            <option value="Oldest">Oldest First</option>
-          </select>
-        </div>
-      </div>
-      
-      <!-- Search -->
-      <div class="relative mt-3">
+  <div class="inbox-card memo-card">
+    <!-- Search Bar -->
+    <div class="inbox-search-bar">
+      <div class="inbox-search-wrapper">
+        <Search :size="16" class="inbox-search-icon" />
         <input 
           v-model="searchQuery"
           type="text" 
-          placeholder="Search memos..." 
-          class="input input-sm input-bordered w-full pr-8 bg-base-100" 
-          @input="resetAndFetch"
+          placeholder="Search memos by subject, sender, or content..." 
+          class="inbox-search-input"
         />
-        <Search :size="14" class="absolute right-3 top-1/2 -translate-y-1/2 opacity-40" />
+        <button v-if="searchQuery" @click="clearSearch" class="inbox-search-clear">
+          <X :size="14" />
+        </button>
+      </div>
+      
+      <div class="inbox-meta">
+        <span class="inbox-count">{{ sortedMemos.length }} memo{{ sortedMemos.length !== 1 ? 's' : '' }}</span>
       </div>
     </div>
     
-    <!-- Memos List - Fixed Height with Internal Scroll -->
+    <!-- Memos List -->
     <div 
       ref="inboxContainer"
-      class="memos-container overflow-y-auto"
+      class="inbox-list memo-scrollbar"
       :style="{ maxHeight: maxHeight }"
     >
-      <!-- Loading State -->
-      <div v-if="loading" class="flex justify-center items-center py-12">
-        <span class="loading loading-spinner loading-lg text-primary"></span>
+      <!-- Skeleton Loading State -->
+      <div v-if="loading" class="inbox-skeleton-list">
+        <div v-for="i in 5" :key="i" class="inbox-skeleton-row">
+          <div class="memo-skeleton" style="width:8px; height:8px; border-radius:50%; margin-top:6px;"></div>
+          <div style="flex:1; display:flex; flex-direction:column; gap:8px;">
+            <div class="memo-skeleton" style="height:14px; width:65%;"></div>
+            <div style="display:flex; gap:12px;">
+              <div class="memo-skeleton" style="height:10px; width:100px;"></div>
+              <div class="memo-skeleton" style="height:10px; width:70px;"></div>
+            </div>
+          </div>
+          <div class="memo-skeleton" style="height:10px; width:50px;"></div>
+        </div>
       </div>
       
       <!-- Empty State -->
-      <div v-else-if="sortedMemos.length === 0" class="flex flex-col items-center justify-center py-16 px-4">
-        <div class="text-6xl mb-4">📭</div>
-        <p class="text-base-content/40 font-medium text-center">No memos found</p>
-        <p class="text-sm text-base-content/30 mt-1 text-center">Memos will appear here when received</p>
+      <div v-else-if="sortedMemos.length === 0" class="inbox-empty">
+        <div class="inbox-empty-icon">
+          <Inbox :size="48" :stroke-width="1" />
+        </div>
+        <h3 class="inbox-empty-title">No memos yet</h3>
+        <p class="inbox-empty-text">Start by composing a new memo.<br/>They will appear here once sent or received.</p>
       </div>
       
-      <!-- Memos List -->
-      <div v-else class="divide-y divide-base-200">
+      <!-- Memo Rows -->
+      <div v-else>
         <div 
           v-for="memo in sortedMemos" 
           :key="memo.id"
-          class="memo-item p-4 hover:bg-base-200/50 transition-all cursor-pointer"
+          class="memo-row"
           @click="viewMemo(memo)"
         >
-          <div class="flex items-start gap-3">
-            <!-- Priority Indicator -->
-            <div class="flex flex-col items-center gap-1 pt-1">
-              <div 
-                class="w-2.5 h-2.5 rounded-full shrink-0"
-                :class="getPriorityIconColor(memo.priority)"
-              ></div>
-            </div>
-            
-            <!-- Content -->
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center justify-between gap-2">
-                <h3 
-                  class="font-semibold truncate text-sm"
-                  :class="{ 'text-base-content/60': memo.status === 'read' }"
-                >
+          <!-- Priority Dot -->
+          <div 
+            class="priority-dot"
+            :class="memo.priority"
+            :title="getPriorityLabel(memo.priority)"
+          ></div>
+          
+          <!-- Content -->
+          <div class="memo-row-content">
+            <div class="memo-row-top">
+              <div class="memo-row-subject-line">
+                <!-- Unread indicator -->
+                <div v-if="isUnread(memo)" class="unread-dot" title="Unread"></div>
+                <h3 class="memo-row-subject" :class="{ 'memo-row-read': !isUnread(memo) }">
                   {{ memo.subject }}
                 </h3>
-                <span 
-                  class="badge badge-xs shrink-0" 
-                  :class="getPriorityClass(memo.priority)"
-                >
-                  {{ memo.priority }}
-                </span>
               </div>
-              
-              <div class="flex items-center gap-3 mt-1 text-xs text-base-content/60">
-                <span v-if="memo.sender" class="truncate">
-                  From: {{ memo.sender.first_name }} {{ memo.sender.last_name }}
-                </span>
-                <span>{{ formatDate(memo.created_at) }}</span>
-              </div>
+              <span class="memo-row-date">{{ formatDate(memo.created_at) }}</span>
             </div>
             
-            <!-- Actions -->
-            <div class="flex items-center gap-1 shrink-0">
-              <button 
-                v-if="memo.status === 'pending_approval'"
-                @click.stop="reviewMemo(memo)"
-                class="btn btn-ghost btn-xs text-primary hover:text-primary-content hover:bg-primary/10"
-                title="Review"
-              >
-                <Eye :size="16" />
-                <span class="sr-only">Review</span>
-              </button>
-              <button 
-                v-if="memo.status === 'sent'"
-                @click.stop="acknowledgeMemo(memo.id)"
-                class="btn btn-ghost btn-xs text-success hover:text-success-content hover:bg-success/10"
-                title="Acknowledge"
-              >
-                <CheckCircle :size="16" />
-              </button>
-              <button 
-                @click.stop="archiveMemo(memo.id)"
-                class="btn btn-ghost btn-xs text-base-content/40 hover:text-error hover:bg-error/10"
-                title="Archive"
-              >
-                <Archive :size="16" />
-              </button>
+            <div class="memo-row-bottom">
+              <span v-if="memo.sender" class="memo-row-sender">
+                {{ memo.sender.first_name }} {{ memo.sender.last_name }}
+              </span>
+              <span class="memo-status-badge" :class="memo.status">
+                {{ memo.status === 'pending_approval' ? 'Pending' : memo.status }}
+              </span>
             </div>
+          </div>
+          
+          <!-- Actions (visible on hover) -->
+          <div class="memo-actions">
+            <button 
+              v-if="memo.status === 'pending_approval'"
+              @click.stop="reviewMemo(memo)"
+              class="memo-action-btn memo-action-review"
+              title="Review"
+            >
+              <Eye :size="15" />
+            </button>
+            <button 
+              v-if="memo.status === 'sent' && !isSender(memo)"
+              @click.stop="acknowledgeMemo(memo.id)"
+              class="memo-action-btn memo-action-ack"
+              title="Acknowledge"
+            >
+              <CheckCircle :size="15" />
+            </button>
+            <button 
+              @click.stop="archiveMemo(memo.id)"
+              class="memo-action-btn memo-action-archive"
+              title="Archive"
+            >
+              <Archive :size="15" />
+            </button>
           </div>
         </div>
       </div>
       
       <!-- Loading More -->
-      <div v-if="loadingMore" class="flex justify-center items-center py-4">
-        <Loader2 :size="20" class="animate-spin text-primary" />
-        <span class="ml-2 text-sm text-base-content/60">Loading more...</span>
+      <div v-if="loadingMore" class="inbox-loading-more">
+        <Loader2 :size="18" class="animate-spin" />
+        <span>Loading more…</span>
       </div>
       
       <!-- End of List -->
-      <div v-if="!hasMore && sortedMemos.length > 0" class="text-center py-4 text-xs text-base-content/40">
-        No more memos to load
+      <div v-if="!hasMore && sortedMemos.length > 0 && !loading" class="inbox-end-msg">
+        All memos loaded
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.memo-inbox-card {
-  height: auto;
-  display: flex;
-  flex-direction: column;
+@reference "../../style.css";
+
+.inbox-card {
+  @apply flex flex-col overflow-hidden;
+  height: 100%;
 }
 
-.memo-inbox-card .card-header {
+/* Search Bar */
+.inbox-search-bar {
+  @apply flex items-center justify-between gap-3;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-memo-border);
+}
+
+.inbox-search-wrapper {
+  position: relative;
+  flex: 1;
+  max-width: 480px;
+}
+
+.inbox-search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-memo-text-muted);
+  pointer-events: none;
+}
+
+.inbox-search-input {
+  width: 100%;
+  height: 36px;
+  padding: 0 36px 0 38px;
+  border-radius: 10px;
+  border: 1px solid var(--color-memo-border);
+  background: var(--color-memo-bg);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-memo-text-primary);
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.inbox-search-input:focus {
+  border-color: var(--color-memo-indigo);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.08);
+  background: var(--color-memo-surface);
+}
+
+.inbox-search-input::placeholder {
+  color: var(--color-memo-text-muted);
+  font-weight: 400;
+}
+
+.inbox-search-clear {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 4px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--color-memo-text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.inbox-search-clear:hover {
+  background: #F0EEEB;
+  color: var(--color-memo-text-primary);
+}
+
+.inbox-meta {
+  @apply flex items-center gap-3;
+}
+
+.inbox-count {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-memo-text-muted);
+  white-space: nowrap;
+}
+
+/* List Container */
+.inbox-list {
+  @apply flex-1 overflow-y-auto overflow-x-hidden;
+}
+
+/* Skeleton */
+.inbox-skeleton-list {
+  @apply flex flex-col;
+}
+
+.inbox-skeleton-row {
+  @apply flex items-start gap-3;
+  padding: 18px 20px;
+  border-bottom: 1px solid #F0EEEB;
+}
+
+/* Empty State */
+.inbox-empty {
+  @apply flex flex-col items-center justify-center;
+  padding: 40px 24px;
+}
+
+.inbox-empty-icon {
+  @apply flex items-center justify-center;
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: var(--color-memo-indigo-light);
+  color: var(--color-memo-indigo);
+  margin-bottom: 14px;
+}
+
+.inbox-empty-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-memo-text-primary);
+  margin-bottom: 8px;
+}
+
+.inbox-empty-text {
+  font-size: 14px;
+  color: var(--color-memo-text-muted);
+  text-align: center;
+  line-height: 1.6;
+}
+
+/* Memo Row Content */
+.memo-row-content {
+  @apply flex-1 min-w-0;
+}
+
+.memo-row-top {
+  @apply flex items-center justify-between gap-3;
+}
+
+.memo-row-subject-line {
+  @apply flex items-center gap-2 min-w-0;
+}
+
+.memo-row-subject {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-memo-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.memo-row-subject.memo-row-read {
+  font-weight: 500;
+  color: var(--color-memo-text-secondary);
+}
+
+.memo-row-date {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-memo-text-muted);
+  white-space: nowrap;
   flex-shrink: 0;
 }
 
-.memos-container {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
+.memo-row-bottom {
+  @apply flex items-center gap-3;
+  margin-top: 4px;
 }
 
-.memo-item {
-  transition: background-color 0.15s ease;
+.memo-row-sender {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-memo-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.memo-item:last-child {
-  border-bottom: none;
+/* Action Buttons */
+.memo-action-btn {
+  @apply flex items-center justify-center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.memo-action-review {
+  color: var(--color-memo-indigo);
+}
+.memo-action-review:hover {
+  background: var(--color-memo-indigo-light);
+}
+
+.memo-action-ack {
+  color: var(--color-memo-success);
+}
+.memo-action-ack:hover {
+  background: #ECFDF5;
+}
+
+.memo-action-archive {
+  color: var(--color-memo-text-muted);
+}
+.memo-action-archive:hover {
+  color: var(--color-memo-error);
+  background: #FEF2F2;
+}
+
+/* Loading More */
+.inbox-loading-more {
+  @apply flex items-center justify-center gap-2;
+  padding: 16px;
+  color: var(--color-memo-indigo);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* End Message */
+.inbox-end-msg {
+  text-align: center;
+  padding: 16px;
+  font-size: 12px;
+  color: var(--color-memo-text-muted);
+  font-weight: 500;
 }
 </style>
