@@ -88,20 +88,41 @@ class SecretaryMemoController extends Controller
                       ->where('status', 'pending_approval'); // STRICT: Already strict
                 break;
 
-
+            case 'received':
+                // RECEIVED: Memos where this secretary is a recipient
+                // Check both direct recipient_id AND MemoAcknowledgment records
+                $memoIdsFromAcknowledgments = MemoAcknowledgment::where('recipient_id', $userId)
+                                                                 ->pluck('memo_id')
+                                                                 ->toArray();
+                
+                $query->where(function ($q) use ($userId, $memoIdsFromAcknowledgments) {
+                    $q->where('recipient_id', $userId)  // Direct recipient
+                      ->orWhereIn('_id', $memoIdsFromAcknowledgments); // Via acknowledgment record
+                });
+                $query->whereIn('status', ['sent', 'read', 'acknowledged', 'archived']);
+                break;
 
             default:
-            // RECEIVED: Memos sent to users in secretary's department
+            // ALL: Combination of sent and received memos
             $recipientIds = User::where('department_id', (string)$user->department_id)
                                ->where('_id', '!=', $userId)
                                ->pluck('id')
                                ->toArray();
                 
             $recipientIds[] = $userId;
+            
+            // Also get memo IDs from acknowledgments
+            $memoIdsFromAcknowledgments = MemoAcknowledgment::where('recipient_id', $userId)
+                                                             ->pluck('memo_id')
+                                                             ->toArray();
                 
-            $query->where(function ($q) use ($userId, $recipientIds) {
-                $q->whereIn('recipient_id', $recipientIds)
-                  ->whereIn('status', ['sent', 'read', 'acknowledged', 'archived']); // Include archived
+            $query->where(function ($q) use ($userId, $recipientIds, $memoIdsFromAcknowledgments) {
+                // Memos sent by this user
+                $q->where('sender_id', $userId)
+                  // Or memos sent to this user or their department
+                  ->orWhereIn('recipient_id', $recipientIds)
+                  // Or memos where user has an acknowledgment record
+                  ->orWhereIn('_id', $memoIdsFromAcknowledgments);
             });
             break;
         }
@@ -190,7 +211,6 @@ class SecretaryMemoController extends Controller
             'scheduled_send_at' => 'nullable|date',
             'schedule_end_at' => 'nullable|date',
             'all_day_event' => 'nullable|boolean',
-            'signature_id' => 'nullable|exists:user_signatures,id',
             'attachment_path' => 'nullable|string'
         ]);
 
@@ -231,7 +251,6 @@ class SecretaryMemoController extends Controller
                 'sender_id' => $user->id,
                 'recipient_id' => $recipientId,
                 'department_id' => $request->department_id ?? null,
-                'signature_id' => $request->signature_id ?? null,
                 'subject' => $validated['subject'],
                 'message' => $validated['message'],
                 'priority' => $validated['priority'],

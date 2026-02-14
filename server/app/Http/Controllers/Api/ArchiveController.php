@@ -26,7 +26,7 @@ class ArchiveController extends Controller
         }
 
         $type = $request->get('type', 'all');
-        $search = $request->get('search', '');
+        $search = $request->get('search', '') ?? ''; // Handle null from ConvertEmptyStringsToNull middleware
         $perPage = min((int) $request->get('per_page', 20), 100); // Cap at 100 for performance
         $page = (int) $request->get('page', 1);
         $cursor = $request->get('cursor'); // For cursor-based pagination
@@ -46,23 +46,49 @@ class ArchiveController extends Controller
      */
     protected function getPaginatedType(Request $request, string $type, string $search, int $perPage, int $page)
     {
-        $results = [];
+        $items = collect();
+        
+        // Get counts for all types
+        $counts = [
+            'users' => User::where('is_active', false)->whereNotNull('password')->count(),
+            'memos' => Memo::onlyTrashed()->count(),
+            'events' => CalendarEvent::onlyTrashed()->count(),
+        ];
+        $counts['total'] = $counts['users'] + $counts['memos'] + $counts['events'];
 
         if ($type === 'users') {
-            $results['users'] = $this->getArchivedUsersQuery($search)
+            $paginated = $this->getArchivedUsersQuery($search)
                 ->orderBy('updated_at', 'desc')
                 ->paginate($perPage, ['*'], 'page', $page);
+            $items = collect($paginated->items())->map(function ($user) {
+                return $this->formatUserArchiveItem($user);
+            });
         } elseif ($type === 'memos') {
-            $results['memos'] = $this->getArchivedMemosQuery($search)
+            $paginated = $this->getArchivedMemosQuery($search)
                 ->orderBy('deleted_at', 'desc')
                 ->paginate($perPage, ['*'], 'page', $page);
+            $items = collect($paginated->items())->map(function ($memo) {
+                return $this->formatMemoArchiveItem($memo);
+            });
         } elseif ($type === 'events') {
-            $results['events'] = $this->getArchivedEventsQuery($search)
+            $paginated = $this->getArchivedEventsQuery($search)
                 ->orderBy('deleted_at', 'desc')
                 ->paginate($perPage, ['*'], 'page', $page);
+            $items = collect($paginated->items())->map(function ($event) {
+                return $this->formatEventArchiveItem($event);
+            });
         }
 
-        return response()->json($results);
+        return response()->json([
+            'data' => $items->values(),
+            'pagination' => [
+                'current_page' => $paginated->currentPage(),
+                'last_page' => $paginated->lastPage(),
+                'total' => $paginated->total(),
+                'per_page' => $perPage,
+            ],
+            'counts' => $counts
+        ]);
     }
 
     /**
@@ -109,8 +135,9 @@ class ArchiveController extends Controller
         $items = collect();
         
         // For each type, fetch only the needed chunk with eager loading to prevent N+1
+        // Note: Users use 'updated_at' since they don't have 'deleted_at' (archived via is_active flag)
         $userQuery = $this->getArchivedUsersQuery($search)
-            ->orderBy('deleted_at', 'desc')
+            ->orderBy('updated_at', 'desc')
             ->skip($offset)
             ->take($limit);
             

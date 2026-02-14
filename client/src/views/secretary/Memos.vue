@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted, watch, computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { Plus, Search, ChevronDown, Calendar, X, CheckCircle, Clock, Eye, Send, SlidersHorizontal } from 'lucide-vue-next'
 import ComposeMemoModal from '@/components/memos/ComposeMemoModal.vue'
 import MemoInboxCard from '@/components/memos/MemoInboxCard.vue'
@@ -31,6 +32,7 @@ const memoInboxRef = ref(null)
 // Scope mapping for tabs
 const scopeMapping = {
   'all': '',
+  'received': 'received',
   'sent': 'sent',
   'pending': 'pending'
 }
@@ -76,6 +78,74 @@ const handleSendMemo = async (result) => {
 const viewMemo = (memo) => {
   selectedMemo.value = memo
   showDetailModal.value = true
+  
+  // Mark as read if status is 'sent'
+  if (memo.status === 'sent') {
+    markAsRead(memo.id)
+  }
+}
+
+const markAsRead = async (memoId) => {
+  try {
+    await api.post(`/memos/${memoId}/acknowledge`)
+  } catch (error) {
+    console.error('Error marking as read:', error)
+  }
+}
+
+const handleAcknowledge = async (memoId) => {
+  try {
+    await api.post(`/memos/${memoId}/acknowledge`)
+    await Swal.fire({
+      title: 'Acknowledged!',
+      text: 'Memo has been acknowledged.',
+      icon: 'success',
+      timer: 1500,
+      showConfirmButton: false
+    })
+    if (selectedMemo.value?.id === memoId) {
+      selectedMemo.value.status = 'acknowledged'
+    }
+    if (memoInboxRef.value) {
+      memoInboxRef.value.refresh()
+    }
+  } catch (error) {
+    console.error('Error acknowledging memo:', error)
+    Swal.fire('Error', 'Failed to acknowledge memo', 'error')
+  }
+}
+
+const handleArchive = async (memoId) => {
+  const result = await Swal.fire({
+    title: 'Archive Memo?',
+    text: "You can find this in your archive later.",
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Yes, archive it!'
+  })
+  
+  if (result.isConfirmed) {
+    try {
+      await api.delete(`/memos/${memoId}`)
+      Swal.fire('Archived!', 'Memo has been archived.', 'success')
+      showDetailModal.value = false
+      if (memoInboxRef.value) {
+        memoInboxRef.value.refresh()
+      }
+    } catch (error) {
+      console.error('Error archiving memo:', error)
+      Swal.fire('Error', 'Failed to archive memo', 'error')
+    }
+  }
+}
+
+const handleAcknowledged = (memoId) => {
+  if (selectedMemo.value?.id === memoId) {
+    selectedMemo.value.status = 'acknowledged'
+  }
+  if (memoInboxRef.value) {
+    memoInboxRef.value.refresh()
+  }
 }
 
 const clearFilters = () => {
@@ -92,12 +162,25 @@ const hasActiveFilters = computed(() => {
 
 const tabs = [
   { key: 'all', label: 'All', icon: null },
+  { key: 'received', label: 'Received', icon: null },
   { key: 'pending', label: 'Pending', icon: null },
   { key: 'sent', label: 'Sent', icon: null }
 ]
 
-onMounted(() => {
+const route = useRoute()
+
+onMounted(async () => {
   fetchDepartments()
+  
+  const memoId = route.query.memoId
+  if (memoId) {
+    try {
+      const response = await api.get(`/memos/${memoId}`)
+      viewMemo(response.data)
+    } catch (error) {
+      console.error('Failed to fetch deep-linked memo:', error)
+    }
+  }
 })
 </script>
 
@@ -175,6 +258,8 @@ onMounted(() => {
         :custom-params="additionalParams"
         :current-user-id="currentUserId"
         @memo-click="viewMemo"
+        @memo-acknowledge="handleAcknowledge"
+        @memo-archive="handleArchive"
       />
     </div>
 
@@ -191,7 +276,10 @@ onMounted(() => {
       v-if="showDetailModal && selectedMemo"
       :memo="selectedMemo"
       :is-open="showDetailModal"
+      :current-user-id="currentUserId"
+      user-role="secretary"
       @close="showDetailModal = false"
+      @acknowledged="handleAcknowledged"
     />
   </div>
 </template>

@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { Plus, Search, ChevronDown, Calendar, X, CheckCircle, Clock, Eye, XCircle, Check, FileText } from 'lucide-vue-next'
 import ComposeMemoModal from '@/components/memos/ComposeMemoModal.vue'
 import MemoInboxCard from '@/components/memos/MemoInboxCard.vue'
@@ -184,7 +185,24 @@ const tabs = [
   { key: 'sent', label: 'Sent' }
 ]
 
-onMounted(() => {})
+const route = useRoute()
+
+onMounted(async () => {
+  const memoId = route.query.memoId
+  if (memoId) {
+    try {
+      const response = await api.get(`/memos/${memoId}`)
+      const memo = response.data
+      if (memo.status === 'pending_approval') {
+        viewApprovalMemo(memo)
+      } else {
+        viewMemo(memo)
+      }
+    } catch (error) {
+      console.error('Failed to fetch deep-linked memo:', error)
+    }
+  }
+})
 </script>
 
 <template>
@@ -244,6 +262,7 @@ onMounted(() => {})
       v-if="showDetailModal && selectedMemo"
       :memo="selectedMemo"
       :is-open="showDetailModal"
+      :current-user-id="currentUserId"
       @close="showDetailModal = false"
     />
 

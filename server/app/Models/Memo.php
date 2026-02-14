@@ -89,8 +89,6 @@ class Memo extends Model
         return $this->belongsTo(Department::class, 'department_id');
     }
     
-
-    
     public function acknowledgments()
     {
         return $this->hasMany(MemoAcknowledgment::class, 'memo_id');

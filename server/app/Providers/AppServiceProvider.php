@@ -26,10 +26,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        \Illuminate\Support\Facades\DB::extend('mongodb', function ($config, $name) {
-            $config['name'] = $name;
-            return new \MongoDB\Laravel\Connection($config);
-        });
 
         \Laravel\Sanctum\Sanctum::usePersonalAccessTokenModel(\App\Models\PersonalAccessToken::class);
 

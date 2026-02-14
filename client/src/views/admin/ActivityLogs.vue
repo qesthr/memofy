@@ -152,29 +152,33 @@ const getActionLabel = (action) => {
   return action.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
 }
 
-const exportCSV = () => {
-  const headers = ['Timestamp', 'Actor', 'Email', 'Role', 'Action', 'Description', 'Target', 'IP Address']
-  const rows = logs.value.map(log => [
-    formatDate(log.created_at),
-    log.actor?.full_name || log.actor_email,
-    log.actor_email,
-    log.actor_role,
-    log.action,
-    log.description,
-    log.target,
-    log.ip_address || '-'
-  ])
+const isExporting = ref(false)
+const exportPDF = async () => {
+  isExporting.value = true
+  try {
+    const params = new URLSearchParams()
+    if (filters.value.search) params.append('search', filters.value.search)
+    if (filters.value.action_type) params.append('action_type', filters.value.action_type)
+    if (filters.value.start_date) params.append('start_date', filters.value.start_date)
+    if (filters.value.end_date) params.append('end_date', filters.value.end_date)
 
-  const csvContent = [
-    headers.join(','),
-    ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-  ].join('\n')
-
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-  const link = document.createElement('a')
-  link.href = URL.createObjectURL(blob)
-  link.download = `activity_logs_${new Date().toISOString().split('T')[0]}.csv`
-  link.click()
+    const response = await api.get(`/activity-logs/export/pdf?${params.toString()}`, {
+      responseType: 'blob'
+    })
+    
+    const url = window.URL.createObjectURL(new Blob([response.data]))
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', `activity_logs_${new Date().toISOString().split('T')[0]}.pdf`)
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(url)
+  } catch (error) {
+    console.error('Export error:', error)
+  } finally {
+    isExporting.value = false
+  }
 }
 
 onMounted(() => {
@@ -189,9 +193,14 @@ onMounted(() => {
         <h1 class="text-2xl font-bold">Activity Logs</h1>
         <p class="text-base-content/60 text-sm">Track all user actions across the system</p>
       </div>
-      <button @click="exportCSV" class="btn btn-primary text-white btn-sm gap-2">
-        <Download :size="16" />
-        Export CSV
+      <button 
+        @click="exportPDF" 
+        class="btn btn-primary text-white btn-sm gap-2"
+        :disabled="isExporting"
+      >
+        <Download v-if="!isExporting" :size="16" />
+        <span v-else class="loading loading-spinner loading-xs"></span>
+        Export PDF
       </button>
     </div>
 

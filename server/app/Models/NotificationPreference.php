@@ -3,7 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
+use MongoDB\Laravel\Eloquent\Model;
 
 class NotificationPreference extends Model
 {
@@ -48,11 +48,14 @@ class NotificationPreference extends Model
      */
     public static function getDefaultForUser($userId)
     {
-        $preference = self::where('user_id', $userId)->first();
+        // Convert ObjectId to string if needed
+        $userIdString = (string) $userId;
+        
+        $preference = self::where('user_id', $userIdString)->first();
         
         if (!$preference) {
             $preference = self::create([
-                'user_id' => $userId,
+                'user_id' => $userIdString,
                 'memo_approved' => true,
                 'memo_rejected' => true,
                 'memo_received' => true,

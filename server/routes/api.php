@@ -155,6 +155,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
     // Activity Logs
     Route::get('/activity-logs', [ActivityLogController::class, 'index']);
+    Route::get('/activity-logs/export/pdf', [ActivityLogController::class, 'exportPdf']);
     Route::get('/activity-logs/{id}', [ActivityLogController::class, 'show']);
 
     // User Management
@@ -173,8 +174,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('/users/restore-all', [UserController::class, 'restoreAll'])->middleware('can:faculty.unarchive');
 
     // Memo Customization
+    Route::get('/departments/members', [DepartmentController::class, 'members']);
+    Route::get('/departments/{id}/members', [DepartmentController::class, 'members']);
     Route::apiResource('departments', DepartmentController::class);
-    
 
     
 

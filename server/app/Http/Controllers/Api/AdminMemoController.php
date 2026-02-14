@@ -163,16 +163,6 @@ class AdminMemoController extends Controller
                 }
             }
 
-            // Send notifications to creator and recipients
-            $sender = User::find($memo->sender_id);
-            if ($sender) {
-                // Notify memo creator that their memo was approved
-                $this->notificationService->notifyMemoApproved($user, $sender, $memo);
-                
-                // Notify all recipients about the new memo
-                $this->notificationService->notifyMemoRecipients($user, $memo, $recipients);
-            }
-
             // Log the approval
             $this->activityLogger->logUserAction(
                 $user,

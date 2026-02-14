@@ -2,7 +2,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 @plugin "daisyui" {
-    themes: all;
+  themes: all;
 }
 
 /* ─── Design System Tokens ─── */
@@ -27,10 +27,22 @@
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  /* Prevent global scroll */
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  /* Lock the viewport */
 }
 
 [data-theme="light"] {
-  --b1: 250 249 246;  /* #FAF9F6 Off White */
+  --b1: 250 249 246;
+  /* #FAF9F6 Off White */
 }
 
 /* ─── Reusable Card Surface ─── */
@@ -38,18 +50,25 @@
   background: var(--color-memo-surface);
   border-radius: 16px;
   border: 1px solid var(--color-memo-border);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03);
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
 .memo-card:hover {
-  box-shadow: 0 2px 6px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.04);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.04);
 }
 
 /* ─── Skeleton Animation ─── */
 @keyframes memo-skeleton-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.8; }
+
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+
+  50% {
+    opacity: 0.8;
+  }
 }
 
 .memo-skeleton {
@@ -61,8 +80,13 @@
 }
 
 @keyframes memo-skeleton-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 /* ─── Pill Tabs ─── */
@@ -74,7 +98,7 @@
   background: var(--color-memo-surface);
   border: 1px solid var(--color-memo-border);
   border-radius: 12px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 .memo-pill-tab {
@@ -118,13 +142,13 @@
   font-size: 11px;
   font-weight: 700;
   line-height: 1;
-  background: rgba(0,0,0,0.06);
+  background: rgba(0, 0, 0, 0.06);
   color: var(--color-memo-text-secondary);
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .memo-pill-tab.active .tab-badge {
-  background: rgba(255,255,255,0.25);
+  background: rgba(255, 255, 255, 0.25);
   color: #ffffff;
 }
 
@@ -229,10 +253,23 @@
   margin-top: 6px;
 }
 
-.priority-dot.low { background: var(--color-memo-success); }
-.priority-dot.medium, .priority-dot.normal { background: var(--color-memo-warning); }
-.priority-dot.high { background: var(--color-memo-error); }
-.priority-dot.urgent { background: var(--color-memo-error); box-shadow: 0 0 6px rgba(239, 68, 68, 0.4); }
+.priority-dot.low {
+  background: var(--color-memo-success);
+}
+
+.priority-dot.medium,
+.priority-dot.normal {
+  background: var(--color-memo-warning);
+}
+
+.priority-dot.high {
+  background: var(--color-memo-error);
+}
+
+.priority-dot.urgent {
+  background: var(--color-memo-error);
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
+}
 
 /* ─── Status Badge ─── */
 .memo-status-badge {
@@ -246,9 +283,20 @@
   text-transform: capitalize;
 }
 
-.memo-status-badge.sent { background: #ECFDF5; color: #059669; }
-.memo-status-badge.pending_approval { background: #FEF3C7; color: #D97706; }
-.memo-status-badge.read { background: #F3F4F6; color: #6B7280; }
+.memo-status-badge.sent {
+  background: #ECFDF5;
+  color: #059669;
+}
+
+.memo-status-badge.pending_approval {
+  background: #FEF3C7;
+  color: #D97706;
+}
+
+.memo-status-badge.read {
+  background: #F3F4F6;
+  color: #6B7280;
+}
 
 /* ─── Unread Dot ─── */
 .unread-dot {
@@ -261,21 +309,31 @@
 }
 
 @keyframes unread-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
 }
 
 /* ─── Custom Scrollbar ─── */
 .memo-scrollbar::-webkit-scrollbar {
   width: 6px;
 }
+
 .memo-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
+
 .memo-scrollbar::-webkit-scrollbar-thumb {
   background: #D4D0C8;
   border-radius: 10px;
 }
+
 .memo-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #B0ACA5;
 }

@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { Bell, Check, Trash2, FileText, Calendar, User, CheckCheck } from 'lucide-vue-next'
 import api from '@/services/api'
 
@@ -10,6 +11,7 @@ const props = defineProps({
   }
 })
 
+const router = useRouter()
 const notifications = ref([])
 const loading = ref(false)
 const unreadCount = ref(0)
@@ -18,13 +20,13 @@ const fetchNotifications = async () => {
   loading.value = true
   try {
     const response = await api.get('/notifications')
-    // Handle different API response structures
-    const notificationsData = response.data.data || response.data || []
+    // Handle different API response structures (paginated or flat)
+    const notificationsData = response.data.data?.data || response.data.data || response.data || []
     
     // Ensure we have an array
     if (Array.isArray(notificationsData)) {
       notifications.value = notificationsData.slice(0, props.maxItems)
-      unreadCount.value = notificationsData.filter(n => !n.read_at).length
+      unreadCount.value = response.data.unread_count || notificationsData.filter(n => !n.read_at).length
     } else {
       console.warn('Unexpected notifications response format:', response.data)
       notifications.value = []
@@ -47,7 +49,7 @@ const fetchNotifications = async () => {
 const fetchUnreadCount = async () => {
   try {
     const response = await api.get('/notifications/unread-count')
-    unreadCount.value = response.data.count
+    unreadCount.value = response.data.unread_count || response.data.count
   } catch (error) {
     console.error('Failed to fetch unread count:', error)
   }
@@ -106,15 +108,24 @@ const formatTime = (date) => {
   return d.toLocaleDateString()
 }
 
-const getLink = (notification) => {
+const handleNotificationClick = async (notification) => {
+  // Mark as read first
+  await markAsRead(notification)
+  
+  // Navigate based on notification type
   const data = notification.data || {}
-  if (notification.type.startsWith('memo')) {
-    return data.memo_id ? `/faculty/memos/${data.memo_id}` : '/faculty/memos'
+  const role = localStorage.getItem('role') || 'faculty'
+  
+  if (notification.type.startsWith('memo') && data.memo_id) {
+    // Navigate to memos page with memoId query parameter to open the modal
+    router.push(`/${role}/memos?memoId=${data.memo_id}`)
+  } else if (notification.type.startsWith('calendar') && data.event_id) {
+    router.push(`/${role}/calendar?event=${data.event_id}`)
+  } else if (notification.link) {
+    router.push(notification.link)
+  } else if (data.link) {
+    router.push(data.link)
   }
-  if (notification.type.startsWith('calendar')) {
-    return data.event_id ? `/calendar?event=${data.event_id}` : '/calendar'
-  }
-  return '/notifications'
 }
 
 onMounted(() => {
@@ -180,7 +191,7 @@ onMounted(() => {
               'notification-item p-3 rounded-lg mb-2 cursor-pointer transition-all hover:bg-base-200',
               !notification.read_at ? 'bg-base-200/50' : ''
             ]"
-            @click="markAsRead(notification)"
+            @click="handleNotificationClick(notification)"
           >
             <div class="flex gap-3">
               <!-- Icon -->

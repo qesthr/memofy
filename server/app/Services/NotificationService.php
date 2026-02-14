@@ -64,7 +64,7 @@ class NotificationService
             $creator,
             Notification::TYPE_MEMO_APPROVED,
             $data,
-            "/secretary/memos/{$memo->id}"
+            "/{$creator->role}/memos?memoId={$memo->id}"
         );
     }
 
@@ -86,7 +86,7 @@ class NotificationService
             $creator,
             Notification::TYPE_MEMO_REJECTED,
             $data,
-            "/secretary/memos/{$memo->id}"
+            "/{$creator->role}/memos?memoId={$memo->id}"
         );
     }
 
@@ -109,7 +109,7 @@ class NotificationService
             $recipient,
             Notification::TYPE_MEMO_RECEIVED,
             $data,
-            "/faculty/memos/{$memo->id}"
+            "/{$recipient->role}/memos?memoId={$memo->id}"
         );
     }
 
@@ -130,7 +130,7 @@ class NotificationService
             $secretary,
             Notification::TYPE_MEMO_ACKNOWLEDGED,
             $data,
-            "/secretary/memos/{$memo->id}"
+            "/{$secretary->role}/memos?memoId={$memo->id}"
         );
     }
 
@@ -156,7 +156,7 @@ class NotificationService
                 $recipient,
                 Notification::TYPE_CALENDAR_INVITATION,
                 $data,
-                "/calendar?event={$event->id}"
+                "/{$recipient->role}/calendar?event={$event->id}"
             );
             
             if ($notification) {
@@ -172,7 +172,7 @@ class NotificationService
      */
     public function notifyCalendarUpdated(User $host, $event): void
     {
-        $participants = $event->participants()->where('user_id', '!=', $host->id)->get();
+        $participants = $event->participants()->with('user')->where('user_id', '!=', $host->id)->get();
         
         foreach ($participants as $participant) {
             $data = [
@@ -188,7 +188,7 @@ class NotificationService
                 $participant->user,
                 Notification::TYPE_CALENDAR_UPDATED,
                 $data,
-                "/calendar?event={$event->id}"
+                "/{$participant->user->role}/calendar?event={$event->id}"
             );
         }
     }
@@ -210,7 +210,7 @@ class NotificationService
             $creator,
             Notification::TYPE_CALENDAR_RESPONSE,
             $data,
-            "/calendar?event={$event->id}"
+            "/{$creator->role}/calendar?event={$event->id}"
         );
     }
 
@@ -262,7 +262,7 @@ class NotificationService
             $recipient,
             Notification::TYPE_CALENDAR_SECRETARY_CREATED,
             $data,
-            "/calendar?event={$event->id}"
+            "/{$recipient->role}/calendar?event={$event->id}"
         );
     }
 
@@ -302,15 +302,33 @@ class NotificationService
 
     /**
      * Send email notification
+     * Note: In development/testing environment, emails are not sent to avoid delivery errors
+     * with dummy email addresses. Only in-app notifications are created.
      */
     protected function sendEmailNotification(User $user, Notification $notification): void
     {
+        // Skip actual email sending in non-production environments
+        // This prevents delivery errors with dummy/test email addresses
+        if (app()->environment('local', 'development', 'testing')) {
+            Log::info('Email notification skipped (development mode)', [
+                'user_id' => $user->id,
+                'user_email' => $user->email,
+                'notification_type' => $notification->type,
+                'notification_title' => $notification->data['title'] ?? 'N/A'
+            ]);
+            return;
+        }
+
+        // Only send actual emails in production environment
         try {
             Mail::to($user->email)->send(new MemoNotification(
                 (object)[
+                    'id' => $notification->data['memo_id'] ?? null,
                     'subject' => $notification->data['title'] ?? 'Notification',
                     'message' => $notification->data['message'] ?? '',
-                    'priority' => $notification->data['priority'] ?? 'normal'
+                    'priority' => $notification->data['priority'] ?? 'normal',
+                    'created_at' => now(),
+                    'attachments' => []
                 ],
                 $user,
                 (object)[

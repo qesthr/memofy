@@ -119,7 +119,7 @@ class UserController extends Controller
     {
         // Admin creates user directly
         $validated = $request->validate([
-            'email' => 'required|email|unique:users',
+            'email' => 'required|email|unique:mongodb.users,email',
             'first_name' => 'required|string',
             'last_name' => 'required|string',
             'role' => 'required|string',
@@ -186,14 +186,14 @@ class UserController extends Controller
         $rules = [
             'first_name' => 'sometimes|string',
             'last_name' => 'sometimes|string',
-            'email' => 'sometimes|email|unique:users,email,' . $id,
+            'email' => 'sometimes|email|unique:mongodb.users,email,' . $id . ',_id',
             'is_active' => 'sometimes|boolean'
         ];
 
         // Admin specific updates
         if ($isAdmin) {
             $rules['role'] = 'sometimes|string|in:admin,secretary,faculty';
-            $rules['department'] = 'sometimes|string|exists:departments,name';
+            $rules['department'] = 'sometimes|string|exists:mongodb.departments,name';
         }
 
         $validated = $request->validate($rules);

@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
-import { X, Paperclip, Calendar, Eye, Send, Search, Trash2, FileText, Loader2, Check } from 'lucide-vue-next'
+import { X, Paperclip, Calendar, Eye, Send, Search, Trash2, FileText, Loader2, Check, Users } from 'lucide-vue-next'
 import api from '@/services/api'
 import ScheduleMemoModal from './ScheduleMemoModal.vue'
 import { useAuth } from '@/composables/useAuth'
@@ -40,6 +40,11 @@ const showUserSuggestions = ref(false)
 const isLoadingUsers = ref(false)
 const recipientSearch = ref('')
 
+// Department members
+const departmentMembers = ref([])
+const showMembersDropdown = ref(false)
+const memberSearch = ref('')
+const isLoadingMembers = ref(false)
 
 const departments = ref([])
 
@@ -64,6 +69,16 @@ const canSubmit = computed(() => {
 })
 
 const attachmentCount = computed(() => formData.value.attachments.length)
+
+// Filtered department members for dropdown
+const filteredMembers = computed(() => {
+  if (!memberSearch.value) return departmentMembers.value
+  const search = memberSearch.value.toLowerCase()
+  return departmentMembers.value.filter(m => 
+    `${m.first_name} ${m.last_name}`.toLowerCase().includes(search) ||
+    m.email.toLowerCase().includes(search)
+  )
+})
 
 
 
@@ -94,6 +109,39 @@ const fetchDepartments = async () => {
   } catch (error) {
     console.error('Error fetching departments:', error)
   }
+}
+
+const fetchDepartmentMembers = async () => {
+  try {
+    isLoadingMembers.value = true
+    const response = await api.get('/departments/members')
+    departmentMembers.value = response.data.data || []
+  } catch (error) {
+    console.error('Error fetching department members:', error)
+    departmentMembers.value = []
+  } finally {
+    isLoadingMembers.value = false
+  }
+}
+
+const selectMember = (member) => {
+  // Add member as recipient
+  if (!formData.value.recipientIds.includes(member.id)) {
+    formData.value.recipientIds.push(member.id)
+    formData.value.selectedRecipients.push(member)
+  }
+  memberSearch.value = ''
+  showMembersDropdown.value = false
+}
+
+const getRoleLabel = (role) => {
+  if (typeof role === 'object' && role?.name) {
+    return role.name.charAt(0).toUpperCase() + role.name.slice(1)
+  }
+  if (typeof role === 'string') {
+    return role.charAt(0).toUpperCase() + role.slice(1)
+  }
+  return 'Member'
 }
 
 
@@ -372,12 +420,14 @@ const handleScheduleSave = (schedule) => {
 onMounted(() => {
   fetchUsers()
   fetchDepartments()
-
   
-
+  // Fetch department members for secretary
+  const roleName = (user.value?.role && typeof user.value.role === 'object') ? user.value.role.name : user.value?.role
+  if (roleName === 'secretary') {
+    fetchDepartmentMembers()
+  }
 
   // Auto-populate department for secretaries
-  const roleName = (user.value?.role && typeof user.value.role === 'object') ? user.value.role.name : user.value?.role
   if (roleName === 'secretary' && user.value?.department_id) {
     formData.value.departmentId = user.value.department_id
     formData.value.department = user.value.department || 'My Department'
@@ -443,7 +493,12 @@ watch(() => props.isOpen, (val) => {
   if (val) {
     fetchUsers()
     fetchDepartments()
-
+    
+    // Fetch department members for secretary
+    const roleName = (user.value?.role && typeof user.value.role === 'object') ? user.value.role.name : user.value?.role
+    if (roleName === 'secretary') {
+      fetchDepartmentMembers()
+    }
   }
 })
 </script>
@@ -548,6 +603,58 @@ watch(() => props.isOpen, (val) => {
                 </a>
               </li>
             </ul>
+          </div>
+          
+          <!-- Members Dropdown (For Secretary) -->
+          <div v-if="departmentMembers.length > 0" class="dropdown">
+            <div tabindex="0" role="button" class="btn btn-xs bg-primary/10 border-none px-2 rounded-md font-bold text-[9px] uppercase tracking-wider hover:bg-primary/20 text-primary">
+              <Users :size="10" class="mr-1" />
+              Members
+              <span class="ml-1 bg-primary text-primary-content rounded-full px-1 text-[7px]">{{ departmentMembers.length }}</span>
+            </div>
+            <div tabindex="0" class="dropdown-content z-50 shadow-2xl bg-base-100 border border-base-300 rounded-lg w-72 mt-1 p-2">
+              <!-- Search Input -->
+              <div class="relative mb-2">
+                <Search :size="12" class="absolute left-2 top-1/2 -translate-y-1/2 opacity-40" />
+                <input 
+                  v-model="memberSearch"
+                  type="text" 
+                  placeholder="Search members..." 
+                  class="input input-sm input-bordered w-full pl-7 text-xs focus:outline-none focus:border-primary"
+                />
+              </div>
+              
+              <!-- Loading State -->
+              <div v-if="isLoadingMembers" class="py-4 text-center">
+                <span class="loading loading-spinner loading-sm"></span>
+              </div>
+              
+              <!-- Members List -->
+              <ul v-else-if="filteredMembers.length > 0" class="menu p-0 max-h-60 overflow-y-auto">
+                <li v-for="member in filteredMembers" :key="member.id">
+                  <button 
+                    @click="selectMember(member)" 
+                    class="flex items-center gap-2 py-2 px-2 hover:bg-base-200 rounded-lg transition-colors"
+                    :class="{ 'opacity-50': formData.recipientIds.includes(member.id) }"
+                  >
+                    <div class="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-[10px] uppercase overflow-hidden">
+                      <img v-if="member.profile_picture" :src="member.profile_picture" class="w-full h-full object-cover" />
+                      <span v-else>{{ member.first_name?.[0] }}{{ member.last_name?.[0] }}</span>
+                    </div>
+                    <div class="flex-1 text-left">
+                      <div class="font-bold text-xs">{{ member.first_name }} {{ member.last_name }}</div>
+                      <div class="text-[9px] opacity-50">{{ getRoleLabel(member.role) }}</div>
+                    </div>
+                    <Check v-if="formData.recipientIds.includes(member.id)" :size="14" class="text-success" />
+                  </button>
+                </li>
+              </ul>
+              
+              <!-- Empty State -->
+              <div v-else class="py-4 text-center text-xs opacity-50">
+                No members found
+              </div>
+            </div>
           </div>
         </div>
       </div>

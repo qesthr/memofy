@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Memo;
+use App\Models\MemoAcknowledgment;
 use App\Models\RollbackLog;
 use App\Services\ActivityLogger;
 use App\Services\NotificationService;
@@ -79,7 +80,15 @@ class MemoController extends Controller
             $query->whereIn('status', ['sent', 'archived']); // Include archived
         } elseif ($request->scope === 'received') {
             if (!$isAdmin) {
-                $query->whereIn('recipient_id', $targetIds);
+                // Get memo IDs from MemoAcknowledgment records for this user
+                $memoIdsFromAcknowledgments = MemoAcknowledgment::where('recipient_id', $user->id)
+                                                                 ->pluck('memo_id')
+                                                                 ->toArray();
+                
+                $query->where(function ($q) use ($targetIds, $memoIdsFromAcknowledgments) {
+                    $q->whereIn('recipient_id', $targetIds)  // Direct recipient
+                      ->orWhereIn('_id', $memoIdsFromAcknowledgments); // Via acknowledgment record
+                });
             }
             $query->whereIn('status', ['sent', 'read', 'acknowledged', 'archived']);
 
@@ -90,17 +99,26 @@ class MemoController extends Controller
             $query->where('status', 'pending_approval');
         } else {
             // Default: All (Received + Sent + Drafts) - EXCLUDING ONLY PENDING
-            $query->where(function ($q) use ($targetIds, $isAdmin) {
+            // Get memo IDs from MemoAcknowledgment records for this user
+            $memoIdsFromAcknowledgments = [];
+            if (!$isAdmin) {
+                $memoIdsFromAcknowledgments = MemoAcknowledgment::where('recipient_id', $user->id)
+                                                                 ->pluck('memo_id')
+                                                                 ->toArray();
+            }
+            
+            $query->where(function ($q) use ($targetIds, $isAdmin, $memoIdsFromAcknowledgments) {
                 if ($isAdmin) {
                     $q->where('status', '!=', 'pending_approval');
                 } else {
                     // Regular users: restricted to self
                     // Received/Sent memos (not pending)
-                    $q->where(function ($sq) use ($targetIds) {
+                    $q->where(function ($sq) use ($targetIds, $memoIdsFromAcknowledgments) {
                         $sq->where('status', '!=', 'pending_approval')
-                           ->where(function ($ssq) use ($targetIds) {
+                           ->where(function ($ssq) use ($targetIds, $memoIdsFromAcknowledgments) {
                                $ssq->whereIn('recipient_id', $targetIds)
-                                   ->orWhereIn('sender_id', $targetIds);
+                                   ->orWhereIn('sender_id', $targetIds)
+                                   ->orWhereIn('_id', $memoIdsFromAcknowledgments);
                            });
                     });
                     
@@ -129,10 +147,10 @@ class MemoController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'recipient_id' => 'nullable|exists:users,id',
+            'recipient_id' => 'nullable|exists:users,_id',
             'recipient_ids' => 'nullable|array',
-            'recipient_ids.*' => 'exists:users,id',
-            'department_id' => 'nullable|exists:departments,id',
+            'recipient_ids.*' => 'exists:users,_id',
+            'department_id' => 'nullable|exists:departments,_id',
             'subject' => 'required|string|max:255',
             'message' => 'required|string',
             'priority' => 'required|in:high,medium,low',
@@ -141,9 +159,6 @@ class MemoController extends Controller
             'scheduled_send_at' => 'nullable|date',
             'schedule_end_at' => 'nullable|date',
             'all_day_event' => 'nullable|boolean',
-            'signature_id' => 'nullable|exists:user_signatures,id',
-            'signature_ids' => 'nullable|array',
-            'signature_positions' => 'nullable|array',
             'attachment_path' => 'nullable|string'
         ]);
 
@@ -177,9 +192,6 @@ class MemoController extends Controller
                     'sender_id' => $userId,
                     'recipient_id' => (string) $recipientId,
                     'department_id' => $request->department_id ?? null,
-                    'signature_id' => $request->signature_id ?? null,
-                    'signature_ids' => $request->signature_ids ?? null,
-                    'signature_positions' => $request->signature_positions ?? null,
                     'subject' => $validated['subject'],
                     'message' => $validated['message'],
                     'priority' => $validated['priority'],
@@ -278,13 +290,23 @@ class MemoController extends Controller
      */
     public function show($id)
     {
-        $memo = Memo::with(['sender:id,first_name,last_name,email,role,department', 
-                           'recipient:id,first_name,last_name,email,role,department',
-                           'department:id,name',
-                           'signature:id,signature_data,user_id',
-                           'acknowledgments',
+        $memo = Memo::with(['sender:_id,first_name,last_name,email,role,department,profile_picture', 
+                           'recipient:_id,first_name,last_name,email,role,department,profile_picture',
+                           'department:_id,name',
+                           'acknowledgments.recipient:_id,first_name,last_name,email,profile_picture',
                            'calendarEvents'])
                     ->findOrFail($id);
+        
+        // If there are multiple recipients, fetch all their profiles
+        if (!empty($memo->recipient_ids)) {
+            $memo->recipients_list = User::whereIn('_id', $memo->recipient_ids)
+                ->get(['id', 'first_name', 'last_name', 'email', 'profile_picture']);
+        } else if ($memo->recipient_id) {
+            // Fallback for single recipient memos if recipient_ids is empty
+            $memo->recipients_list = User::where('_id', $memo->recipient_id)
+                ->get(['id', 'first_name', 'last_name', 'email', 'profile_picture']);
+        }
+
         $user = auth()->user();
         
         // Normalize IDs for comparison

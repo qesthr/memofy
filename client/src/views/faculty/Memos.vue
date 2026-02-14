@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { CheckCircle, Archive, FileText } from 'lucide-vue-next'
 import api from '@/services/api'
 import Swal from 'sweetalert2'
@@ -9,6 +10,10 @@ import MemoDetailModal from '@/components/memos/MemoDetailModal.vue'
 // Modal states
 const selectedMemo = ref(null)
 const showDetailModal = ref(false)
+
+// Current user
+const storedUser = JSON.parse(localStorage.getItem('user') || '{}')
+const currentUserId = storedUser?.id || storedUser?._id || null
 
 const viewMemo = (memo) => {
   selectedMemo.value = memo
@@ -109,12 +114,19 @@ const handleAcknowledged = (memoId) => {
   // Refresh the memo list would happen here if we had a ref to MemoInboxCard
 }
 
-// Handle archived event from modal
-const handleArchived = (memoId) => {
-  showDetailModal.value = false
-  selectedMemo.value = null
-  // The MemoInboxCard should refresh automatically
-}
+const route = useRoute()
+
+onMounted(async () => {
+  const memoId = route.query.memoId
+  if (memoId) {
+    try {
+      const response = await api.get(`/memos/${memoId}`)
+      viewMemo(response.data)
+    } catch (error) {
+      console.error('Failed to fetch deep-linked memo:', error)
+    }
+  }
+})
 </script>
 
 <template>
@@ -133,6 +145,7 @@ const handleArchived = (memoId) => {
         initial-scope="received"
         api-endpoint="/memos"
         :max-height="'calc(100vh - 200px)'"
+        :current-user-id="currentUserId"
         @memo-click="viewMemo"
         @memo-acknowledge="handleAcknowledge"
         @memo-archive="handleArchive"
@@ -144,10 +157,10 @@ const handleArchived = (memoId) => {
       v-if="showDetailModal && selectedMemo"
       :memo="selectedMemo"
       :is-open="showDetailModal"
+      :current-user-id="currentUserId"
       user-role="faculty"
       @close="closeModal"
       @acknowledged="handleAcknowledged"
-      @archived="handleArchived"
     />
   </div>
 </template>
