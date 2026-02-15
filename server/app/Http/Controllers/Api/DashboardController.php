@@ -47,104 +47,117 @@ class DashboardController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-
-        // 1. Stats - Optimized to use fewer queries
-        $stats = [];
-        
-        if ($user->hasPermissionTo('faculty.view_all')) {
-            $stats['total_users'] = User::count();
-            $stats['active_users'] = User::where('is_active', true)->count();
-            
-            $stats['total_memos'] = Memo::where('status', '!=', 'draft')->count();
-            $stats['pending_approval'] = Memo::where('status', 'pending_approval')->count();
-            $stats['upcoming_deadlines'] = Memo::where('status', 'sent')
-                                                ->where('deadline_at', '>', now())
-                                                ->count();
-            
-        } else if ($user->hasPermissionTo('faculty.view')) {
-            $stats['total_users'] = User::where('role', 'faculty')
-                                        ->where('department', $user->department)
-                                        ->count();
-            $stats['active_users'] = User::where('role', 'faculty')
-                                        ->where('department', $user->department)
-                                        ->where('is_active', true)
-                                        ->count();
-        }
-
-        if ($user->hasPermissionTo('memo.view_all')) {
-            // Already handled above
-        } else if ($user->hasPermissionTo('memo.view')) {
-            // For general view, count memos where they are recipient
-            $stats['total_memos'] = Memo::where('recipient_id', $user->id)
-                                        ->where('status', '!=', 'draft')
-                                        ->count();
-            $stats['pending_memos'] = Memo::where('sender_id', $user->id)
-                                          ->where('status', 'pending_approval')
-                                          ->count();
-        }
-
-        // 2. Recent Activities - With pagination
-        $logsQuery = UserActivityLog::with(['actor:id,first_name,last_name,email,role']);
-        
-        if (!$user->hasPermissionTo('activity.view_all')) {
-            if ($user->hasPermissionTo('activity.view_department')) {
-                $userIds = User::where('department', $user->department)->pluck('_id');
-                $logsQuery->whereIn('actor_id', $userIds);
-            } else {
-                $logsQuery->where('actor_id', $user->id);
-            }
-        }
-        
         $perPage = min((int) $request->get('per_page', 10), 20);
-        $recentActivities = $logsQuery->latest()->paginate($perPage, ['*'], 'activity_page', 1);
-
-        // 3. User Specific Stats
-        $roleName = (isset($user->role) && is_object($user->role)) ? $user->role->name : ($user->role ?? '');
-        $userId = (string) $user->id;
+        $page = (int) $request->get('activity_page', 1);
         
-        if ($roleName === 'secretary') {
-            $deptUserIds = User::where('department_id', $user->department_id)->pluck('id')->toArray();
-            $recipientIds = array_merge($deptUserIds, [$userId]);
+        // Generate a unique cache key based on user and parameters
+        $cacheKey = "dashboard_data_user_{$user->id}_v1_page_{$page}_per_{$perPage}";
+        
+        return \Illuminate\Support\Facades\Cache::remember($cacheKey, now()->addSeconds(1), function () use ($user, $request, $perPage, $page) {
+            // 1. Stats - Optimized to use fewer queries
+            $stats = [];
             
-            $userStats = [
-                'sent_memos' => Memo::where('sender_id', $userId)
-                                    ->where('status', '!=', 'draft')
-                                    ->where('status', '!=', 'pending_approval')
-                                    ->count(),
-                'received_memos' => Memo::whereIn('recipient_id', $recipientIds)
+            if ($user->hasPermissionTo('faculty.view_all')) {
+                $stats['total_users'] = User::count();
+                $stats['active_users'] = User::where('is_active', true)->count();
+                
+                $stats['total_memos'] = Memo::where('status', '!=', 'draft')->count();
+                $stats['pending_approval'] = Memo::where('status', 'pending_approval')->count();
+                $stats['upcoming_deadlines'] = Memo::where('status', 'sent')
+                                                    ->where('deadline_at', '>', now())
+                                                    ->count();
+                
+            } else if ($user->hasPermissionTo('faculty.view')) {
+                $stats['total_users'] = User::where('role', 'faculty')
+                                            ->where('department', $user->department)
+                                            ->count();
+                $stats['active_users'] = User::where('role', 'faculty')
+                                            ->where('department', $user->department)
+                                            ->where('is_active', true)
+                                            ->count();
+            }
+
+            if ($user->hasPermissionTo('memo.view_all')) {
+                // Already handled above
+            } else if ($user->hasPermissionTo('memo.view')) {
+                // For general view, count memos where they are recipient
+                $stats['total_memos'] = Memo::where('recipient_id', $user->id)
+                                            ->where('status', '!=', 'draft')
+                                            ->count();
+                $stats['pending_memos'] = Memo::where('sender_id', $user->id)
+                                              ->where('status', 'pending_approval')
+                                              ->count();
+            }
+
+            // 2. Recent Activities - With pagination
+            $logsQuery = UserActivityLog::with(['actor:id,first_name,last_name,email,role']);
+            
+            if (!$user->hasPermissionTo('activity.view_all')) {
+                if ($user->hasPermissionTo('activity.view_department')) {
+                    $userIds = User::where('department', $user->department)->pluck('_id');
+                    $logsQuery->whereIn('actor_id', $userIds);
+                } else {
+                    $logsQuery->where('actor_id', $user->id);
+                }
+            }
+            
+            $recentActivities = $logsQuery->latest()->paginate($perPage, ['*'], 'activity_page', $page);
+
+            // 3. User Specific Stats
+            $roleName = (isset($user->role) && is_object($user->role)) ? $user->role->name : ($user->role ?? '');
+            $userId = (string) $user->id;
+            
+            $userStats = [];
+            if ($roleName === 'secretary') {
+                $deptUserIds = User::where('department_id', $user->department_id)->pluck('id')->toArray();
+                $recipientIds = array_merge($deptUserIds, [$userId]);
+                
+                $userStats = [
+                    'sent_memos' => Memo::where('sender_id', $userId)
                                         ->where('status', '!=', 'draft')
                                         ->where('status', '!=', 'pending_approval')
                                         ->count(),
-                'pending_memos' => Memo::where('sender_id', $userId)
-                                      ->where('status', 'pending_approval')
-                                      ->count(),
-
-            ];
-            
-            $stats['pending_memos'] = $userStats['pending_memos'];
-        } else {
-            $userStats = [
-                'sent_memos' => Memo::where('sender_id', $userId)
-                                    ->where('status', '!=', 'draft')
-                                    ->count(),
-                'received_memos' => Memo::where('recipient_id', $userId)
+                    'received_memos' => Memo::whereIn('recipient_id', $recipientIds)
+                                            ->where('status', '!=', 'draft')
+                                            ->where('status', '!=', 'pending_approval')
+                                            ->count(),
+                    'pending_memos' => Memo::where('sender_id', $userId)
+                                          ->where('status', 'pending_approval')
+                                          ->count(),
+                    'acknowledged_memos' => \App\Models\MemoAcknowledgment::whereIn('recipient_id', $recipientIds)
+                                                                           ->where('is_acknowledged', true)
+                                                                           ->count(),
+                ];
+                
+                $stats['pending_memos'] = $userStats['pending_memos'];
+            } else {
+                $userStats = [
+                    'sent_memos' => Memo::where('sender_id', $userId)
                                         ->where('status', '!=', 'draft')
                                         ->count(),
+                    'received_memos' => Memo::where('recipient_id', $userId)
+                                            ->where('status', '!=', 'draft')
+                                            ->count(),
+                    'acknowledged_memos' => \App\Models\MemoAcknowledgment::where('recipient_id', $userId)
+                                                                           ->where('is_acknowledged', true)
+                                                                           ->count(),
 
-                'all_memos' => Memo::where(function($q) use ($userId) {
-                                         $q->where('sender_id', $userId)
-                                           ->orWhere('recipient_id', $userId);
-                                     })
-                                    ->where('status', '!=', 'draft')
-                                    ->count()
+                    'all_memos' => Memo::where(function($q) use ($userId) {
+                                             $q->where('sender_id', $userId)
+                                               ->orWhere('recipient_id', $userId);
+                                         })
+                                        ->where('status', '!=', 'draft')
+                                        ->count()
+                ];
+            }
+
+            return [
+                'stats' => $stats,
+                'user_stats' => $userStats,
+                'user' => $user,
+                'recent_activities' => $recentActivities
             ];
-        }
-
-        return response()->json([
-            'stats' => $stats,
-            'user_stats' => $userStats,
-            'user' => $user,
-            'recent_activities' => $recentActivities
-        ]);
+        });
     }
+
 }

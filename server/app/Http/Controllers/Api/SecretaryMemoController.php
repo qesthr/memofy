@@ -173,31 +173,34 @@ class SecretaryMemoController extends Controller
     public function stats(Request $request)
     {
         $user = $request->user();
+        $cacheKey = "secretary_memo_stats_user_{$user->id}_v1";
 
-        // Normalize user ID for MongoDB comparison
-        $userId = $this->normalizeUserId($user->id);
+        return \Illuminate\Support\Facades\Cache::remember($cacheKey, now()->addSeconds(10), function () use ($user) {
+            // Normalize user ID for MongoDB comparison
+            $userId = $this->normalizeUserId($user->id);
 
-        // Get recipient IDs in department
-        $deptId = $user->department_id;
-        $normDeptId = $this->normalizeUserId($deptId);
+            // Get recipient IDs in department
+            $deptId = $user->department_id;
+            $normDeptId = $this->normalizeUserId($deptId);
 
-        $recipientIds = User::whereIn('department_id', [$deptId, $normDeptId])
-                           ->where('id', '!=', $user->id)
-                           ->pluck('id')
-                           ->toArray();
-        $recipientIds[] = $user->id;
+            $recipientIds = User::whereIn('department_id', [$deptId, $normDeptId])
+                               ->where('id', '!=', $user->id)
+                               ->pluck('id')
+                               ->toArray();
+            $recipientIds[] = $user->id;
 
-        return response()->json([
-            'sent' => Memo::whereIn('sender_id', [$userId, (string)$user->id])
-                          ->where('status', '!=', 'pending_approval')
-                          ->count(),
-            'received' => Memo::whereIn('recipient_id', $recipientIds)
+            return [
+                'sent' => Memo::whereIn('sender_id', [$userId, (string)$user->id])
                               ->where('status', '!=', 'pending_approval')
                               ->count(),
-            'pending' => Memo::whereIn('sender_id', [$userId, (string)$user->id])
-                             ->where('status', 'pending_approval')
-                             ->count(),
-        ]);
+                'received' => Memo::whereIn('recipient_id', $recipientIds)
+                                  ->where('status', '!=', 'pending_approval')
+                                  ->count(),
+                'pending' => Memo::whereIn('sender_id', [$userId, (string)$user->id])
+                                 ->where('status', 'pending_approval')
+                                 ->count(),
+            ];
+        });
     }
 
     /**

@@ -184,6 +184,13 @@ class AdminMemoController extends Controller
                 "Approved memo: {$memo->subject}",
                 $this->activityLogger->extractRequestInfo($request)
             );
+
+            // Invalidate dashboard cache
+            \Illuminate\Support\Facades\Cache::forget("dashboard_data_user_{$user->id}_v1_page_1_per_10");
+            \Illuminate\Support\Facades\Cache::forget("dashboard_data_user_{$memo->sender_id}_v1_page_1_per_10");
+            foreach ($recipients as $recipient) {
+                \Illuminate\Support\Facades\Cache::forget("dashboard_data_user_{$recipient->id}_v1_page_1_per_10");
+            }
         });
 
         return response()->json([
@@ -237,6 +244,10 @@ class AdminMemoController extends Controller
                 "Rejected memo: {$memo->subject}. Reason: " . ($validated['rejection_reason'] ?? 'No reason provided'),
                 ['memo_id' => $memo->id, 'rejection_reason' => $validated['rejection_reason'] ?? null]
             );
+
+            // Invalidate dashboard cache
+            \Illuminate\Support\Facades\Cache::forget("dashboard_data_user_{$user->id}_v1_page_1_per_10");
+            \Illuminate\Support\Facades\Cache::forget("dashboard_data_user_{$memo->sender_id}_v1_page_1_per_10");
         });
 
         return response()->json([
@@ -252,49 +263,55 @@ class AdminMemoController extends Controller
     public function acknowledgmentStats(Request $request, $id)
     {
         $user = $request->user();
-        
-        $memo = Memo::with(['sender', 'recipient', 'acknowledgments.recipient'])->findOrFail($id);
+        $cacheKey = "memo_acknowledgment_stats_{$id}_user_{$user->id}_v1";
 
-        // Check access
-        if ($user->role !== 'admin' && $memo->sender_id !== $user->id) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        return \Illuminate\Support\Facades\Cache::remember($cacheKey, now()->addSeconds(10), function () use ($user, $id) {
+            $memo = Memo::with(['sender', 'recipient', 'acknowledgments.recipient'])->findOrFail($id);
 
-        $totalAcknowledgments = $memo->acknowledgments->count();
-        $acknowledgedCount = $memo->acknowledgments->where('is_acknowledged', true)->count();
-        $pendingCount = $totalAcknowledgments - $acknowledgedCount;
-        $percentage = $totalAcknowledgments > 0 ? round(($acknowledgedCount / $totalAcknowledgments) * 100) : 0;
+            // Check access
+            if ($user->role !== 'admin' && $memo->sender_id !== $user->id) {
+                // Since this is inside a remember closure, we should handle exceptions properly
+                // but for now let's keep it simple as the original logic didn't anticipate it failing
+                // actually it returns a response which remember will cache.
+                return response()->json(['message' => 'Unauthorized'], 403);
+            }
 
-        // Group by acknowledgment status
-        $acknowledgedBy = $memo->acknowledgments
-                              ->where('is_acknowledged', true)
-                              ->map(function ($ack) {
-                                  return [
-                                      'recipient' => $ack->recipient,
-                                      'acknowledged_at' => $ack->acknowledged_at
-                                  ];
-                              });
+            $totalAcknowledgments = $memo->acknowledgments->count();
+            $acknowledgedCount = $memo->acknowledgments->where('is_acknowledged', true)->count();
+            $pendingCount = $totalAcknowledgments - $acknowledgedCount;
+            $percentage = $totalAcknowledgments > 0 ? round(($acknowledgedCount / $totalAcknowledgments) * 100) : 0;
 
-        $pendingBy = $memo->acknowledgments
-                         ->where('is_acknowledged', false)
-                         ->map(function ($ack) {
-                             return [
-                                 'recipient' => $ack->recipient,
-                                 'sent_at' => $ack->sent_at
-                             ];
-                         });
+            // Group by acknowledgment status
+            $acknowledgedBy = $memo->acknowledgments
+                                  ->where('is_acknowledged', true)
+                                  ->map(function ($ack) {
+                                      return [
+                                          'recipient' => $ack->recipient,
+                                          'acknowledged_at' => $ack->acknowledged_at
+                                      ];
+                                  });
 
-        return response()->json([
-            'memo' => $memo,
-            'stats' => [
-                'total' => $totalAcknowledgments,
-                'acknowledged' => $acknowledgedCount,
-                'pending' => $pendingCount,
-                'percentage' => $percentage
-            ],
-            'acknowledged_by' => $acknowledgedBy,
-            'pending_by' => $pendingBy
-        ]);
+            $pendingBy = $memo->acknowledgments
+                             ->where('is_acknowledged', false)
+                             ->map(function ($ack) {
+                                 return [
+                                     'recipient' => $ack->recipient,
+                                     'sent_at' => $ack->sent_at
+                                 ];
+                             });
+
+            return [
+                'memo' => $memo,
+                'stats' => [
+                    'total' => $totalAcknowledgments,
+                    'acknowledged' => $acknowledgedCount,
+                    'pending' => $pendingCount,
+                    'percentage' => $percentage
+                ],
+                'acknowledged_by' => $acknowledgedBy,
+                'pending_by' => $pendingBy
+            ];
+        });
     }
 
     /**

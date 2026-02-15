@@ -231,6 +231,12 @@ class MemoController extends Controller
         $action = 'create_memo';
         $this->activityLogger->logUserAction($request->user(), $action, count($memos) . " memos created", $this->activityLogger->extractRequestInfo($request));
 
+        // Invalidate dashboard cache for creator and recipients
+        \Illuminate\Support\Facades\Cache::forget("dashboard_data_user_{$userId}_v1_page_1_per_10");
+        foreach ($userIds as $recipientId) {
+            \Illuminate\Support\Facades\Cache::forget("dashboard_data_user_{$recipientId}_v1_page_1_per_10");
+        }
+
         return response()->json([
             'status' => 'success',
             'message' => count($memos) . ' memo(s) sent successfully',
@@ -435,6 +441,17 @@ class MemoController extends Controller
 
         $this->activityLogger->logUserAction($request->user(), 'update_memo', $memo, $this->activityLogger->extractRequestInfo($request));
 
+        // Invalidate dashboard cache for involved parties
+        \Illuminate\Support\Facades\Cache::forget("dashboard_data_user_{$user->id}_v1_page_1_per_10");
+        if ($memo->recipient_id) {
+            \Illuminate\Support\Facades\Cache::forget("dashboard_data_user_{$memo->recipient_id}_v1_page_1_per_10");
+        }
+        if (!empty($memo->recipient_ids)) {
+            foreach ($memo->recipient_ids as $rId) {
+                \Illuminate\Support\Facades\Cache::forget("dashboard_data_user_{$rId}_v1_page_1_per_10");
+            }
+        }
+
         return response()->json($memo->load('calendarEvents'));
     }
 
@@ -532,6 +549,10 @@ class MemoController extends Controller
         }
 
         $this->activityLogger->logUserAction($user, 'acknowledge_memo', $memo, $this->activityLogger->extractRequestInfo($request));
+
+        // Invalidate dashboard cache for recipient and sender
+        \Illuminate\Support\Facades\Cache::forget("dashboard_data_user_{$user->id}_v1_page_1_per_10");
+        \Illuminate\Support\Facades\Cache::forget("dashboard_data_user_{$memo->sender_id}_v1_page_1_per_10");
 
         return response()->json([
             'message' => 'Memo acknowledged successfully', 
