@@ -1,8 +1,10 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import { Archive, RotateCcw, Search, Filter, FileText, Calendar, Trash2 } from 'lucide-vue-next'
+import { Archive, RotateCcw, Search, Filter, FileText, Calendar, Trash2, Eye } from 'lucide-vue-next'
 import api from '../../services/api'
 import Swal from 'sweetalert2'
+import ComposeMemoModal from '@/components/memos/ComposeMemoModal.vue'
+import MemoDetailModal from '@/components/memos/MemoDetailModal.vue'
 
 const loading = ref(true)
 const searchQuery = ref('')
@@ -18,6 +20,14 @@ const counts = ref({
   events: 0,
   total: 0
 })
+
+// Current user
+const storedUser = JSON.parse(localStorage.getItem('user') || '{}')
+const currentUserId = storedUser?.id || storedUser?._id || null
+
+// Preview states
+const selectedMemo = ref(null)
+const showDetailModal = ref(false)
 
 const filters = [
   { id: 'all', label: 'All Items', icon: Filter, count: null },
@@ -114,6 +124,20 @@ const formatDate = (dateStr) => {
     hour: '2-digit',
     minute: '2-digit'
   })
+}
+
+const viewMemo = (item) => {
+  if (item.type !== 'memo') return
+  
+  // Adapt payload for MemoDetailModal
+  const memoData = { ...item.data }
+  
+  // Ensure basic structure exists
+  if (!memoData.recipient_ids) memoData.recipient_ids = []
+  if (!memoData.acknowledgments) memoData.acknowledgments = []
+  
+  selectedMemo.value = memoData
+  showDetailModal.value = true
 }
 
 const restoreItem = async (item) => {
@@ -257,144 +281,140 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="archive-container p-6">
+  <div class="view-container">
     <!-- Header -->
     <div class="flex items-center justify-between mb-8">
       <div class="flex items-center gap-4">
-        <div class="header-icon-wrapper">
-          <Archive class="text-indigo-600" :size="24" />
+        <div class="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center">
+            <Archive class="text-warning" :size="24" />
         </div>
         <div>
-          <h1 class="text-2xl font-bold text-gray-900 leading-tight">Archive</h1>
-          <p class="text-sm text-gray-500">Manage your deleted memos and calendar events</p>
+          <h1 class="text-2xl font-bold">Archive</h1>
+          <p class="text-sm text-base-content/60">Manage your deleted memos and calendar events</p>
         </div>
       </div>
       
-      <div class="flex items-center gap-2">
-        <div class="stat-badge bg-orange-50 text-orange-700">
+      <div class="flex items-center gap-3">
+        <div class="badge badge-lg badge-warning gap-1">
           <FileText :size="14" />
-          <span>{{ counts.memos }} Memos</span>
+          {{ counts.memos }}
         </div>
-        <div class="stat-badge bg-green-50 text-green-700">
+        <div class="badge badge-lg badge-success gap-1">
           <Calendar :size="14" />
-          <span>{{ counts.events }} Events</span>
+          {{ counts.events }}
         </div>
       </div>
     </div>
 
     <!-- Filters & Search -->
-    <div class="glass-shadow rounded-2xl p-4 mb-6 bg-white/80 backdrop-blur-sm border border-gray-100">
+    <div class="bg-base-100 rounded-xl border border-base-200 p-6 mb-6">
       <div class="flex flex-col md:flex-row gap-4 justify-between items-center">
-        <div class="flex items-center gap-1 bg-gray-50 p-1 rounded-xl">
+        <div class="flex flex-wrap gap-2">
           <button 
             v-for="filter in filters" 
             :key="filter.id"
             @click="activeFilter = filter.id; handleFilterChange()"
-            class="filter-btn"
-            :class="activeFilter === filter.id ? 'active' : ''"
+            class="btn btn-sm gap-2"
+            :class="activeFilter === filter.id ? 'btn-primary text-white' : 'btn-ghost bg-base-200'"
           >
             <component :is="filter.icon" :size="14" />
-            <span>{{ filter.label }}</span>
-            <span v-if="filter.count !== null" class="count-badge">
+            {{ filter.label }}
+            <span v-if="filter.count !== null" class="badge badge-xs">
               {{ filter.count }}
             </span>
           </button>
         </div>
 
         <div class="flex items-center gap-3 w-full md:w-auto">
-          <div class="search-wrapper relative flex-1 md:w-72">
-            <Search :size="16" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <div class="relative flex-1 md:w-64">
+            <Search :size="16" class="absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40" />
             <input 
               v-model="searchQuery"
               @keyup.enter="handleSearch"
               type="text" 
               placeholder="Search archives..." 
-              class="search-input"
+              class="input input-sm input-bordered pl-9 w-full"
             />
-            <button v-if="searchQuery" @click="clearSearch" class="clear-search-btn">
-              <span class="text-lg">×</span>
+            <button v-if="searchQuery" @click="clearSearch" class="absolute right-2 top-1/2 -translate-y-1/2 text-base-content/40 hover:text-base-content">
+              ×
             </button>
           </div>
 
           <button 
             v-if="archivedItems.length > 0"
             @click="restoreAll" 
-            class="action-btn-primary"
+            class="btn btn-success btn-sm gap-2 text-white"
           >
             <RotateCcw :size="16" />
-            <span>Restore All</span>
+            Restore All
           </button>
         </div>
       </div>
     </div>
 
     <!-- Main Content -->
-    <div v-if="loading" class="flex flex-col items-center justify-center py-20 bg-white glass-shadow rounded-2xl border border-gray-100">
-      <div class="loading-spinner mb-4"></div>
-      <p class="text-gray-500 font-medium">Fetching archived items...</p>
+    <div v-if="loading" class="flex flex-col items-center justify-center py-20 bg-base-100 rounded-xl border border-base-200">
+      <span class="loading loading-spinner loading-lg text-primary mb-4"></span>
+      <p class="text-base-content/60 font-medium">Fetching archived items...</p>
     </div>
 
-    <div v-else-if="archivedItems.length === 0" class="empty-state bg-white glass-shadow rounded-2xl border border-gray-100 p-16 text-center">
-      <div class="empty-icon-wrapper mb-6">
-        <Archive :size="48" class="text-gray-200" />
-      </div>
-      <h3 class="text-xl font-semibold text-gray-900 mb-2">Clean Dashboard!</h3>
-      <p class="text-gray-500 max-w-sm mx-auto">You don't have any archived items at the moment. Deleted memos and events will appear here.</p>
+    <div v-else-if="archivedItems.length === 0" class="bg-base-100 rounded-xl border border-base-200 p-16 text-center">
+      <Archive :size="48" class="text-base-content/20 mx-auto mb-4" />
+      <h3 class="text-xl font-semibold mb-2">Clean Dashboard!</h3>
+      <p class="text-base-content/50 max-w-sm mx-auto text-sm">You don't have any archived items at the moment.</p>
     </div>
 
-    <div v-else class="table-card glass-shadow bg-white rounded-2xl border border-gray-100 overflow-hidden">
+    <div v-else class="bg-base-100 rounded-xl border border-base-200 overflow-hidden">
       <div class="overflow-x-auto">
-        <table class="w-full text-left">
+        <table class="table w-full">
           <thead>
-            <tr class="bg-gray-50/50 border-b border-gray-100">
-              <th class="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider w-16">Type</th>
-              <th class="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Information</th>
-              <th class="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Details</th>
-              <th class="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Archived Date</th>
-              <th class="px-6 py-4 text-xs font-bold text-gray-500 uppercase tracking-wider text-right">Actions</th>
+            <tr class="bg-base-100 border-b border-base-200 text-base-content/60">
+              <th class="py-4 font-semibold pl-6 w-16">Type</th>
+              <th class="py-4 font-semibold">Information</th>
+              <th class="py-4 font-semibold">Archived Date</th>
+              <th class="py-4 font-semibold pr-6 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-50">
+          <tbody>
             <tr 
               v-for="item in archivedItems" 
               :key="item.id" 
-              class="memo-row transition-all hover:bg-indigo-50/30 group"
+              class="hover:bg-slate-50/50 border-b border-base-100 last:border-0"
             >
-              <td class="px-6 py-5">
-                <div class="type-icon-box" :class="getTypeColor(item.type)">
+              <td class="py-4 pl-6">
+                <div class="w-8 h-8 rounded-lg flex items-center justify-center" :class="getTypeColor(item.type)">
                   <component :is="getTypeIcon(item.type)" :size="16" />
                 </div>
               </td>
-              <td class="px-6 py-5">
-                <div class="font-semibold text-gray-900 group-hover:text-indigo-600 transition-colors">{{ item.title }}</div>
-                <div class="text-xs text-gray-400 mt-0.5 flex items-center gap-1.5 font-medium">
-                   <span>{{ item.subtitle }}</span>
-                </div>
+              <td class="py-4">
+                <div class="font-semibold">{{ item.title }}</div>
+                <div class="text-xs text-base-content/50">{{ item.subtitle }}</div>
+                <div v-if="item.description" class="text-[10px] text-base-content/40 mt-1 italic line-clamp-1">{{ item.description }}</div>
               </td>
-              <td class="px-6 py-5">
-                <span class="text-sm text-gray-600 font-medium">{{ item.description }}</span>
-                <div class="mt-1">
-                   <span class="badge-mini" :class="item.type === 'memo' ? 'badge-memo' : 'badge-event'">
-                     {{ getTypeLabel(item.type) }}
-                   </span>
-                </div>
+              <td class="py-4 text-sm text-base-content/60 font-mono">
+                {{ formatDate(item.deleted_at) }}
               </td>
-              <td class="px-6 py-5">
-                <div class="text-sm text-gray-500 font-medium">{{ formatDate(item.deleted_at) }}</div>
-              </td>
-              <td class="px-6 py-5">
-                <div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <td class="py-4 pr-6">
+                <div class="flex items-center justify-end gap-2">
+                  <button 
+                    v-if="item.type === 'memo'"
+                    @click="viewMemo(item)"
+                    class="btn btn-ghost btn-sm btn-square text-primary bg-primary/10 hover:bg-primary/20"
+                    title="View Content"
+                  >
+                    <Eye :size="16" />
+                  </button>
                   <button 
                     @click="restoreItem(item)"
-                    class="btn-icon text-green-600 bg-green-50 hover:bg-green-100"
+                    class="btn btn-ghost btn-sm btn-square text-success bg-success/10 hover:bg-success/20"
                     title="Restore"
                   >
                     <RotateCcw :size="16" />
                   </button>
                   <button 
                     @click="permanentlyDelete(item)"
-                    class="btn-icon text-red-600 bg-red-50 hover:bg-red-100"
-                    title="Delete Forever"
+                    class="btn btn-ghost btn-sm btn-square text-error bg-error/10 hover:bg-error/20"
+                    title="Permanently Delete"
                   >
                     <Trash2 :size="16" />
                   </button>
@@ -406,32 +426,29 @@ onMounted(() => {
       </div>
 
       <!-- Pagination -->
-      <div v-if="pagination.last_page > 1" class="px-6 py-4 bg-gray-50/50 border-t border-gray-100 flex items-center justify-between">
-        <span class="text-xs font-medium text-gray-500">
-          Showing <span class="text-gray-900">{{ archivedItems.length }}</span> of <span class="text-gray-900">{{ pagination.total }}</span> entries
+      <div v-if="pagination.last_page > 1" class="p-4 border-t border-base-200 flex items-center justify-between">
+        <span class="text-xs text-base-content/60">
+            Page {{ pagination.current_page }} of {{ pagination.last_page }} ({{ pagination.total }} total)
         </span>
-        <div class="flex items-center gap-1">
+        <div class="join">
           <button 
             @click="changePage(pagination.current_page - 1)" 
-            class="pagination-btn" 
+            class="join-item btn btn-xs btn-ghost" 
             :disabled="pagination.current_page === 1"
           >
             Previous
           </button>
-          <div class="flex gap-1 mx-2">
-            <button 
-              v-for="page in pagination.last_page" 
-              :key="page"
-              @click="changePage(page)"
-              class="pagination-num-btn"
-              :class="pagination.current_page === page ? 'active' : ''"
-            >
-              {{ page }}
-            </button>
-          </div>
+          <button 
+            v-for="page in pagination.last_page" 
+            :key="page"
+            @click="changePage(page)"
+            :class="['join-item btn btn-xs', pagination.current_page === page ? 'btn-active' : 'btn-ghost']"
+          >
+            {{ page }}
+          </button>
           <button 
             @click="changePage(pagination.current_page + 1)" 
-            class="pagination-btn" 
+            class="join-item btn btn-xs btn-ghost" 
             :disabled="pagination.current_page === pagination.last_page"
           >
             Next
@@ -439,91 +456,23 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- Memo Detail Modal -->
+    <MemoDetailModal
+      v-if="showDetailModal && selectedMemo"
+      :memo="selectedMemo"
+      :is-open="showDetailModal"
+      :current-user-id="currentUserId"
+      user-role="secretary"
+      @close="showDetailModal = false"
+    />
   </div>
 </template>
 
 <style scoped>
 @reference "../../style.css";
 
-.archive-container {
-  min-height: 100vh;
-  background-color: transparent;
+.view-container {
+  @apply p-0;
 }
-
-.header-icon-wrapper {
-  @apply w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center border border-indigo-100 shadow-sm shadow-indigo-100/50;
-}
-
-.glass-shadow {
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-}
-
-.filter-btn {
-  @apply flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200;
-  color: var(--color-memo-text-muted);
-}
-
-.filter-btn:hover {
-  @apply bg-white text-indigo-600;
-}
-
-.filter-btn.active {
-  @apply bg-white text-indigo-600 shadow-sm border border-gray-100;
-}
-
-.count-badge {
-  @apply text-[10px] font-bold bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded-full min-w-[20px] text-center;
-}
-
-.search-input {
-  @apply w-full bg-gray-50 border border-gray-200 rounded-xl py-2 pl-10 pr-10 text-sm font-medium transition-all;
-  @apply focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500;
-}
-
-.clear-search-btn {
-  @apply absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600;
-}
-
-.action-btn-primary {
-  @apply flex items-center gap-2 bg-indigo-600 text-white px-5 py-2 rounded-xl text-sm font-bold shadow-md shadow-indigo-200/50 hover:bg-indigo-700 hover:-translate-y-0.5 active:translate-y-0 transition-all;
-}
-
-.stat-badge {
-  @apply flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold border border-current/10;
-}
-
-.loading-spinner {
-  @apply w-10 h-10 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin;
-}
-
-.empty-icon-wrapper {
-  @apply w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto border border-gray-100;
-}
-
-.type-icon-box {
-  @apply w-9 h-9 rounded-xl flex items-center justify-center shadow-sm;
-}
-
-.btn-icon {
-  @apply w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:scale-110 active:scale-95;
-}
-
-.pagination-btn {
-  @apply px-4 py-1.5 text-xs font-bold rounded-lg transition-all border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed;
-}
-
-.pagination-num-btn {
-  @apply w-8 h-8 flex items-center justify-center text-xs font-bold rounded-lg transition-all text-gray-500 hover:bg-gray-100;
-}
-
-.pagination-num-btn.active {
-  @apply bg-indigo-600 text-white shadow-md shadow-indigo-100;
-}
-
-.badge-mini {
-  @apply text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md;
-}
-
-.badge-memo { @apply bg-orange-50 text-orange-600; }
-.badge-event { @apply bg-green-50 text-green-600; }
 </style>

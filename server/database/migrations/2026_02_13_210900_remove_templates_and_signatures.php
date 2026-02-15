@@ -20,7 +20,7 @@ return new class extends Migration
         Schema::connection('mongodb')->dropIfExists('user_signatures');
 
         // Unset fields in memos collection
-        $connection->collection('memos')->updateMany(
+        $connection->getCollection('memos')->updateMany(
             [],
             ['$unset' => [
                 'signature_id' => '',

@@ -441,11 +441,21 @@ class MemoController extends Controller
             return response()->json(['message' => 'Unauthorized action.'], 403);
         }
 
+        // Load relationships to ensure payload is rich with data for preview
+        $memo->load(['sender', 'acknowledgments.recipient', 'departmentModel']);
+        
         // Ownership or Admin or Recipient
-        if ($createdById != $userId && $recipientId != $userId && $user->role !== 'admin') {
-            return response()->json(['message' => 'Unauthorized to delete this memo.'], 403);
-        }
-
+        \App\Models\Archive::create([
+            'item_id' => (string) $memo->id,
+            'item_type' => 'memo',
+            'archived_by' => (string) $user->id,
+            'archived_at' => now(),
+            'sender_id' => (string) $memo->sender_id,
+            'recipient_id' => (string)$memo->recipient_id,
+            'created_by' => (string) $memo->created_by,
+            'payload' => $memo->toArray()
+        ]);
+        
         $memo->delete();
         
         $this->activityLogger->logUserAction($user, 'delete_memo', "Deleted memo {$id}", $this->activityLogger->extractRequestInfo($request));

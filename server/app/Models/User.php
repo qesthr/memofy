@@ -43,7 +43,9 @@ class User extends Authenticatable
         'reset_code_expires_at',
         'role_id',
         'permission_ids',
-        'bio'
+        'bio',
+        'archived_at',
+        'archived_by'
     ];
 
     /**
@@ -75,6 +77,7 @@ class User extends Authenticatable
         'password' => 'hashed',
         'department_id' => 'string',
         'reset_code_expires_at' => 'datetime',
+        'archived_at' => 'datetime'
     ];
 
     /**
@@ -83,6 +86,15 @@ class User extends Authenticatable
     public function getFullNameAttribute()
     {
         return "{$this->first_name} {$this->last_name}";
+    }
+
+    /**
+     * Check if the user has an administrative role.
+     */
+    public function isAdmin()
+    {
+        $role = strtolower($this->role ?? '');
+        return in_array($role, ['admin', 'superadmin', 'super_admin']);
     }
 
     public function assignedRole()

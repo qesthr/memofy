@@ -34,7 +34,9 @@ class Memo extends Model
         'rejected_by',
         'rejected_at',
         'rejection_reason',
-
+        
+        'archived_at',
+        'archived_by',
     ];
 
     protected $casts = [
@@ -48,6 +50,7 @@ class Memo extends Model
         'all_day_event' => 'boolean',
         'approved_at' => 'datetime',
         'rejected_at' => 'datetime',
+        'archived_at' => 'datetime',
     ];
 
     // Relationships

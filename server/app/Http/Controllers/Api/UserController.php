@@ -300,7 +300,32 @@ class UserController extends Controller
             }
         }
 
-        $user->is_active = !$user->is_active;
+        if ($user->is_active) {
+            $user->is_active = false;
+            $user->archived_at = now();
+            $user->archived_by = (string) $currentUser->id;
+            
+            // Centralized Archive
+            \App\Models\Archive::create([
+                'item_id' => (string) $user->id,
+                'item_type' => 'user',
+                'archived_by' => (string) $currentUser->id,
+                'archived_at' => now(),
+                'role' => (string) $user->role,
+                'department' => (string) $user->department,
+                'department_id' => (string) $user->department_id,
+                'payload' => $user->toArray()
+            ]);
+        } else {
+            $user->is_active = true;
+            $user->archived_at = null;
+            $user->archived_by = null;
+            
+            // Remove from centralized Archive if exists
+            \App\Models\Archive::where('item_id', (string)$user->id)
+                ->where('item_type', 'user')
+                ->delete();
+        }
         $user->save();
 
         $action = $user->is_active ? 'activate_user' : 'deactivate_user';
@@ -508,7 +533,11 @@ class UserController extends Controller
             return response()->json(['message' => 'No archived users to restore'], 200);
         }
         
-        User::where('is_active', false)->update(['is_active' => true]);
+        User::where('is_active', false)->update([
+            'is_active' => true,
+            'archived_at' => null,
+            'archived_by' => null
+        ]);
         
         $this->activityLogger->logUserAction(
             $request->user(), 

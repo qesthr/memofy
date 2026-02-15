@@ -345,23 +345,35 @@ class CalendarController extends Controller
      */
     public function destroy(Request $request, CalendarEvent $event)
     {
-        if ($event->created_by !== $request->user()->id) {
+        if ($event->created_by !== $request->user()->id && $request->user()->role !== 'admin') {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $this->activityLogger->logUserAction($request->user(), 'delete_calendar_event', $event, $this->activityLogger->extractRequestInfo($request));
+        return DB::transaction(function () use ($event, $request) {
+            // Set archive metadata in centralized archives collection
+            \App\Models\Archive::create([
+                'item_id' => (string) $event->id,
+                'item_type' => 'event',
+                'archived_by' => (string) $request->user()->id,
+                'archived_at' => now(),
+                'created_by' => (string) $event->created_by,
+                'payload' => $event->toArray()
+            ]);
 
-        // Sync to Google (Delete)
-        try {
-            $googleController = new GoogleCalendarController();
-            $googleController->syncEventToParticipants($event, 'delete');
-        } catch (\Exception $e) {
-            \Log::error("Immediate Google Sync Error (Delete): " . $e->getMessage());
-        }
+            // Sync to Google
+            try {
+                $googleController = new GoogleCalendarController();
+                $googleController->syncEventToParticipants($event, 'delete');
+            } catch (\Exception $e) {
+                \Log::error("Immediate Google Sync Error (Delete): " . $e->getMessage());
+            }
 
-        $event->delete();
+            $this->activityLogger->logUserAction($request->user(), 'delete_calendar_event', $event, $this->activityLogger->extractRequestInfo($request));
+            
+            $event->delete();
 
-        return response()->json(['message' => 'Event deleted successfully']);
+            return response()->json(['message' => 'Event archived successfully']);
+        });
     }
 
     /**

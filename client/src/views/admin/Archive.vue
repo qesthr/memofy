@@ -1,6 +1,8 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import { Archive, RotateCcw, Search, Filter, FileText, Users, Calendar, Trash2 } from 'lucide-vue-next'
+import ComposeMemoModal from '@/components/memos/ComposeMemoModal.vue'
+import MemoDetailModal from '@/components/memos/MemoDetailModal.vue'
+import { Archive, RotateCcw, Search, Filter, FileText, Users, Calendar, Trash2, Eye } from 'lucide-vue-next'
 import api from '../../services/api'
 import Swal from 'sweetalert2'
 
@@ -19,6 +21,14 @@ const counts = ref({
   events: 0,
   total: 0
 })
+
+// Current user
+const storedUser = JSON.parse(localStorage.getItem('user') || '{}')
+const currentUserId = storedUser?.id || storedUser?._id || null
+
+// Preview states
+const selectedMemo = ref(null)
+const showDetailModal = ref(false)
 
 const filters = [
   { id: 'all', label: 'All Items', icon: Filter, count: null },
@@ -121,6 +131,20 @@ const formatDate = (dateStr) => {
     hour: '2-digit',
     minute: '2-digit'
   })
+}
+
+const viewMemo = (item) => {
+  if (item.type !== 'memo') return
+  
+  // Adapt payload for MemoDetailModal
+  const memoData = { ...item.data }
+  
+  // Ensure basic structure exists
+  if (!memoData.recipient_ids) memoData.recipient_ids = []
+  if (!memoData.acknowledgments) memoData.acknowledgments = []
+  
+  selectedMemo.value = memoData
+  showDetailModal.value = true
 }
 
 const restoreItem = async (item) => {
@@ -363,9 +387,7 @@ onMounted(() => {
           <thead>
             <tr class="bg-base-100 border-b border-base-200 text-base-content/60">
               <th class="py-4 font-semibold pl-6 w-16">Type</th>
-              <th class="py-4 font-semibold">Title</th>
-              <th class="py-4 font-semibold">Details</th>
-              <th class="py-4 font-semibold">Description</th>
+              <th class="py-4 font-semibold">Information</th>
               <th class="py-4 font-semibold">Archived Date</th>
               <th class="py-4 font-semibold pr-6 text-right">Actions</th>
             </tr>
@@ -384,18 +406,21 @@ onMounted(() => {
               <td class="py-4">
                 <div class="font-semibold">{{ item.title }}</div>
                 <div class="text-xs text-base-content/50">{{ item.subtitle }}</div>
-              </td>
-              <td class="py-4 text-sm text-base-content/70">
-                {{ item.description }}
-              </td>
-              <td class="py-4 text-sm text-base-content/50">
-                {{ item.status }}
+                <div v-if="item.description" class="text-[10px] text-base-content/40 mt-1 italic line-clamp-1">{{ item.description }}</div>
               </td>
               <td class="py-4 text-sm text-base-content/60 font-mono">
                 {{ formatDate(item.deleted_at) }}
               </td>
               <td class="py-4 pr-6">
                 <div class="flex items-center justify-end gap-2">
+                  <button 
+                    v-if="item.type === 'memo'"
+                    @click="viewMemo(item)"
+                    class="btn btn-ghost btn-sm btn-square text-primary bg-primary/10 hover:bg-primary/20"
+                    title="View Content"
+                  >
+                    <Eye :size="16" />
+                  </button>
                   <button 
                     @click="restoreItem(item)"
                     class="btn btn-ghost btn-sm btn-square text-success bg-success/10 hover:bg-success/20"
@@ -447,6 +472,16 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- Memo Detail Modal -->
+    <MemoDetailModal
+      v-if="showDetailModal && selectedMemo"
+      :memo="selectedMemo"
+      :is-open="showDetailModal"
+      :current-user-id="currentUserId"
+      user-role="admin"
+      @close="showDetailModal = false"
+    />
   </div>
 </template>
 
