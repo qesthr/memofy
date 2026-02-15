@@ -60,6 +60,36 @@ const priorityOrder = {
 }
 
 // Computed sorted and filtered memos
+// Computed empty state messages based on scope
+const emptyState = computed(() => {
+  const scope = props.initialScope?.toLowerCase()
+  if (scope === 'received') {
+    return {
+      title: 'No Received Memos',
+      desc: 'You haven\'t received any memos yet. Memos sent to you or your department will appear here.'
+    }
+  } else if (scope === 'pending') {
+    return {
+      title: 'No Pending Approvals',
+      desc: 'Great! You have no memos waiting for approval. New requests will appear here when submitted.'
+    }
+  } else if (scope === 'sent') {
+    return {
+      title: 'No Sent Memos',
+      desc: 'You haven\'t sent any memos yet. Start by composing a new memo to see it here.'
+    }
+  } else if (scope === 'drafts') {
+    return {
+      title: 'No Drafts',
+      desc: 'You don\'t have any saved drafts. Any memo you save instead of sending will appear here.'
+    }
+  }
+  return {
+    title: 'No memos yet',
+    desc: 'Start by composing a new memo. They will appear here once sent or received.'
+  }
+})
+
 const sortedMemos = computed(() => {
   let filtered = [...memos.value]
   
@@ -364,8 +394,8 @@ defineExpose({
         <div class="inbox-empty-icon">
           <Inbox :size="48" :stroke-width="1" />
         </div>
-        <h3 class="inbox-empty-title">No memos yet</h3>
-        <p class="inbox-empty-text">Start by composing a new memo.<br/>They will appear here once sent or received.</p>
+        <h3 class="inbox-empty-title">{{ emptyState.title }}</h3>
+        <p class="inbox-empty-text">{{ emptyState.desc }}</p>
       </div>
       
       <!-- Memo Rows -->

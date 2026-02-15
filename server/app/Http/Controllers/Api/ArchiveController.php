@@ -38,7 +38,7 @@ class ArchiveController extends Controller
 
         // For 'all' type, use cursor-based pagination with LIMIT to avoid loading all records
         // This is the critical fix for the 10-20 second loading issue
-        return $this->getPaginatedAll($request, $search, $perPage, $cursor);
+        return $this->getPaginatedAll($request, $search, $perPage, $cursor, $user);
     }
 
     /**
@@ -48,15 +48,18 @@ class ArchiveController extends Controller
     {
         $items = collect();
         
-        // Get counts for all types
+        $isAdmin = $request->user()->isAdmin();
+        $user = $request->user();
+        
+        // Get counts with filters
         $counts = [
-            'users' => User::where('is_active', false)->whereNotNull('password')->count(),
-            'memos' => Memo::onlyTrashed()->count(),
-            'events' => CalendarEvent::onlyTrashed()->count(),
+            'users' => $isAdmin ? User::where('is_active', false)->whereNotNull('password')->count() : 0,
+            'memos' => $this->getArchivedMemosQuery($search, $user)->count(),
+            'events' => $this->getArchivedEventsQuery($search, $user)->count(),
         ];
         $counts['total'] = $counts['users'] + $counts['memos'] + $counts['events'];
 
-        if ($type === 'users') {
+        if ($type === 'users' && $isAdmin) {
             $paginated = $this->getArchivedUsersQuery($search)
                 ->orderBy('updated_at', 'desc')
                 ->paginate($perPage, ['*'], 'page', $page);
@@ -64,14 +67,14 @@ class ArchiveController extends Controller
                 return $this->formatUserArchiveItem($user);
             });
         } elseif ($type === 'memos') {
-            $paginated = $this->getArchivedMemosQuery($search)
+            $paginated = $this->getArchivedMemosQuery($search, $user)
                 ->orderBy('deleted_at', 'desc')
                 ->paginate($perPage, ['*'], 'page', $page);
             $items = collect($paginated->items())->map(function ($memo) {
                 return $this->formatMemoArchiveItem($memo);
             });
         } elseif ($type === 'events') {
-            $paginated = $this->getArchivedEventsQuery($search)
+            $paginated = $this->getArchivedEventsQuery($search, $user)
                 ->orderBy('deleted_at', 'desc')
                 ->paginate($perPage, ['*'], 'page', $page);
             $items = collect($paginated->items())->map(function ($event) {
@@ -95,23 +98,23 @@ class ArchiveController extends Controller
      * Get cursor-paginated results for 'all' type.
      * Uses LIMIT/OFFSET with cursor for efficient pagination.
      */
-    protected function getPaginatedAll(Request $request, string $search, int $perPage, ?string $cursor)
+    protected function getPaginatedAll(Request $request, string $search, int $perPage, ?string $cursor, $user = null)
     {
-        $user = $request->user();
+        if (!$user) $user = $request->user();
+        $isAdmin = $user->isAdmin();
         $page = (int) $request->get('page', 1);
         $offset = ($page - 1) * $perPage;
         
-        // Get counts separately (these are fast with indexes)
+        // Get counts with filters
         $counts = [
-            'users' => User::where('is_active', false)->whereNotNull('password')->count(),
-            'memos' => Memo::onlyTrashed()->count(),
-            'events' => CalendarEvent::onlyTrashed()->count(),
+            'users' => $isAdmin ? User::where('is_active', false)->whereNotNull('password')->count() : 0,
+            'memos' => $this->getArchivedMemosQuery($search, $user)->count(),
+            'events' => $this->getArchivedEventsQuery($search, $user)->count(),
         ];
         $counts['total'] = $counts['users'] + $counts['memos'] + $counts['events'];
         
-        // Get mixed results with limit and offset - THIS IS THE KEY FIX
-        // Instead of fetching ALL records and then paginating, we fetch only what we need
-        $allItems = $this->getCombinedArchivedItems($search, $perPage, $offset);
+        // Get mixed results with limit and offset
+        $allItems = $this->getCombinedArchivedItems($search, $perPage, $offset, $user);
         
         return response()->json([
             'data' => $allItems['items'],
@@ -130,23 +133,32 @@ class ArchiveController extends Controller
      * Get combined archived items with pagination - optimized version.
      * Uses UNION with LIMIT for efficient cross-collection pagination.
      */
-    protected function getCombinedArchivedItems(string $search, int $limit, int $offset)
+    protected function getCombinedArchivedItems(string $search, int $limit, int $offset, $user = null)
     {
+        if (!$user) $user = request()->user();
+        $isAdmin = $user->isAdmin();
         $items = collect();
         
-        // For each type, fetch only the needed chunk with eager loading to prevent N+1
-        // Note: Users use 'updated_at' since they don't have 'deleted_at' (archived via is_active flag)
-        $userQuery = $this->getArchivedUsersQuery($search)
-            ->orderBy('updated_at', 'desc')
-            ->skip($offset)
-            ->take($limit);
+        // Users (Admins only)
+        if ($isAdmin) {
+            $userQuery = $this->getArchivedUsersQuery($search)
+                ->orderBy('updated_at', 'desc')
+                ->skip($offset)
+                ->take($limit);
             
-        $memoQuery = $this->getArchivedMemosQuery($search)
+            $users = $userQuery->get()->map(function ($user) {
+                return $this->formatUserArchiveItem($user);
+            });
+        } else {
+            $users = collect();
+        }
+            
+        $memoQuery = $this->getArchivedMemosQuery($search, $user)
             ->orderBy('deleted_at', 'desc')
             ->skip($offset)
             ->take($limit);
             
-        $eventQuery = $this->getArchivedEventsQuery($search)
+        $eventQuery = $this->getArchivedEventsQuery($search, $user)
             ->orderBy('deleted_at', 'desc')
             ->skip($offset)
             ->take($limit);
@@ -189,9 +201,25 @@ class ArchiveController extends Controller
         return $query;
     }
 
-    protected function getArchivedMemosQuery(string $search)
+    protected function getArchivedMemosQuery(string $search, $user = null)
     {
+        if (!$user) $user = request()->user();
         $query = Memo::onlyTrashed();
+        
+        if (!$user->isAdmin()) {
+            $userId = (string) $user->id;
+            $normalizeId = method_exists($this, 'normalizeUserId') ? $this->normalizeUserId($user->id) : $userId;
+            
+            $targetIds = array_unique([$userId, $normalizeId]);
+            
+            $query->where(function($q) use ($targetIds) {
+                $q->whereIn('sender_id', $targetIds)
+                  ->orWhereIn('created_by', $targetIds)
+                  ->orWhereIn('recipient_id', $targetIds);
+                // Also check acknowledgment records (received memos)
+                // Note: This is simplified, real logic might need a more complex join or subquery
+            });
+        }
         
         if ($search) {
             $query->where(function ($q) use ($search) {
@@ -203,9 +231,18 @@ class ArchiveController extends Controller
         return $query;
     }
 
-    protected function getArchivedEventsQuery(string $search)
+    protected function getArchivedEventsQuery(string $search, $user = null)
     {
+        if (!$user) $user = request()->user();
         $query = CalendarEvent::onlyTrashed();
+        
+        if (!$user->isAdmin()) {
+            $userId = (string) $user->id;
+            $normalizeId = method_exists($this, 'normalizeUserId') ? $this->normalizeUserId($user->id) : $userId;
+            $targetIds = array_unique([$userId, $normalizeId]);
+            
+            $query->whereIn('created_by', $targetIds);
+        }
         
         if ($search) {
             $query->where(function ($q) use ($search) {
@@ -215,6 +252,20 @@ class ArchiveController extends Controller
         }
         
         return $query;
+    }
+    
+    /**
+     * Convert user ID to consistent format for MongoDB comparison
+     */
+    private function normalizeUserId($userId)
+    {
+        if (!$userId) return null;
+        if ($userId instanceof \MongoDB\BSON\ObjectId) return $userId;
+        try {
+            return new \MongoDB\BSON\ObjectId((string)$userId);
+        } catch (\Exception $e) {
+            return (string)$userId;
+        }
     }
 
     /**
