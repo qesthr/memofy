@@ -160,8 +160,8 @@ class AdminMemoController extends Controller
                 }
             }
 
-            // Create or Update calendar event if scheduled
-            if ($memo->scheduled_send_at) {
+            // Create or Update calendar event if scheduled or has a deadline
+            if ($memo->scheduled_send_at || $memo->deadline_at) {
                 $this->createCalendarEventForMemo($memo, $user->id);
             }
 
@@ -357,15 +357,15 @@ class AdminMemoController extends Controller
         $calendarEvent = CalendarEvent::updateOrCreate(
             ['memo_id' => $memo->id],
             [
-                'title' => $memo->subject,
+                'title' => ($memo->deadline_at ? "[Deadline] " : "[Scheduled] ") . $memo->subject,
                 'description' => $memo->message,
-                'start' => $memo->scheduled_send_at,
-                'end' => $memo->schedule_end_at ?? $memo->scheduled_send_at,
+                'start' => $memo->deadline_at ?? $memo->scheduled_send_at,
+                'end' => $memo->schedule_end_at ?? ($memo->deadline_at ?? $memo->scheduled_send_at),
                 'all_day' => $memo->all_day_event ?? false,
-                'category' => $this->mapPriorityToCategory($memo->priority),
+                'category' => $memo->deadline_at ? 'deadline' : $this->mapPriorityToCategory($memo->priority),
                 'created_by' => $userId,
-                'status' => $memo->scheduled_send_at && strtotime($memo->scheduled_send_at) > time() ? 'scheduled' : 'sent',
-                'source' => 'MEMO'
+                'status' => $memo->deadline_at ? 'pending' : ($memo->scheduled_send_at && strtotime($memo->scheduled_send_at) > time() ? 'scheduled' : 'sent'),
+                'source' => $memo->deadline_at ? 'DEADLINE' : 'MEMO'
             ]
         );
 

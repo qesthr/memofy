@@ -56,7 +56,10 @@ class DashboardController extends Controller
             $stats['active_users'] = User::where('is_active', true)->count();
             
             $stats['total_memos'] = Memo::where('status', '!=', 'draft')->count();
-            $stats['pending_memos'] = Memo::where('status', 'pending_approval')->count();
+            $stats['pending_approval'] = Memo::where('status', 'pending_approval')->count();
+            $stats['upcoming_deadlines'] = Memo::where('status', 'sent')
+                                                ->where('deadline_at', '>', now())
+                                                ->count();
             
         } else if ($user->hasPermissionTo('faculty.view')) {
             $stats['total_users'] = User::where('role', 'faculty')

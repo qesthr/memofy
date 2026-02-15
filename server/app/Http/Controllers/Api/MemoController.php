@@ -159,6 +159,7 @@ class MemoController extends Controller
 
             'scheduled_send_at' => 'nullable|date',
             'schedule_end_at' => 'nullable|date',
+            'deadline_at' => 'nullable|date',
             'all_day_event' => 'nullable|boolean',
             'attachment_path' => 'nullable|string'
         ]);
@@ -198,11 +199,14 @@ class MemoController extends Controller
             'status' => 'sent',
             'version' => 1,
             'scheduled_send_at' => $validated['scheduled_send_at'] ?? null,
+            'schedule_end_at' => $validated['schedule_end_at'] ?? null,
+            'deadline_at' => $validated['deadline_at'] ?? null,
+            'all_day_event' => $validated['all_day_event'] ?? false,
             'attachment_path' => $validated['attachment_path'] ?? null
         ]);
 
-        // Create calendar event if memo is scheduled
-        if (!empty($validated['scheduled_send_at'])) {
+        // Create calendar event if memo is scheduled or has a deadline
+        if (!empty($validated['scheduled_send_at']) || !empty($validated['deadline_at'])) {
             $this->createCalendarEventForMemo($memo, $validated, $request->user()->id);
         }
 
@@ -239,18 +243,21 @@ class MemoController extends Controller
      */
     private function createCalendarEventForMemo($memo, $scheduleData, $userId)
     {
+        $isDeadline = !empty($scheduleData['deadline_at']);
+        $eventDate = $isDeadline ? $scheduleData['deadline_at'] : $scheduleData['scheduled_send_at'];
+
         $calendarEvent = \App\Models\CalendarEvent::updateOrCreate(
             ['memo_id' => $memo->id],
             [
-                'title' => $memo->subject,
+                'title' => ($isDeadline ? "[Deadline] " : "[Scheduled] ") . $memo->subject,
                 'description' => $memo->message,
-                'start' => $scheduleData['scheduled_send_at'],
-                'end' => $scheduleData['schedule_end_at'] ?? $scheduleData['scheduled_send_at'],
+                'start' => $eventDate,
+                'end' => $scheduleData['schedule_end_at'] ?? ($isDeadline ? $scheduleData['deadline_at'] : $scheduleData['scheduled_send_at']),
                 'all_day' => $scheduleData['all_day_event'] ?? false,
-                'category' => $this->mapPriorityToCategory($memo->priority),
+                'category' => $isDeadline ? 'deadline' : $this->mapPriorityToCategory($memo->priority),
                 'created_by' => $userId,
-                'status' => 'scheduled',
-                'source' => 'MEMO'
+                'status' => $isDeadline ? 'pending' : 'scheduled',
+                'source' => $isDeadline ? 'DEADLINE' : 'MEMO'
             ]
         );
 
@@ -385,24 +392,29 @@ class MemoController extends Controller
 
             'scheduled_send_at' => 'nullable|date',
             'schedule_end_at' => 'nullable|date',
+            'deadline_at' => 'nullable|date',
             'all_day_event' => 'nullable|boolean'
         ]);
 
         $memo->update(array_merge($validated, ['version' => $memo->version + 1]));
 
-        // Update or create calendar event if schedule changed
-        if (isset($validated['scheduled_send_at'])) {
+        // Update or create calendar event if schedule or deadline changed
+        if (isset($validated['scheduled_send_at']) || isset($validated['deadline_at'])) {
             $existingEvent = $memo->calendarEvents()->first();
             
             if ($existingEvent) {
+                $isDeadline = isset($validated['deadline_at']) ? !empty($validated['deadline_at']) : !empty($memo->deadline_at);
+                $eventDate = $isDeadline ? ($validated['deadline_at'] ?? $memo->deadline_at) : ($validated['scheduled_send_at'] ?? $memo->scheduled_send_at);
+
                 // Update existing calendar event
                 $existingEvent->update([
-                    'title' => $validated['subject'] ?? $memo->subject,
+                    'title' => ($isDeadline ? "[Deadline] " : "[Scheduled] ") . ($validated['subject'] ?? $memo->subject),
                     'description' => $validated['message'] ?? $memo->message,
-                    'start' => $validated['scheduled_send_at'],
-                    'end' => $validated['schedule_end_at'] ?? $validated['scheduled_send_at'],
+                    'start' => $eventDate,
+                    'end' => $validated['schedule_end_at'] ?? $eventDate,
                     'all_day' => $validated['all_day_event'] ?? $existingEvent->all_day,
-                    'category' => isset($validated['priority']) ? $this->mapPriorityToCategory($validated['priority']) : $existingEvent->category
+                    'category' => $isDeadline ? 'deadline' : (isset($validated['priority']) ? $this->mapPriorityToCategory($validated['priority']) : $existingEvent->category),
+                    'source' => $isDeadline ? 'DEADLINE' : 'MEMO'
                 ]);
             } else {
                 // Create new calendar event

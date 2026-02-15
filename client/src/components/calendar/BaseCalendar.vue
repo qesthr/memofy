@@ -103,7 +103,7 @@ const currentTitle = computed(() => {
         <!-- Add Event Button - Only visible for users with calendar.add_event permission -->
         <button 
           v-if="can('calendar.add_event')" 
-          @click="openEventModal" 
+          @click="openEventModal()" 
           class="btn btn-primary text-white gap-2 w-full rounded-full shadow-md hover:shadow-lg transition-all mb-2"
         >
           <Plus :size="20" />

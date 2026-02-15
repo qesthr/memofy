@@ -350,9 +350,15 @@ const handleSend = async () => {
 
     // Add schedule data if present
     if (scheduleData.value) {
-      payload.scheduled_send_at = `${scheduleData.value.startDate}T${scheduleData.value.startTime}`
-      payload.schedule_end_at = `${scheduleData.value.endDate}T${scheduleData.value.endTime}`
-      payload.all_day_event = scheduleData.value.allDay
+      if (scheduleData.value.startDate && scheduleData.value.startTime) {
+        payload.scheduled_send_at = `${scheduleData.value.startDate}T${scheduleData.value.startTime}`
+        payload.schedule_end_at = `${scheduleData.value.endDate}T${scheduleData.value.endTime}`
+        payload.all_day_event = scheduleData.value.allDay
+      }
+      
+      if (scheduleData.value.deadlineDate) {
+        payload.deadline_at = `${scheduleData.value.deadlineDate}${scheduleData.value.deadlineTime ? 'T' + scheduleData.value.deadlineTime : ''}`
+      }
     }
 
     const rawRole = (user.value?.role && typeof user.value.role === 'object') ? user.value.role.name : user.value?.role

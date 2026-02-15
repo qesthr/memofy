@@ -26,6 +26,7 @@ class Memo extends Model
         'user_id',
         'scheduled_send_at',
         'schedule_end_at',
+        'deadline_at',
         'all_day_event',
 
         // Approval workflow fields
@@ -47,6 +48,7 @@ class Memo extends Model
         'version' => 'integer',
         'scheduled_send_at' => 'datetime',
         'schedule_end_at' => 'datetime',
+        'deadline_at' => 'datetime',
         'all_day_event' => 'boolean',
         'approved_at' => 'datetime',
         'rejected_at' => 'datetime',

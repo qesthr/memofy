@@ -5,7 +5,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useEvents } from '@/composables/useEvents'
 import api from '@/services/api'
 import Swal from 'sweetalert2'
-import { X, Clock, MapPin, AlignLeft, Users, Trash2, CheckCircle, XCircle, Mail } from 'lucide-vue-next'
+import { X, Clock, MapPin, AlignLeft, Users, Trash2, CheckCircle, XCircle, Mail, Search } from 'lucide-vue-next'
 
 const { showEventModal, activeEvent, closeEventModal, selectedDate } = useCalendar()
 const { fetchEvents } = useEvents()
@@ -24,6 +24,9 @@ const form = ref({
   invited_users: []
 })
 
+const userSearch = ref('')
+const showUserSuggestions = ref(false)
+
 
 const isEditMode = computed(() => !!activeEvent.value?.is_editable && !!activeEvent.value?.id)
 const isViewMode = computed(() => !!activeEvent.value && !activeEvent.value.is_editable)
@@ -34,6 +37,27 @@ const isMemoEvent = computed(() => activeEvent.value?.source === 'MEMO' && activ
 const otherUsers = computed(() => {
     return users.value.filter(u => u.id !== currentUser.value?.id)
 })
+
+const filteredUsers = computed(() => {
+  if (!userSearch.value) return otherUsers.value
+  const search = userSearch.value.toLowerCase()
+  return otherUsers.value.filter(u => 
+    `${u.first_name} ${u.last_name}`.toLowerCase().includes(search) ||
+    u.email.toLowerCase().includes(search)
+  )
+})
+
+const handleUserSelect = (u) => {
+    if (!form.value.invited_users.includes(u.id)) {
+        form.value.invited_users.push(u.id)
+    }
+    userSearch.value = ''
+    showUserSuggestions.value = false
+}
+
+const removeInvitedUser = (userId) => {
+    form.value.invited_users = form.value.invited_users.filter(id => id !== userId)
+}
 
 onMounted(async () => {
     // Load users for invitation list
@@ -91,6 +115,7 @@ watch([showEventModal, activeEvent], () => {
         end: toLocalISO(end),
         all_day: false,
         category: 'standard',
+        priority: 'medium', // Added default priority
         description: '',
         invited_users: []
       }
@@ -182,6 +207,14 @@ const respondToInvitation = async (status) => {
         Swal.fire('Error', 'Failed to respond to invitation', 'error')
     }
 }
+
+const viewMemo = () => {
+  if (activeEvent.value?.memo_id) {
+    // Navigate to memo details - assuming a route exists like /memos/:id
+    // If using vue-router
+    window.location.href = `/memos/${activeEvent.value.memo_id}`
+  }
+}
 </script>
 
 <template>
@@ -266,19 +299,60 @@ const respondToInvitation = async (status) => {
            </div>
            <div class="flex-1">
               <label class="text-[10px] font-bold text-base-content/40 uppercase tracking-wider block mb-1">Invite Users</label>
-              <div class="flex flex-wrap gap-2 mb-2">
-                 <div v-for="userId in form.invited_users" :key="userId" class="badge badge-sm badge-outline gap-1 p-3">
-                    {{ users.find(u => u.id === userId)?.first_name }}
-                    <X :size="12" class="cursor-pointer" @click="form.invited_users = form.invited_users.filter(id => id !== userId)" />
+              
+              <!-- Invited Users Badges -->
+              <div class="flex flex-wrap gap-2 mb-3">
+                 <div v-for="userId in form.invited_users" :key="userId" 
+                      class="flex items-center gap-2 bg-primary/10 text-primary py-1 pl-1 pr-2 rounded-full border border-primary/20">
+                    <div class="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center text-[8px] font-bold overflow-hidden">
+                      <img v-if="users.find(u => u.id === userId)?.profile_picture" 
+                           :src="users.find(u => u.id === userId)?.profile_picture" 
+                           class="w-full h-full object-cover" />
+                      <span v-else>{{ users.find(u => u.id === userId)?.first_name?.[0] }}{{ users.find(u => u.id === userId)?.last_name?.[0] }}</span>
+                    </div>
+                    <span class="text-xs font-semibold">{{ users.find(u => u.id === userId)?.first_name }}</span>
+                    <button @click="removeInvitedUser(userId)" class="hover:text-error transition-colors">
+                      <X :size="12" />
+                    </button>
                  </div>
               </div>
-              <select @change="(e) => { if (e.target.value) { form.invited_users.push(Number(e.target.value)); e.target.value = ''; } }"
-                      class="select select-sm select-bordered w-full rounded-md">
-                 <option value="">Search users...</option>
-                 <option v-for="user in otherUsers" :key="user.id" :value="user.id" :disabled="form.invited_users.includes(user.id)">
-                    {{ user.first_name }} {{ user.last_name }} ({{ user.role }})
-                 </option>
-              </select>
+
+              <!-- Searchable Dropdown -->
+              <div class="relative">
+                <div class="relative">
+                  <input 
+                    v-model="userSearch"
+                    @focus="showUserSuggestions = true"
+                    type="text" 
+                    placeholder="Search users to invite..." 
+                    class="input input-sm input-bordered w-full rounded-md focus:outline-none focus:border-primary pr-8"
+                  />
+                  <div class="absolute right-2 top-1/2 -translate-y-1/2 opacity-30">
+                    <Search :size="14" v-if="!userSearch" />
+                    <X :size="14" v-else @click="userSearch = ''" class="cursor-pointer hover:opacity-100" />
+                  </div>
+                </div>
+
+                <div v-if="showUserSuggestions && filteredUsers.length > 0" 
+                     class="absolute top-full left-0 right-0 mt-1 bg-base-100 border border-base-300 rounded-lg shadow-xl z-1100 max-h-48 overflow-y-auto custom-scrollbar">
+                  <div v-for="u in filteredUsers" :key="u.id" 
+                       @click="handleUserSelect(u)"
+                       class="flex items-center gap-3 p-2 hover:bg-base-200 cursor-pointer transition-colors"
+                       :class="{ 'opacity-50 pointer-events-none bg-base-100': form.invited_users.includes(u.id) }">
+                    <div class="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-bold overflow-hidden">
+                      <img v-if="u.profile_picture" :src="u.profile_picture" class="w-full h-full object-cover" />
+                      <span v-else>{{ u.first_name?.[0] }}{{ u.last_name?.[0] }}</span>
+                    </div>
+                    <div class="flex-1 overflow-hidden">
+                      <div class="text-xs font-bold truncate">{{ u.first_name }} {{ u.last_name }}</div>
+                      <div class="text-[10px] opacity-50 truncate uppercase tracking-tighter">{{ u.role }}</div>
+                    </div>
+                    <CheckCircle v-if="form.invited_users.includes(u.id)" :size="14" class="text-success" />
+                  </div>
+                </div>
+                <!-- Backdrop for closing dropdown -->
+                <div v-if="showUserSuggestions" @click="showUserSuggestions = false" class="fixed inset-0 z-[-1]"></div>
+              </div>
            </div>
         </div>
 
@@ -308,14 +382,29 @@ const respondToInvitation = async (status) => {
         <div class="flex gap-2">
           <button @click="closeEventModal" class="btn btn-sm btn-ghost px-6">Cancel</button>
           
+          <!-- View Memo Button for linked memos -->
+          <button v-if="activeEvent?.memo_id" 
+                  @click="viewMemo" 
+                  class="btn btn-sm btn-outline btn-info gap-2 px-6">
+            <Mail :size="18" />
+            View Memo
+          </button>
+
           <!-- View Specific Actions -->
           <template v-if="isViewMode">
-              <button @click="respondToInvitation('declined')" class="btn btn-sm btn-outline btn-error gap-2">
-                <XCircle :size="18" /> Decline
-              </button>
-              <button @click="respondToInvitation('accepted')" class="btn btn-sm btn-primary gap-2">
-                <CheckCircle :size="18" /> Accept
-              </button>
+              <template v-if="activeEvent?.invitation_status === 'accepted' || activeEvent?.invitation_status === 'declined'">
+                  <button @click="deleteEvent" class="btn btn-sm btn-outline btn-error gap-2 px-6">
+                    <Trash2 :size="18" /> Archive
+                  </button>
+              </template>
+              <template v-else>
+                  <button @click="respondToInvitation('declined')" class="btn btn-sm btn-outline btn-error gap-2">
+                    <XCircle :size="18" /> Decline
+                  </button>
+                  <button @click="respondToInvitation('accepted')" class="btn btn-sm btn-primary gap-2 text-white">
+                    <CheckCircle :size="18" /> Accept
+                  </button>
+              </template>
           </template>
 
           <button v-else @click="saveEvent" :disabled="isSaving || !form.title" class="btn btn-sm btn-primary px-8 text-white rounded-md">

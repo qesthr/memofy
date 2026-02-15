@@ -11,6 +11,7 @@ use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 use App\Http\Controllers\Api\GoogleCalendarController;
 use MongoDB\BSON\ObjectId;
 
@@ -39,7 +40,10 @@ class CalendarController extends Controller
         $page = (int) $request->get('page', 1);
         
         // For calendar views, we typically need all events in a date range
-        // But for very large datasets, we should paginate
+        // Convert to Carbon objects for MongoDB type matching
+        $startDate = $start ? \Carbon\Carbon::parse($start)->startOfDay() : null;
+        $endDate = $end ? \Carbon\Carbon::parse($end)->endOfDay() : null;
+
         $offset = ($page - 1) * $perPage;
 
         // Normalize user ID for MongoDB comparison
@@ -53,13 +57,13 @@ class CalendarController extends Controller
                       });
             })
             ->with(['creator', 'participants.user'])
-            ->when($start && $end, function ($query) use ($start, $end) {
-                $query->where(function($q) use ($start, $end) {
-                    $q->whereBetween('start', [$start . ' 00:00:00', $end . ' 23:59:59'])
-                      ->orWhereBetween('end', [$start . ' 00:00:00', $end . ' 23:59:59'])
-                      ->orWhere(function($inner) use ($start, $end) {
-                          $inner->where('start', '<', $start . ' 00:00:00')
-                                ->where('end', '>', $end . ' 23:59:59');
+            ->when($startDate && $endDate, function ($query) use ($startDate, $endDate) {
+                $query->where(function($q) use ($startDate, $endDate) {
+                    $q->whereBetween('start', [$startDate, $endDate])
+                      ->orWhereBetween('end', [$startDate, $endDate])
+                      ->orWhere(function($inner) use ($startDate, $endDate) {
+                          $inner->where('start', '<', $startDate)
+                                ->where('end', '>', $endDate);
                       });
                 });
             });
@@ -71,36 +75,114 @@ class CalendarController extends Controller
         $memofyEvents = $memofyEventsQuery->orderBy('start', 'asc')
             ->skip($offset)
             ->take($perPage)
-            ->get()
-            ->map(function ($event) use ($user) {
-                return $this->formatCalendarEvent($event, $user);
-            });
+            ->get();
 
-        // 2. Get Google Events if connected (no pagination for Google as API handles it)
-        $googleEvents = [];
-        if ($user->google_calendar_token) {
-            try {
-                $googleController = new GoogleCalendarController();
-                $googleRequest = new Request([
-                    'start' => $start,
-                    'end' => $end
-                ]);
-                $googleRequest->setUserResolver(fn() => $user);
-                
-                $response = $googleController->listEvents($googleRequest);
-                $googleEvents = json_decode($response->getContent(), true) ?: [];
-                
-                foreach ($googleEvents as &$ge) {
-                    $ge['source'] = 'GOOGLE';
-                    $ge['is_editable'] = false;
-                }
-            } catch (\Exception $e) {
-                \Log::error("Google Calendar Sync Error: " . $e->getMessage());
+        // 2. Fetch "Discovery" events (Directly from Memos)
+        // These are not CalendarEvent records yet, but should appear on the calendar
+        $discoveryEvents = [];
+        
+        // A. For Admins/Secretaries: Pending Approval Memos
+        if ($user->role === 'admin' || $user->role === 'secretary') {
+            $pendingMemosQuery = \App\Models\Memo::where('status', 'pending_approval');
+            
+            // Filter by date range if provided
+            if ($startDate && $endDate) {
+                // Pending memos are shown based on their creation date
+                $pendingMemosQuery->whereBetween('created_at', [$startDate, $endDate]);
+            }
+
+            // Secretaries only see pending from their department
+            if ($user->role === 'secretary') {
+                $pendingMemosQuery->where('department_id', $user->department_id);
+            }
+
+            $pendingMemos = $pendingMemosQuery->get();
+            foreach ($pendingMemos as $memo) {
+                $discoveryEvents[] = [
+                    'id' => 'discovery-pending-' . $memo->id,
+                    'title' => "[Pending Approval] " . $memo->subject,
+                    'start' => $memo->created_at->format('Y-m-d\TH:i:s'),
+                    'end' => $memo->created_at->addHour()->format('Y-m-d\TH:i:s'),
+                    'allDay' => false,
+                    'color' => $this->getEventColor('pending'), // Or use priority if available
+                    'description' => $memo->message,
+                    'source' => 'DISCOVERY',
+                    'category' => 'pending',
+                    'priority' => $memo->priority ?? 'medium',
+                    'memo_id' => $memo->id,
+                    'is_editable' => false,
+                    'type' => 'memo'
+                ];
             }
         }
 
-        // 3. Merge results
-        $allEvents = array_merge($memofyEvents->toArray(), $googleEvents);
+        // B. For all users: Deadlines (Memos they need to acknowledge)
+        $awaitingAcks = \App\Models\MemoAcknowledgment::where('recipient_id', (string)$user->id)
+                                                      ->where('is_acknowledged', false)
+                                                      ->whereHas('memo', function($q) use ($startDate, $endDate) {
+                                                          if ($startDate && $endDate) {
+                                                              $q->whereBetween('deadline_at', [$startDate, $endDate]);
+                                                          }
+                                                      })
+                                                      ->with('memo')
+                                                      ->get();
+        
+        foreach ($awaitingAcks as $ack) {
+            $memo = $ack->memo;
+            if ($memo && $memo->deadline_at) {
+                $discoveryEvents[] = [
+                    'id' => 'discovery-deadline-' . $memo->id,
+                    'title' => "[Deadline] " . $memo->subject,
+                    'start' => $memo->deadline_at->format('Y-m-d\TH:i:s'),
+                    'end' => $memo->deadline_at->format('Y-m-d\TH:i:s'),
+                    'allDay' => true,
+                    'color' => $this->getEventColor('deadline'),
+                    'description' => $memo->message,
+                    'source' => 'DISCOVERY',
+                    'category' => 'deadline',
+                    'priority' => $memo->priority ?? 'high', // Deadlines usually high
+                    'memo_id' => $memo->id,
+                    'is_editable' => false,
+                    'type' => 'memo'
+                ];
+            }
+        }
+
+        // 3. Format Memofy Events
+        $formattedMemofyEvents = $memofyEvents->map(function ($event) use ($user) {
+                return $this->formatCalendarEvent($event, $user);
+            })->toArray();
+
+        // 4. Get Google Events if connected
+        $googleEvents = [];
+        if ($user->google_calendar_token) {
+            $cacheKey = "google_calendar_events_{$user->id}_" . md5($start . $end);
+            
+            $googleEvents = Cache::remember($cacheKey, 300, function () use ($user, $start, $end) {
+                try {
+                    $googleController = new GoogleCalendarController();
+                    $googleRequest = new Request([
+                        'start' => $start,
+                        'end' => $end
+                    ]);
+                    $googleRequest->setUserResolver(fn() => $user);
+                    
+                    $response = $googleController->listEvents($googleRequest);
+                    return json_decode($response->getContent(), true) ?: [];
+                } catch (\Exception $e) {
+                    \Log::error("Google Calendar Sync Error: " . $e->getMessage());
+                    return [];
+                }
+            });
+
+            foreach ($googleEvents as &$ge) {
+                $ge['source'] = 'GOOGLE';
+                $ge['is_editable'] = false;
+            }
+        }
+
+        // 5. Merge results
+        $allEvents = array_merge($formattedMemofyEvents, $discoveryEvents, $googleEvents);
         
         // Sort by start date
         usort($allEvents, function ($a, $b) {
@@ -164,9 +246,9 @@ class CalendarController extends Controller
             'start' => $event->start,
             'end' => $event->end,
             'allDay' => $event->all_day,
-            'color' => $this->getEventColor($event->category),
+            'color' => $this->getEventColor($event->category, $event->priority),
             'description' => $event->description ?? '',
-            'source' => 'MEMOFY',
+            'source' => $event->source ?? 'MEMOFY',
             'is_editable' => $event->is_editable,
             'invitation_status' => $event->invitation_status ?? null,
             'category' => $event->category,
@@ -180,16 +262,26 @@ class CalendarController extends Controller
     /**
      * Get event color based on category.
      */
-    protected function getEventColor($category)
+    protected function getEventColor($category, $priority = null)
     {
+        // Priority-based colors (Match sidebar)
+        if ($priority) {
+            switch ($priority) {
+                case 'high': return '#F44336';   // Red
+                case 'medium': return '#FF9800'; // Orange
+                case 'low': return '#4CAF50';    // Green
+            }
+        }
+
         $colors = [
-            'urgent' => '#EF4444',    // Red
-            'high' => '#F97316',       // Orange
+            'urgent' => '#F44336',    // Red
+            'high' => '#F44336',      // Red
             'meeting' => '#3B82F6',    // Blue
-            'deadline' => '#EF4444',   // Red
+            'deadline' => '#F44336',   // Red
             'reminder' => '#8B5CF6',   // Purple
-            'standard' => '#10B981',   // Green
-            'low' => '#6B7280',        // Gray
+            'standard' => '#FF9800',   // Orange (Medium default)
+            'low' => '#4CAF50',        // Green
+            'pending' => '#FF9800',    // Orange (Pending/Medium)
         ];
         
         return $colors[$category] ?? '#3B82F6'; // Default blue
@@ -345,7 +437,21 @@ class CalendarController extends Controller
      */
     public function destroy(Request $request, CalendarEvent $event)
     {
-        if ($event->created_by !== $request->user()->id && $request->user()->role !== 'admin') {
+        $userId = $this->normalizeUserId($request->user()->id);
+        $userStrId = (string)$request->user()->id;
+
+        // If user is a participant but not the creator/admin
+        if ($event->created_by !== $userStrId && $request->user()->role !== 'admin') {
+            $participant = CalendarEventParticipant::where('calendar_event_id', $event->id)
+                ->whereIn('user_id', [$userId, $userStrId])
+                ->first();
+
+            if ($participant) {
+                // Participant is "archiving" the event for themselves
+                $participant->delete();
+                return response()->json(['message' => 'Event removed from your calendar']);
+            }
+
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -390,6 +496,12 @@ class CalendarController extends Controller
         $participant = CalendarEventParticipant::where('calendar_event_id', $event->id)
             ->whereIn('user_id', [$userId, (string)$request->user()->id])
             ->firstOrFail();
+
+        if ($participant->status !== 'pending' && $participant->status !== null) {
+            return response()->json([
+                'message' => 'You have already responded to this invitation.'
+            ], 422);
+        }
 
         $participant->update([
             'status' => $validated['status']

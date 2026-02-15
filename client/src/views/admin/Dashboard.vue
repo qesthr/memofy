@@ -12,6 +12,20 @@ const stats = ref([
     bgColor: 'bg-primary/10'
   },
   {
+    title: 'Pending Approval',
+    value: '0',
+    icon: Hourglass,
+    color: 'text-warning',
+    bgColor: 'bg-warning/10'
+  },
+  {
+    title: 'Upcoming Deadlines',
+    value: '0',
+    icon: AlertCircle,
+    color: 'text-error',
+    bgColor: 'bg-error/10'
+  },
+  {
     title: 'Active Users',
     value: '0',
     icon: Users,
@@ -27,6 +41,8 @@ const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() +
 const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay()
 
 const calendarDays = ref([])
+const events = ref([])
+
 const generateCalendar = () => {
   const days = []
   const prevMonthDays = new Date(currentDate.getFullYear(), currentDate.getMonth(), 0).getDate()
@@ -50,7 +66,38 @@ const generateCalendar = () => {
   calendarDays.value = days
 }
 
+const getDayEvents = (day, isCurrentMonth) => {
+  if (!isCurrentMonth) return []
+  const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  return events.value.filter(event => event.start.startsWith(dateStr))
+}
+
+const getHighestPriorityColor = (day, isCurrentMonth) => {
+  const dayEvents = getDayEvents(day, isCurrentMonth)
+  if (dayEvents.length === 0) return null
+  
+  if (dayEvents.some(e => e.priority === 'high')) return '#F44336'
+  if (dayEvents.some(e => e.priority === 'medium')) return '#FF9800'
+  if (dayEvents.some(e => e.priority === 'low')) return '#4CAF50'
+  
+  return '#3B82F6' // Default Blue
+}
+
+const fetchEvents = async () => {
+  try {
+    const start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString()
+    const end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).toISOString()
+    const response = await api.get('/calendar/events', {
+      params: { start, end }
+    })
+    events.value = response.data.data || response.data
+  } catch (error) {
+    console.error('Error fetching events:', error)
+  }
+}
+
 generateCalendar()
+fetchEvents()
 
 const weekDays = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
@@ -64,8 +111,12 @@ const fetchDashboardData = async () => {
     
     // 0: Total Memos
     stats.value[0].value = data.total_memos || 0
-    // 1: Active Users
-    stats.value[1].value = data.active_users || 0
+    // 1: Pending Approval
+    stats.value[1].value = data.pending_approval || 0
+    // 2: Upcoming Deadlines
+    stats.value[2].value = data.upcoming_deadlines || 0
+    // 3: Active Users
+    stats.value[3].value = data.active_users || 0
 
   } catch (error) {
     console.error('Error fetching dashboard data:', error)
@@ -148,13 +199,17 @@ onMounted(() => {
             <div 
               v-for="(dateObj, index) in calendarDays" 
               :key="'day-' + index"
-              class="calendar-day"
+              class="calendar-day relative"
               :class="{
                 'other-month': !dateObj.isCurrentMonth,
                 'today': dateObj.isToday
               }"
             >
               {{ dateObj.day }}
+              <div v-if="getHighestPriorityColor(dateObj.day, dateObj.isCurrentMonth)" 
+                   class="absolute bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full"
+                   :style="{ backgroundColor: getHighestPriorityColor(dateObj.day, dateObj.isCurrentMonth) }">
+              </div>
             </div>
           </div>
         </div>

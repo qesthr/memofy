@@ -216,6 +216,7 @@ class SecretaryMemoController extends Controller
 
             'scheduled_send_at' => 'nullable|date',
             'schedule_end_at' => 'nullable|date',
+            'deadline_at' => 'nullable|date',
             'all_day_event' => 'nullable|boolean',
             'attachment_path' => 'nullable|string'
         ]);
@@ -265,12 +266,13 @@ class SecretaryMemoController extends Controller
         'version' => 1,
         'scheduled_send_at' => $validated['scheduled_send_at'] ?? null,
         'schedule_end_at' => $validated['schedule_end_at'] ?? null,
+        'deadline_at' => $validated['deadline_at'] ?? null,
         'all_day_event' => $validated['all_day_event'] ?? false,
         'attachment_path' => $validated['attachment_path'] ?? null
     ]);
 
-    // Create calendar event if scheduled (for creator's calendar reminder)
-    if ($memo->scheduled_send_at) {
+    // Create calendar event if scheduled or has a deadline (for creator's calendar reminder)
+    if ($memo->scheduled_send_at || $memo->deadline_at) {
         $this->createCalendarEventForMemo($memo, $user->id);
     }
 
@@ -432,15 +434,15 @@ class SecretaryMemoController extends Controller
         $calendarEvent = \App\Models\CalendarEvent::updateOrCreate(
             ['memo_id' => $memo->id],
             [
-                'title' => "[Scheduled] " . $memo->subject,
+                'title' => ($memo->deadline_at ? "[Deadline] " : "[Scheduled] ") . $memo->subject,
                 'description' => $memo->message,
-                'start' => $memo->scheduled_send_at,
-                'end' => $memo->schedule_end_at ?? $memo->scheduled_send_at,
+                'start' => $memo->deadline_at ?? $memo->scheduled_send_at,
+                'end' => $memo->schedule_end_at ?? ($memo->deadline_at ?? $memo->scheduled_send_at),
                 'all_day' => $memo->all_day_event ?? false,
-                'category' => $this->mapPriorityToCategory($memo->priority),
+                'category' => $memo->deadline_at ? 'deadline' : $this->mapPriorityToCategory($memo->priority),
                 'created_by' => $userId,
-                'status' => 'scheduled',
-                'source' => 'MEMO'
+                'status' => $memo->deadline_at ? 'pending' : 'scheduled',
+                'source' => $memo->deadline_at ? 'DEADLINE' : 'MEMO'
             ]
         );
 

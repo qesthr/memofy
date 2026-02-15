@@ -148,7 +148,7 @@ onMounted(() => {
     </button>
     <div 
       tabindex="0" 
-      class="dropdown-content z-1 mt-3 w-80 card card-compact bg-base-100 shadow-xl border border-base-300"
+      class="dropdown-content z-[100] mt-3 w-80 card card-compact bg-base-100 shadow-xl border border-base-300"
     >
       <div class="card-body">
         <div class="flex justify-between items-center">
