@@ -20,6 +20,7 @@ class NotificationPreference extends Model
         'calendar_response',
         'profile_updated',
         'calendar_secretary_created',
+        'memo_reminder',
         'email_notifications',
         'push_notifications'
     ];
@@ -34,6 +35,7 @@ class NotificationPreference extends Model
         'calendar_response' => 'boolean',
         'profile_updated' => 'boolean',
         'calendar_secretary_created' => 'boolean',
+        'memo_reminder' => 'boolean',
         'email_notifications' => 'boolean',
         'push_notifications' => 'boolean'
     ];
@@ -65,6 +67,7 @@ class NotificationPreference extends Model
                 'calendar_response' => true,
                 'profile_updated' => true,
                 'calendar_secretary_created' => true,
+                'memo_reminder' => true,
                 'email_notifications' => true,
                 'push_notifications' => true
             ]);
@@ -87,7 +90,8 @@ class NotificationPreference extends Model
             'calendar.updated' => $this->calendar_updated,
             'calendar.response' => $this->calendar_response,
             'profile.updated' => $this->profile_updated,
-            'calendar.secretary_created' => $this->calendar_secretary_created
+            'calendar.secretary_created' => $this->calendar_secretary_created,
+            'memo.reminder' => $this->memo_reminder
         ];
 
         return $mapping[$type] ?? false;

@@ -33,6 +33,7 @@ const pdfContent = ref(null)
 const isAcknowledging = ref(false)
 const isArchiving = ref(false)
 const isDownloading = ref(false)
+const isSendingReminder = ref(false)
 
 // Determine user relationship to memo
 const isCreator = computed(() => {
@@ -42,8 +43,11 @@ const isCreator = computed(() => {
 })
 
 const isRecipient = computed(() => {
-  if (!props.currentUserId || !props.memo?.recipient_ids) return false
   return props.memo.recipient_ids.includes(props.currentUserId)
+})
+
+const isAdminOrSecretary = computed(() => {
+  return ['admin', 'superadmin', 'secretary'].includes(props.userRole?.toLowerCase())
 })
 
 // Check if user is recipient and can acknowledge
@@ -138,6 +142,40 @@ const handleArchive = async () => {
   }
 }
 
+// Send reminders
+const handleSendReminder = async () => {
+  if (isSendingReminder.value) return
+  
+  const result = await Swal.fire({
+    title: 'Send Reminders?',
+    text: "This will send a follow-up notification to all recipients who haven't acknowledged this memo yet.",
+    icon: 'info',
+    showCancelButton: true,
+    confirmButtonText: 'Yes, send reminders!',
+    confirmButtonColor: '#3085d6'
+  })
+  
+  if (result.isConfirmed) {
+    isSendingReminder.value = true
+    try {
+      const response = await api.post(`/memos/${props.memo.id}/reminder`)
+      await Swal.fire({
+        title: 'Reminders Sent!',
+        text: response.data.message || 'Reminders have been sent successfully.',
+        icon: 'success',
+        timer: 1500,
+        showConfirmButton: false
+      })
+    } catch (error) {
+      console.error('Error sending reminders:', error)
+      const message = error.response?.data?.message || 'Failed to send reminders'
+      Swal.fire('Error', message, 'error')
+    } finally {
+      isSendingReminder.value = false
+    }
+  }
+}
+
 // Helper to get acknowledgment status for a specific recipient
 const getRecipientStatus = (recipientId) => {
   if (!props.memo.acknowledgments) return null
@@ -161,79 +199,6 @@ const closeModal = () => {
           <X :size="18" />
         </button>
         
-        <!-- Recipient Status Section - Only for Creator -->
-        <div v-if="isCreator && memo.recipients_list?.length" class="shrink-0 px-6 py-4 bg-white border-b border-gray-100">
-          <div class="flex items-center justify-between mb-3">
-            <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
-              <Users :size="14" />
-              Recipient Status
-            </h4>
-            <div class="flex items-center gap-4 text-[10px] font-bold uppercase tracking-wider">
-              <span class="flex items-center gap-1.5 text-success">
-                <div class="w-1.5 h-1.5 rounded-full bg-success"></div>
-                Acknowledged
-              </span>
-              <span class="flex items-center gap-1.5 text-gray-400">
-                <div class="w-1.5 h-1.5 rounded-full bg-gray-300"></div>
-                Pending
-              </span>
-            </div>
-          </div>
-          
-          <div class="flex flex-wrap gap-4">
-            <div 
-              v-for="recipient in memo.recipients_list" 
-              :key="recipient.id"
-              class="group relative flex flex-col items-center gap-1.5"
-            >
-              <!-- Avatar with Status Ring -->
-              <div class="relative">
-                <div 
-                  class="w-12 h-12 rounded-full p-0.5 transition-all duration-300"
-                  :class="getRecipientStatus(recipient.id) ? 'bg-success shadow-lg shadow-success/20' : 'bg-gray-200'"
-                >
-                  <div class="w-full h-full rounded-full bg-white overflow-hidden border-2 border-white">
-                    <img 
-                      v-if="recipient.profile_picture" 
-                      :src="recipient.profile_picture" 
-                      :alt="recipient.first_name"
-                      class="w-full h-full object-cover"
-                    />
-                    <div v-else class="w-full h-full flex items-center justify-center bg-gray-50 text-gray-400 font-bold text-sm">
-                      {{ recipient.first_name.charAt(0) }}{{ recipient.last_name.charAt(0) }}
-                    </div>
-                  </div>
-                </div>
-                
-                <!-- Status Icon Overlay -->
-                <div 
-                  v-if="getRecipientStatus(recipient.id)"
-                  class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-success border-2 border-white flex items-center justify-center text-white shadow-sm"
-                >
-                  <Check :size="10" stroke-width="3" />
-                </div>
-              </div>
-
-              <!-- Recipient Info (Tooltip Style) -->
-              <div class="text-[10px] font-bold text-gray-600 max-w-[64px] truncate text-center">
-                {{ recipient.first_name }}
-              </div>
-
-              <!-- Hover Card -->
-              <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 p-2 bg-gray-900 text-white text-[10px] rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 z-60 whitespace-nowrap shadow-xl">
-                <div class="font-bold border-b border-gray-700 pb-1 mb-1">{{ recipient.first_name }} {{ recipient.last_name }}</div>
-                <div class="text-gray-400">{{ recipient.email }}</div>
-                <div v-if="getRecipientStatus(recipient.id)" class="text-success mt-1 flex items-center gap-1">
-                  <Check :size="10" /> Acknowledged
-                </div>
-                <div v-else class="text-warning mt-1 flex items-center gap-1">
-                  <Clock :size="10" /> Pending acknowledgment
-                </div>
-                <div class="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-gray-900"></div>
-              </div>
-            </div>
-          </div>
-        </div>
         
         <!-- Scrollable Content -->
         <div class="flex-1 overflow-y-auto bg-gray-100 custom-scrollbar">
@@ -246,29 +211,87 @@ const closeModal = () => {
         </div>
 
         <!-- Bottom Action Bar - Close Button -->
-        <div class="shrink-0 px-4 py-3 bg-white border-t border-gray-200 flex justify-between items-center">
-          <div class="flex items-center gap-2">
-            <span 
-              v-if="memo.status === 'acknowledged'" 
-              class="badge badge-success badge-sm gap-1"
-            >
-              <CheckCircle :size="12" />
-              Acknowledged
-            </span>
-            <span 
-              v-else-if="memo.status === 'read'" 
-              class="badge badge-info badge-sm"
-            >
-              Read
-            </span>
-            <span 
-              v-else-if="memo.status === 'sent'" 
-              class="badge badge-warning badge-sm"
-            >
-              New
-            </span>
+        <div class="shrink-0 px-4 py-3 bg-white border-t border-gray-200 flex flex-col gap-3">
+          <!-- Inline Status Tracking -->
+          <div v-if="isAdminOrSecretary && memo.recipients_list?.length" class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <span class="text-[10px] font-bold text-gray-500 uppercase tracking-widest mr-2">Acknowledgment Status:</span>
+              <div class="flex -space-x-2">
+                <div 
+                  v-for="recipient in memo.recipients_list" 
+                  :key="recipient.id"
+                  class="group relative"
+                >
+                  <div 
+                    class="w-7 h-7 rounded-full border-2 transition-all duration-300"
+                    :class="getRecipientStatus(recipient.id) ? 'border-success' : 'border-error'"
+                  >
+                    <div class="w-full h-full rounded-full bg-white overflow-hidden">
+                      <img 
+                        v-if="recipient.profile_picture" 
+                        :src="recipient.profile_picture" 
+                        :alt="recipient.first_name"
+                        class="w-full h-full object-cover"
+                      />
+                      <div v-else class="w-full h-full flex items-center justify-center bg-gray-50 text-gray-400 font-bold text-[8px]">
+                        {{ recipient.first_name.charAt(0) }}{{ recipient.last_name.charAt(0) }}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <!-- Tiny overlay icon -->
+                  <div class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full flex items-center justify-center"
+                       :class="getRecipientStatus(recipient.id) ? 'bg-success' : 'bg-error'">
+                    <Check v-if="getRecipientStatus(recipient.id)" :size="6" class="text-white" />
+                    <Clock v-else :size="6" class="text-white" />
+                  </div>
+
+                  <!-- Mini Hover Card -->
+                  <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 p-1.5 bg-gray-900 text-white text-[8px] rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-50 pointer-events-none shadow-lg">
+                    {{ recipient.first_name }} - {{ getRecipientStatus(recipient.id) ? 'Acknowledged' : 'Pending' }}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button 
+                v-if="memo.status === 'sent' || memo.status === 'read'"
+                @click="handleSendReminder"
+                class="btn btn-primary btn-xs gap-1 font-bold text-[8px] uppercase tracking-wider h-7"
+                :disabled="isSendingReminder"
+              >
+                <Loader2 v-if="isSendingReminder" class="animate-spin" :size="10" />
+                <Clock v-else :size="10" />
+                Remind All
+              </button>
+            </div>
           </div>
-          <button @click="closeModal" class="btn btn-ghost btn-sm font-bold text-[10px] uppercase tracking-wider">Close</button>
+
+          <div class="flex justify-between items-center pt-2 border-t border-gray-50">
+            <div class="flex items-center gap-2">
+              <span 
+                v-if="memo.status === 'acknowledged'" 
+                class="badge badge-success badge-sm gap-1 font-bold text-[10px]"
+              >
+                <CheckCircle :size="12" />
+                ACKNOWLEDGED
+              </span>
+              <span 
+                v-else-if="memo.status === 'read'" 
+                class="badge badge-info badge-sm font-bold text-[10px]"
+              >
+                READ
+              </span>
+              <span 
+                v-else-if="memo.status === 'sent'" 
+                class="badge badge-warning badge-sm font-bold text-[10px]"
+              >
+                NEW
+              </span>
+            </div>
+            <button @click="closeModal" class="btn btn-ghost btn-sm font-bold text-[10px] uppercase tracking-wider">Close</button>
+          </div>
         </div>
       </div>
       <div class="modal-backdrop bg-black/40 backdrop-blur-sm" @click="closeModal"></div>

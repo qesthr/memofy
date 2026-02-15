@@ -19,8 +19,9 @@ const viewMemo = (memo) => {
   selectedMemo.value = memo
   showDetailModal.value = true
   
-  // Mark as read if status is 'sent'
-  if (memo.status === 'sent') {
+  // Mark as read if status is 'sent' and user is not the sender
+  const isSender = String(memo.sender_id || memo.sender?.id) === String(currentUserId)
+  if (memo.status === 'sent' && !isSender) {
     markAsRead(memo.id)
   }
 }

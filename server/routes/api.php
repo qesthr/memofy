@@ -128,6 +128,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::delete('/memos/{memo}', [MemoController::class, 'destroy'])->middleware('can:memo.archive');
     Route::post('/memos/{id}/rollback', [MemoController::class, 'rollback'])->middleware('can:memo.unarchive');
     Route::post('/memos/{id}/acknowledge', [MemoController::class, 'acknowledge'])->middleware('can:memo.view');
+    Route::post('/memos/{id}/reminder', [MemoController::class, 'sendReminder']);
 
     // Secretary Memo Routes
     Route::prefix('secretary/memos')->middleware('role:secretary')->group(function () {

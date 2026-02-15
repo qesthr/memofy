@@ -56,8 +56,8 @@ class AdminMemoController extends Controller
         $perPage = min((int) $request->get('per_page', 15), 50);
         
         $query = Memo::with([
-            'sender:id,first_name,last_name,email,role,department',
-            'recipient:id,first_name,last_name,email,role,department',
+            'sender:id,first_name,last_name,email,role,department,department_id',
+            'recipient:id,first_name,last_name,email,role,department,department_id',
             'department:id,name'
         ])
                      ->where('status', 'pending_approval')
@@ -109,7 +109,7 @@ class AdminMemoController extends Controller
             // Update memo status
             $memo->update([
                 'status' => $targetStatus,
-                'approved_by' => $user->id,
+                'approved_by' => (string)$user->id,
                 'approved_at' => now()
             ]);
 
@@ -117,26 +117,40 @@ class AdminMemoController extends Controller
             $recipients = [];
             if ($targetStatus === 'sent') {
                 if ($memo->department_id) {
-                    $departmentUsers = User::where('department_id', $memo->department_id)
+                    $normDeptId = $this->normalizeUserId($memo->department_id);
+                    $departmentUsers = User::whereIn('department_id', [$memo->department_id, $normDeptId])
                                             ->where('id', '!=', $memo->sender_id)
                                             ->get();
                     
                     foreach ($departmentUsers as $deptUser) {
                         MemoAcknowledgment::create([
                             'memo_id' => $memo->id,
-                            'recipient_id' => $deptUser->id,
+                            'recipient_id' => (string)$deptUser->id,
                             'is_acknowledged' => false,
                             'sent_at' => now()
                         ]);
                         $recipients[] = $deptUser;
                     }
                 } else {
-                    if ($memo->recipient_id) {
+                    if ($memo->recipient_ids && is_array($memo->recipient_ids)) {
+                        foreach ($memo->recipient_ids as $recipientId) {
+                            $recipient = User::find($recipientId);
+                            if ($recipient) {
+                                MemoAcknowledgment::create([
+                                    'memo_id' => $memo->id,
+                                    'recipient_id' => (string)$recipientId,
+                                    'is_acknowledged' => false,
+                                    'sent_at' => now()
+                                ]);
+                                $recipients[] = $recipient;
+                            }
+                        }
+                    } elseif ($memo->recipient_id) {
                         $recipient = User::find($memo->recipient_id);
                         if ($recipient) {
                             MemoAcknowledgment::create([
                                 'memo_id' => $memo->id,
-                                'recipient_id' => $memo->recipient_id,
+                                'recipient_id' => (string)$memo->recipient_id,
                                 'is_acknowledged' => false,
                                 'sent_at' => now()
                             ]);
@@ -358,13 +372,28 @@ class AdminMemoController extends Controller
         // Clear and add participants
         \App\Models\CalendarEventParticipant::where('calendar_event_id', $calendarEvent->id)->delete();
         
+        // Add creator/sender as accepted
         \App\Models\CalendarEventParticipant::create([
             'calendar_event_id' => $calendarEvent->id,
             'user_id' => $memo->sender_id,
             'status' => 'accepted'
         ]);
 
-        if ($memo->recipient_id) {
+        // Add recipients
+        if ($memo->department_id) {
+            $normDeptId = $this->normalizeUserId($memo->department_id);
+            $departmentUsers = User::whereIn('department_id', [$memo->department_id, $normDeptId])
+                                    ->where('id', '!=', $memo->sender_id)
+                                    ->get();
+            
+            foreach ($departmentUsers as $deptUser) {
+                \App\Models\CalendarEventParticipant::create([
+                    'calendar_event_id' => $calendarEvent->id,
+                    'user_id' => (string)$deptUser->id,
+                    'status' => 'pending'
+                ]);
+            }
+        } elseif ($memo->recipient_id) {
             \App\Models\CalendarEventParticipant::create([
                 'calendar_event_id' => $calendarEvent->id,
                 'user_id' => $memo->recipient_id,

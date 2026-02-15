@@ -79,8 +79,9 @@ const viewMemo = (memo) => {
   selectedMemo.value = memo
   showDetailModal.value = true
   
-  // Mark as read if status is 'sent'
-  if (memo.status === 'sent') {
+  // Mark as read if status is 'sent' and user is not the sender
+  const isSender = String(memo.sender_id || memo.sender?.id) === String(currentUserId)
+  if (memo.status === 'sent' && !isSender) {
     markAsRead(memo.id)
   }
 }
@@ -93,25 +94,10 @@ const markAsRead = async (memoId) => {
   }
 }
 
-const handleAcknowledge = async (memoId) => {
-  try {
-    await api.post(`/memos/${memoId}/acknowledge`)
-    await Swal.fire({
-      title: 'Acknowledged!',
-      text: 'Memo has been acknowledged.',
-      icon: 'success',
-      timer: 1500,
-      showConfirmButton: false
-    })
-    if (selectedMemo.value?.id === memoId) {
-      selectedMemo.value.status = 'acknowledged'
-    }
-    if (memoInboxRef.value) {
-      memoInboxRef.value.refresh()
-    }
-  } catch (error) {
-    console.error('Error acknowledging memo:', error)
-    Swal.fire('Error', 'Failed to acknowledge memo', 'error')
+const handleAcknowledge = (memoId) => {
+  // Logic here only handles synchronization if the detail modal is open
+  if (selectedMemo.value?.id === memoId) {
+    selectedMemo.value.status = 'acknowledged'
   }
 }
 

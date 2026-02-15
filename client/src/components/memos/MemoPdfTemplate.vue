@@ -39,6 +39,31 @@ const isImageAttachment = (attachment) => {
   return url.match(/\.(jpeg|jpg|gif|png)$/i) || name.match(/\.(jpeg|jpg|gif|png)$/i)
 }
 
+// Helper to reliably get department name from various formats (string, JSON string, object)
+const getDepartmentName = (dept) => {
+  if (!dept) return ''
+  
+  // Handle stringified JSON (common in MongoDB logs/imports)
+  if (typeof dept === 'string' && dept.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(dept)
+      return parsed.name || parsed.NAME || dept
+    } catch (e) {
+      return dept
+    }
+  }
+  
+  // Handle direct string
+  if (typeof dept === 'string') return dept
+  
+  // Handle object
+  if (typeof dept === 'object') {
+    return dept.name || dept.NAME || (dept.id || dept.ID ? (dept.id || dept.ID) : '')
+  }
+  
+  return String(dept)
+}
+
 // Logic to split content into pages (simplified for now, relying on CSS print rules or manual page breaks if needed)
 // For now, we will treat the content as a continuous block and let the PDF generator/printer handle breaks naturally,
 // OR we can implement the same manual paging logic from ComposeMemoModal if we want exact preview control.
@@ -118,7 +143,7 @@ const contentPages = computed(() => {
                 
                 <div class="text-right">
                     <p class="text-[11px] font-bold text-black/60 uppercase mb-1">
-                        {{ memo.department || sender?.department?.name || 'Department' }}
+                        {{ getDepartmentName(memo.department || sender?.department?.name || sender?.department || 'Department') }}
                     </p>
                     <p class="text-[12px] font-black text-black">
                         {{ formatDate(memo.created_at || new Date()) }}
@@ -138,13 +163,18 @@ const contentPages = computed(() => {
                          <template v-if="memo.recipient">
                             <span>{{ memo.recipient.first_name }} {{ memo.recipient.last_name }}</span>
                          </template>
+                         <template v-else-if="memo.recipient_ids?.length > 0 && memo.recipients_list?.length > 0">
+                            <span v-for="(r, i) in memo.recipients_list" :key="r.id">
+                                {{ r.first_name }} {{ r.last_name }}{{ i < memo.recipients_list.length - 1 ? ',' : '' }}
+                            </span>
+                         </template>
                          <template v-else-if="memo.selectedRecipients && memo.selectedRecipients.length > 0">
                             <span v-for="(r, i) in memo.selectedRecipients" :key="r.id">
                                 {{ r.first_name }} {{ r.last_name }}{{ i < memo.selectedRecipients.length - 1 ? ',' : '' }}
                             </span>
                          </template>
                          <template v-else-if="memo.department">
-                             {{ memo.department }}
+                             {{ getDepartmentName(memo.department) }}
                          </template>
                          <template v-else>
                              <span class="text-black/40 italic">RECIPIENT</span>
@@ -155,10 +185,10 @@ const contentPages = computed(() => {
                 <div class="flex gap-4">
                     <span class="w-20 font-bold text-[11px] uppercase text-black shrink-0 pt-0.5">FROM:</span>
                     <span class="font-black uppercase text-[13px] text-black leading-tight">
-                        {{ memo.sender?.first_name || sender?.first_name || 'ADMIN' }} 
+                        {{ memo.sender?.first_name || sender?.first_name || 'SENDER' }} 
                         {{ memo.sender?.last_name || sender?.last_name || '' }} 
                         <span class="text-black/60 font-bold mx-1">/</span> 
-                        {{ memo.department || sender?.department?.name || 'DEPARTMENT' }}
+                        {{ getDepartmentName(memo.department || memo.sender?.department || sender?.department?.name || sender?.department || 'DEPARTMENT') }}
                     </span>
                 </div>
 

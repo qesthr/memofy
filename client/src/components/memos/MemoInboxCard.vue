@@ -210,7 +210,7 @@ const acknowledgeMemo = async (memoId) => {
   try {
     await api.post(`/memos/${memoId}/acknowledge`)
     const memo = memos.value.find(m => m.id === memoId)
-    if (memo) memo.status = 'read'
+    if (memo) memo.status = 'acknowledged'
     emit('memo-acknowledge', memoId)
     Swal.fire({
       title: 'Acknowledged!',
@@ -278,6 +278,14 @@ const getPriorityLabel = (priority) => {
 
 const isUnread = (memo) => {
   return memo.status === 'sent' || memo.status === 'pending_approval'
+}
+
+const getStatusLabel = (memo) => {
+  if (memo.status === 'pending_approval') return 'Pending'
+  if (memo.status === 'sent' && !isSender(memo)) return 'Received'
+  
+  // Capitalize first letter
+  return memo.status.charAt(0).toUpperCase() + memo.status.slice(1)
 }
 
 const clearSearch = () => {
@@ -393,7 +401,7 @@ defineExpose({
                 {{ memo.sender.first_name }} {{ memo.sender.last_name }}
               </span>
               <span class="memo-status-badge" :class="memo.status">
-                {{ memo.status === 'pending_approval' ? 'Pending' : memo.status }}
+                {{ getStatusLabel(memo) }}
               </span>
             </div>
           </div>

@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Api\GoogleCalendarController;
+use MongoDB\BSON\ObjectId;
 
 class CalendarController extends Controller
 {
@@ -41,11 +42,14 @@ class CalendarController extends Controller
         // But for very large datasets, we should paginate
         $offset = ($page - 1) * $perPage;
 
+        // Normalize user ID for MongoDB comparison
+        $userId = $this->normalizeUserId($user->id);
+
         // 1. Get Memofy Events with pagination
-        $memofyEventsQuery = CalendarEvent::where(function ($query) use ($user) {
-                $query->where('created_by', $user->id)
-                      ->orWhereHas('participants', function ($pQuery) use ($user) {
-                          $pQuery->where('user_id', $user->id);
+        $memofyEventsQuery = CalendarEvent::where(function ($query) use ($userId, $user) {
+                $query->whereIn('created_by', [$userId, (string)$user->id])
+                      ->orWhereHas('participants', function ($pQuery) use ($userId, $user) {
+                          $pQuery->whereIn('user_id', [$userId, (string)$user->id]);
                       });
             })
             ->with(['creator', 'participants.user'])
@@ -369,8 +373,10 @@ class CalendarController extends Controller
             'status' => 'required|in:accepted,declined'
         ]);
 
+        $userId = $this->normalizeUserId($request->user()->id);
+
         $participant = CalendarEventParticipant::where('calendar_event_id', $event->id)
-            ->where('user_id', $request->user()->id)
+            ->whereIn('user_id', [$userId, (string)$request->user()->id])
             ->firstOrFail();
 
         $participant->update([
@@ -392,5 +398,24 @@ class CalendarController extends Controller
             'message' => 'Invitation ' . $validated['status'],
             'status' => $validated['status']
         ]);
+    }
+
+    /**
+     * Convert user ID to consistent format for MongoDB comparison
+     */
+    protected function normalizeUserId($userId)
+    {
+        if ($userId instanceof ObjectId) {
+            return $userId;
+        }
+        // Try to create ObjectId from string
+        if (is_string($userId) && strlen((string)$userId) === 24) {
+            try {
+                return new ObjectId((string)$userId);
+            } catch (\Exception $e) {
+                return (string)$userId;
+            }
+        }
+        return (string)$userId;
     }
 }

@@ -51,6 +51,7 @@ const departments = ref([])
 const showPreviewModal = ref(false)
 const fileInput = ref(null)
 const isUploading = ref(false)
+const isSubmitting = ref(false)
 
 
 
@@ -65,7 +66,7 @@ const canSubmit = computed(() => {
   return formData.value.subject && formData.value.subject.trim() !== '' &&
          formData.value.content && formData.value.content.trim() !== '' &&
          (formData.value.recipientIds.length > 0 || formData.value.departmentId) &&
-         !isUploading.value
+         !isUploading.value && !isSubmitting.value
 })
 
 const attachmentCount = computed(() => formData.value.attachments.length)
@@ -310,17 +311,20 @@ const triggerFileInput = () => {
 }
 
 const handleSend = async () => {
-  if (!canSubmit.value) {
-    Swal.fire({
-      title: 'Incomplete Memo',
-      text: 'Please fill in all required fields',
-      icon: 'warning',
-      confirmButtonText: 'OK'
-    })
+  if (!canSubmit.value || isSubmitting.value) {
+    if (!canSubmit.value && !isSubmitting.value) {
+      Swal.fire({
+        title: 'Incomplete Memo',
+        text: 'Please fill in all required fields',
+        icon: 'warning',
+        confirmButtonText: 'OK'
+      })
+    }
     return
   }
 
   try {
+    isSubmitting.value = true
     const priorityMap = {
       'Low': 'low',
       'Medium': 'medium',
@@ -351,8 +355,6 @@ const handleSend = async () => {
       payload.all_day_event = scheduleData.value.allDay
     }
 
-
-
     const rawRole = (user.value?.role && typeof user.value.role === 'object') ? user.value.role.name : user.value?.role
     const roleName = String(rawRole || '').toLowerCase()
     
@@ -381,6 +383,8 @@ const handleSend = async () => {
   } catch (error) {
     console.error('Error sending memo:', error)
     Swal.fire('Error', error.response?.data?.message || 'Failed to submit memo', 'error')
+  } finally {
+    isSubmitting.value = false
   }
 }
 
@@ -728,10 +732,11 @@ watch(() => props.isOpen, (val) => {
           <button @click="showPreviewModal = true" class="btn btn-ghost btn-sm border border-base-300 hover:border-primary/50 px-3 font-bold text-[9px] uppercase rounded-lg transition-all">Preview</button>
           <button 
             @click="handleSend" 
-            class="btn btn-primary btn-sm px-6 text-white font-bold text-[10px] uppercase tracking-wider shadow-lg shadow-primary/30 rounded-lg hover:scale-[1.02] active:scale-[0.98] transition-all"
-            :disabled="!canSubmit"
+            class="btn btn-primary btn-sm px-6 text-white font-bold text-[10px] uppercase tracking-wider shadow-lg shadow-primary/30 rounded-lg hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-70"
+            :disabled="!canSubmit || isSubmitting"
           >
-            Send
+            <Loader2 v-if="isSubmitting" :size="12" class="animate-spin mr-1.5" />
+            {{ isSubmitting ? 'Sending...' : 'Send' }}
           </button>
         </div>
       </div>

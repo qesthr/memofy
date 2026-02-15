@@ -289,6 +289,41 @@ class NotificationService
     }
 
     /**
+     * Send reminders to recipients who haven't acknowledged a memo
+     */
+    public function sendAcknowledgmentReminders($memo, User $sender, $recipients): array
+    {
+        $sent = [];
+        
+        foreach ($recipients as $recipient) {
+            $data = [
+                'memo_id' => $memo->id,
+                'memo_subject' => $memo->subject,
+                'sender_name' => $sender->first_name . ' ' . $sender->last_name,
+                'message' => "Reminder: Please acknowledge receipt of memo: '{$memo->subject}'",
+                'priority' => $memo->priority,
+                'sender_role' => $sender->role
+            ];
+
+            $notification = $this->createNotification(
+                $recipient,
+                Notification::TYPE_MEMO_REMINDER,
+                $data,
+                "/{$recipient->role}/memos?memoId={$memo->id}"
+            );
+            
+            if ($notification) {
+                $sent[] = (string)$recipient->id;
+            }
+        }
+
+        return [
+            'sent' => count($sent),
+            'recipients' => $sent
+        ];
+    }
+
+    /**
      * Notify admin of profile update
      */
     public function notifyAdminsOfProfileUpdate(User $secretary, string $updateType): void
@@ -359,6 +394,7 @@ class NotificationService
             Notification::TYPE_CALENDAR_UPDATED => '🔄',
             Notification::TYPE_PROFILE_UPDATED => '👤',
             Notification::TYPE_CALENDAR_SECRETARY_CREATED => '📅',
+            Notification::TYPE_MEMO_REMINDER => '🔔',
             default => '🔔'
         };
     }
@@ -377,6 +413,7 @@ class NotificationService
             Notification::TYPE_CALENDAR_UPDATED => 'Calendar Event Updated',
             Notification::TYPE_PROFILE_UPDATED => 'Profile Updated',
             Notification::TYPE_CALENDAR_SECRETARY_CREATED => 'New Calendar Event',
+            Notification::TYPE_MEMO_REMINDER => 'Acknowledgment Reminder',
             default => 'Notification'
         };
     }
