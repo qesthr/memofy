@@ -68,23 +68,23 @@ class DashboardController extends Controller
                                                     ->count();
                 
             } else if ($user->hasPermissionTo('faculty.view')) {
-                $stats['total_users'] = User::where('role', 'faculty')
-                                            ->where('department', $user->department)
-                                            ->count();
-                $stats['active_users'] = User::where('role', 'faculty')
-                                            ->where('department', $user->department)
+                $stats['total_users'] = User::where('department', $user->department)->count();
+                $stats['active_users'] = User::where('department', $user->department)
                                             ->where('is_active', true)
                                             ->count();
             }
 
             if ($user->hasPermissionTo('memo.view_all')) {
-                // Already handled above
+                $stats['total_memos'] = Memo::where('status', '!=', 'draft')->count();
+                $stats['pending_approval'] = Memo::where('status', 'pending_approval')->count();
             } else if ($user->hasPermissionTo('memo.view')) {
-                // For general view, count memos where they are recipient
-                $stats['total_memos'] = Memo::where('recipient_id', $user->id)
+                $stats['total_memos'] = Memo::where(function($q) use ($user) {
+                                                $q->where('recipient_id', $user->id)
+                                                  ->orWhere('sender_id', $user->id);
+                                            })
                                             ->where('status', '!=', 'draft')
                                             ->count();
-                $stats['pending_memos'] = Memo::where('sender_id', $user->id)
+                $stats['pending_approval'] = Memo::where('sender_id', $user->id)
                                               ->where('status', 'pending_approval')
                                               ->count();
             }
@@ -103,7 +103,38 @@ class DashboardController extends Controller
             
             $recentActivities = $logsQuery->latest()->paginate($perPage, ['*'], 'activity_page', $page);
 
-            // 3. User Specific Stats
+            // 3. Recent Memos
+            $memosQuery = Memo::with(['sender:_id,first_name,last_name', 'recipient:_id,first_name,last_name'])
+                               ->where('status', '!=', 'draft');
+                               
+            if (!$user->hasPermissionTo('memo.view_all')) {
+                $memosQuery->where(function($q) use ($user) {
+                    $q->where('sender_id', (string)$user->id)
+                      ->orWhere('recipient_id', (string)$user->id)
+                      ->orWhere('recipient_ids', (string)$user->id);
+                });
+            }
+            $recentMemos = $memosQuery->latest()->limit(5)->get();
+
+            // 4. Calendar Events (for mini calendar)
+            $startDate = now()->startOfMonth();
+            $endDate = now()->endOfMonth();
+            $userId = (string)$user->id;
+            
+            $calendarEvents = \App\Models\CalendarEvent::where(function ($query) use ($userId) {
+                    $query->where('created_by', $userId)
+                          ->orWhereHas('participants', function ($pQuery) use ($userId) {
+                              $pQuery->where('user_id', $userId);
+                          });
+                })
+                ->where(function($q) use ($startDate, $endDate) {
+                    $q->whereBetween('start', [$startDate, $endDate])
+                      ->orWhereBetween('end', [$startDate, $endDate]);
+                })
+                ->orderBy('start', 'asc')
+                ->get();
+
+            // 5. User Specific Stats
             $roleName = (isset($user->role) && is_object($user->role)) ? $user->role->name : ($user->role ?? '');
             $userId = (string) $user->id;
             
@@ -155,7 +186,9 @@ class DashboardController extends Controller
                 'stats' => $stats,
                 'user_stats' => $userStats,
                 'user' => $user,
-                'recent_activities' => $recentActivities
+                'recent_activities' => $recentActivities,
+                'recent_memos' => $recentMemos,
+                'calendar_events' => $calendarEvents
             ];
         });
     }
