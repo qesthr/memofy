@@ -233,4 +233,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         });
         // .users, .activityLogs maps to standard resources above
     });
+
+    // System Settings
+    Route::get('/system-settings', [App\Http\Controllers\Api\SystemSettingController::class, 'index']);
+    Route::put('/system-settings', [App\Http\Controllers\Api\SystemSettingController::class, 'update']);
 });

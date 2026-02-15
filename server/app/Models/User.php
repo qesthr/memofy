@@ -199,28 +199,31 @@ class User extends Authenticatable
      */
     public function getPermissionsAttribute()
     {
-        // 1. Check for user-specific permissions (Override)
-        if (!empty($this->permission_ids)) {
-            return $this->permission_ids;
-        }
-
-        // 2. Fallback to Role permissions 
-        $roleModel = $this->assignedRole;
-
-        // 3. Resolve Role Model if not loaded (fallback for legacy role field)
-        if (!$roleModel) {
-            $roleField = strtolower($this->getAttribute('role') ?? '');
-            if ($roleField) {
-                // Use i-like for case-insensitive search if needed, or stick to where
-                $roleModel = Role::where('name', $roleField)->first();
-            }
-        }
+        $cacheKey = "user_permissions_{$this->id}";
         
-        // 4. Return permission names
-        if (!$roleModel || !$roleModel->permission_ids) {
-            return [];
-        }
+        return \Illuminate\Support\Facades\Cache::remember($cacheKey, now()->addHour(), function () {
+            // 1. Check for user-specific permissions (Override)
+            if (!empty($this->permission_ids)) {
+                return $this->permission_ids;
+            }
 
-        return $roleModel->permission_ids;
+            // 2. Fallback to Role permissions 
+            $roleModel = $this->assignedRole;
+
+            // 3. Resolve Role Model if not loaded (fallback for legacy role field)
+            if (!$roleModel) {
+                $roleField = strtolower($this->getAttribute('role') ?? '');
+                if ($roleField) {
+                    $roleModel = Role::where('name', $roleField)->first();
+                }
+            }
+            
+            // 4. Return permission names
+            if (!$roleModel || !$roleModel->permission_ids) {
+                return [];
+            }
+
+            return $roleModel->permission_ids;
+        });
     }
 }

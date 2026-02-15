@@ -34,7 +34,6 @@ const filteredMenuItems = computed(() => {
 })
 
 const bottomItems = [
-  { name: 'Settings', path: '/faculty/settings', icon: Settings, permission: 'nav.settings' },
   { name: 'Logout', path: '/logout', icon: LogOut }
 ]
 
@@ -101,7 +100,7 @@ const handleLogout = () => {
       <div class="faculty-profile border-t border-base-300 pt-4">
         <div class="flex items-center gap-3">
             <div class="avatar">
-              <div class="w-10 h-10 rounded-full bg-secondary text-secondary-content flex items-center justify-center overflow-hidden">
+              <div class="w-10 h-10 rounded-full bg-primary text-primary-content flex items-center justify-center overflow-hidden">
                 <img v-if="user?.profile_picture" :src="user.profile_picture" alt="Profile" class="w-full h-full object-cover" />
                 <span v-else class="text-sm font-semibold">{{ userInitial }}</span>
               </div>
@@ -147,7 +146,7 @@ const handleLogout = () => {
 }
 
 .menu-item.active {
-  @apply bg-secondary text-secondary-content;
+  @apply bg-primary text-primary-content;
   @apply relative;
 }
 
@@ -159,7 +158,7 @@ const handleLogout = () => {
   transform: translateY(-50%);
   height: 20px;
   width: 4px;
-  @apply bg-secondary-content rounded-r-lg;
+  @apply bg-primary-content rounded-r-lg;
 }
 
 .logout-btn {

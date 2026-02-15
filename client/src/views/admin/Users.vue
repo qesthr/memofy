@@ -21,6 +21,8 @@ const lockSettings = ref({
   seconds: 50
 })
 
+const allowedDomains = ref(['buksu.edu.ph', 'student.buksu.edu.ph']) // Default fallback
+
 const userLocks = ref({})
 let heartbeatInterval = null
 let lockCheckInterval = null
@@ -177,6 +179,17 @@ const fetchLockSettings = async () => {
   }
 }
 
+const fetchSystemSettings = async () => {
+  try {
+    const response = await api.get('/system-settings')
+    if (response.data.allowed_email_domains && response.data.allowed_email_domains.length > 0) {
+      allowedDomains.value = response.data.allowed_email_domains
+    }
+  } catch (error) {
+    console.error('Error fetching system settings:', error)
+  }
+}
+
 const checkAllLocks = async () => {
   try {
     const response = await api.get('/locks/all-locks')
@@ -234,8 +247,10 @@ const getStatusBadge = (status) => {
 }
 
 const validateEmail = (email) => {
-  const regex = /^[\w\.\-]+@(student\.)?buksu\.edu\.ph$/
-  return regex.test(email)
+  if (!email) return false
+  const domain = email.split('@')[1]
+  if (!domain) return false
+  return allowedDomains.value.includes(domain)
 }
 
 const resetForm = () => {
@@ -448,8 +463,9 @@ const saveUser = async () => {
   if (!validateEmail(formData.value.email)) {
     Swal.fire({
       icon: 'error',
+      icon: 'error',
       title: 'Invalid Email',
-      text: 'Only @buksu.edu.ph and @student.buksu.edu.ph email addresses are allowed.',
+      text: `Only emails from the following domains are accepted: ${allowedDomains.value.map(d => '@' + d).join(', ')}`,
       confirmButtonColor: '#4285F4'
     })
     return
@@ -479,12 +495,15 @@ const saveUser = async () => {
         timer: 2000
       })
     } else {
-      await api.post('/users/invite', formData.value)
+      await api.post('/users/invite', {
+        ...formData.value,
+        password: generatedPassword.value
+      })
 
       await Swal.fire({
         icon: 'success',
-        title: 'Invitation Sent!',
-        text: `An invitation has been sent to ${formData.value.email}`,
+        title: 'User Created!',
+        text: `User account for ${formData.value.email} has been created and credentials have been sent via email.`,
         confirmButtonColor: '#4285F4'
       })
     }
@@ -579,6 +598,7 @@ onMounted(() => {
   fetchCurrentUser()
   fetchUsers()
   fetchLockSettings()
+  fetchSystemSettings()
   
   lockCheckInterval = setInterval(() => {
     checkAllLocks()
@@ -823,7 +843,7 @@ onUnmounted(() => {
               />
             </div>
             <p class="text-[10px] text-base-content/50 mt-1 ml-1 italic">
-              Only BukSU domain emails (@buksu.edu.ph or @student.buksu.edu.ph) are accepted.
+              Only accepted domains: {{ allowedDomains.map(d => '@' + d).join(', ') }}
             </p>
           </div>
 
@@ -944,7 +964,7 @@ onUnmounted(() => {
                 <Mail :size="18" class="text-primary" />
               </div>
               <div class="flex-1">
-                <p class="font-semibold text-sm text-primary">Invitation will be sent via email</p>
+                <p class="font-semibold text-sm text-primary">Credentials will be sent via email</p>
                 <p class="text-xs text-base-content/60">The user will receive login credentials and setup instructions at their email address.</p>
               </div>
             </div>
@@ -964,7 +984,7 @@ onUnmounted(() => {
             <span v-if="isLoading" class="loading loading-spinner loading-sm"></span>
             <span v-else class="flex items-center gap-2">
               <Mail v-if="!isEditing" :size="16" />
-              <span>{{ isEditing ? 'Save Changes' : 'Send Invitation' }}</span>
+              <span>{{ isEditing ? 'Save Changes' : 'Create User' }}</span>
             </span>
           </button>
         </div>

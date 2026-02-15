@@ -27,11 +27,9 @@ const viewMemo = (memo) => {
 }
 
 const markAsRead = async (memoId) => {
-  try {
-    await api.post(`/memos/${memoId}/acknowledge`)
-  } catch (error) {
-    console.error('Error marking as read:', error)
-  }
+  // Note: Viewing a memo no longer auto-acknowledges it.
+  // Users must explicitly click the acknowledge button.
+  // This prevents duplicate notifications to the sender.
 }
 
 const handleAcknowledge = async (memoId) => {
@@ -45,7 +43,7 @@ const handleAcknowledge = async (memoId) => {
       showConfirmButton: false
     })
     if (selectedMemo.value?.id === memoId) {
-      selectedMemo.value.status = 'read'
+      selectedMemo.value.status = 'acknowledged'
     }
   } catch (error) {
     console.error('Error acknowledging memo:', error)

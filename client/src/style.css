@@ -45,6 +45,19 @@ body {
   /* #FAF9F6 Off White */
 }
 
+[data-theme="dark"] {
+  --color-memo-surface: #1d232a;
+  --color-memo-bg: #191e24;
+  --color-memo-border: #2a323c;
+  --color-memo-border-hover: #374151;
+  --color-memo-text-primary: #a6adbb;
+  --color-memo-text-secondary: #74808c;
+  --color-memo-text-muted: #555e6b;
+  --color-memo-indigo: #6366f1;
+  --color-memo-indigo-light: rgba(99, 102, 241, 0.1);
+  --color-memo-indigo-hover: #818cf8;
+}
+
 /* ─── Reusable Card Surface ─── */
 .memo-card {
   background: var(--color-memo-surface);
@@ -73,7 +86,7 @@ body {
 
 .memo-skeleton {
   animation: memo-skeleton-pulse 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  background: linear-gradient(90deg, #f0eeeb 25%, #e8e5e0 50%, #f0eeeb 75%);
+  background: linear-gradient(90deg, var(--color-memo-bg) 25%, var(--color-memo-border) 50%, var(--color-memo-bg) 75%);
   background-size: 200% 100%;
   animation: memo-skeleton-pulse 1.8s ease-in-out infinite, memo-skeleton-shimmer 2s linear infinite;
   border-radius: 8px;
@@ -122,7 +135,7 @@ body {
 
 .memo-pill-tab:hover:not(.active) {
   color: var(--color-memo-text-primary);
-  background: #F5F3F0;
+  background: var(--color-memo-bg);
 }
 
 .memo-pill-tab.active {

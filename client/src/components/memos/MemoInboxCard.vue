@@ -237,22 +237,9 @@ const reviewMemo = (memo) => {
 }
 
 const acknowledgeMemo = async (memoId) => {
-  try {
-    await api.post(`/memos/${memoId}/acknowledge`)
-    const memo = memos.value.find(m => m.id === memoId)
-    if (memo) memo.status = 'acknowledged'
-    emit('memo-acknowledge', memoId)
-    Swal.fire({
-      title: 'Acknowledged!',
-      text: 'Memo has been acknowledged.',
-      icon: 'success',
-      timer: 1500,
-      showConfirmButton: false
-    })
-  } catch (error) {
-    console.error('Error acknowledging memo:', error)
-    Swal.fire('Error', 'Failed to acknowledge memo', 'error')
-  }
+  // Emit event to parent component to handle the actual API call
+  // This prevents duplicate notifications when multiple components handle acknowledgment
+  emit('memo-acknowledge', memoId)
 }
 
 const archiveMemo = async (memoId) => {
@@ -577,7 +564,7 @@ defineExpose({
 .inbox-skeleton-row {
   @apply flex items-start gap-3;
   padding: 18px 20px;
-  border-bottom: 1px solid #F0EEEB;
+  border-bottom: 1px solid var(--color-memo-border);
 }
 
 /* Empty State */

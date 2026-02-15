@@ -87,17 +87,21 @@ const viewMemo = (memo) => {
 }
 
 const markAsRead = async (memoId) => {
-  try {
-    await api.post(`/memos/${memoId}/acknowledge`)
-  } catch (error) {
-    console.error('Error marking as read:', error)
-  }
+  // Note: Viewing a memo no longer auto-acknowledges it.
+  // Users must explicitly click the acknowledge button.
+  // This prevents duplicate notifications to the sender.
 }
 
-const handleAcknowledge = (memoId) => {
-  // Logic here only handles synchronization if the detail modal is open
-  if (selectedMemo.value?.id === memoId) {
-    selectedMemo.value.status = 'acknowledged'
+const handleAcknowledge = async (memoId) => {
+  try {
+    await api.post(`/memos/${memoId}/acknowledge`)
+    // Update local state if the detail modal is open
+    if (selectedMemo.value?.id === memoId) {
+      selectedMemo.value.status = 'acknowledged'
+    }
+  } catch (error) {
+    console.error('Error acknowledging memo:', error)
+    Swal.fire('Error', 'Failed to acknowledge memo', 'error')
   }
 }
 

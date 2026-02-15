@@ -77,7 +77,7 @@ class MemoController extends Controller
             if (!$isAdmin) {
                 $query->whereIn('sender_id', $targetIds);
             }
-            $query->whereIn('status', ['sent', 'archived']); // Include archived
+            $query->whereIn('status', ['sent', 'read', 'acknowledged', 'archived']);
         } elseif ($request->scope === 'received') {
             if (!$isAdmin) {
                 // Get memo IDs from MemoAcknowledgment records for this user
@@ -457,39 +457,52 @@ class MemoController extends Controller
 
     public function destroy(Request $request, $id)
     {
-        $memo = Memo::findOrFail($id);
-        $user = $request->user();
-        
-        // Normalize IDs for comparison
-        $userId = $this->normalizeUserId($user->id);
-        $createdById = $this->normalizeUserId($memo->created_by);
-        $recipientId = $this->normalizeUserId($memo->recipient_id);
+        try {
+            $memo = Memo::findOrFail($id);
+            $user = $request->user();
+            
+            // Normalize IDs for comparison
+            $userId = $this->normalizeUserId($user->id);
+            $createdById = $this->normalizeUserId($memo->created_by);
+            $recipientId = $this->normalizeUserId($memo->recipient_id);
 
-        // Permission check
-        if (!$user->hasPermissionTo('memo.archive')) {
-            return response()->json(['message' => 'Unauthorized action.'], 403);
+            // Permission check
+            if (!$user->hasPermissionTo('memo.archive')) {
+                return response()->json(['message' => 'Unauthorized action.'], 403);
+            }
+
+            // Load relationships to ensure payload is rich with data for preview
+            $memo->load(['sender', 'acknowledgments.recipient', 'department']);
+            
+            // Ownership or Admin or Recipient
+            \App\Models\Archive::create([
+                'item_id' => (string) $memo->id,
+                'item_type' => 'memo',
+                'archived_by' => (string) $user->id,
+                'archived_at' => now(),
+                'sender_id' => (string) $memo->sender_id,
+                'recipient_id' => (string)$memo->recipient_id,
+                'created_by' => (string) $memo->created_by,
+                'payload' => $memo->toArray()
+            ]);
+            
+            $memo->delete();
+            
+            $this->activityLogger->logUserAction($user, 'delete_memo', "Deleted memo {$id}", $this->activityLogger->extractRequestInfo($request));
+
+            return response()->json(['message' => 'Memo deleted successfully']);
+        } catch (\Exception $e) {
+            \Log::error('Error archiving memo', [
+                'memo_id' => $id,
+                'user_id' => $request->user()->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'message' => 'Failed to archive memo: ' . $e->getMessage()
+            ], 500);
         }
-
-        // Load relationships to ensure payload is rich with data for preview
-        $memo->load(['sender', 'acknowledgments.recipient', 'departmentModel']);
-        
-        // Ownership or Admin or Recipient
-        \App\Models\Archive::create([
-            'item_id' => (string) $memo->id,
-            'item_type' => 'memo',
-            'archived_by' => (string) $user->id,
-            'archived_at' => now(),
-            'sender_id' => (string) $memo->sender_id,
-            'recipient_id' => (string)$memo->recipient_id,
-            'created_by' => (string) $memo->created_by,
-            'payload' => $memo->toArray()
-        ]);
-        
-        $memo->delete();
-        
-        $this->activityLogger->logUserAction($user, 'delete_memo', "Deleted memo {$id}", $this->activityLogger->extractRequestInfo($request));
-
-        return response()->json(['message' => 'Memo deleted successfully']);
     }
 
     public function acknowledge(Request $request, $id)

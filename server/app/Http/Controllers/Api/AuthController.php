@@ -28,7 +28,8 @@ class AuthController extends Controller
      */
     public function login(Request $request)
     {
-        $bypassRecaptcha = config('services.recaptcha.bypass', false);
+        $isLocal = config('app.env') === 'local';
+        $bypassRecaptcha = config('services.recaptcha.bypass', false) || ($isLocal && $request->has('skip_captcha'));
 
         $request->validate([
             'email' => 'required|email',
@@ -36,9 +37,9 @@ class AuthController extends Controller
             'recaptcha_token' => $bypassRecaptcha ? 'nullable' : 'required'
         ]);
 
-        // reCAPTCHA Validation
+        // 1. reCAPTCHA Validation - Skip if local and requested
         if (!$bypassRecaptcha) {
-            $response = \Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
+            $response = \Illuminate\Support\Facades\Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
                 'secret' => config('services.recaptcha.secret'),
                 'response' => $request->recaptcha_token,
                 'remoteip' => $request->ip(),
@@ -52,9 +53,12 @@ class AuthController extends Controller
             }
         }
 
-        $user = User::where('email', $request->email)->first();
+        // 2. Fetch User - Use cache for repeated attempts but verify status
+        $user = \Illuminate\Support\Facades\Cache::remember("login_user_lookup_{$request->email}", 60, function() use ($request) {
+            return User::where('email', $request->email)->first();
+        });
 
-        // 1. Check existence or verification (treated as same for security UX)
+        // 3. Check existence or verification
         if (!$user || !$user->password || !Hash::check($request->password, $user->password)) {
             if ($user) {
                 $user->incrementLoginAttempts();
@@ -67,7 +71,7 @@ class AuthController extends Controller
             ], 401);
         }
 
-        // 2. Check active status
+        // 4. Check active status
         if (!$user->is_active) {
             return response()->json([
                 'success' => false,
@@ -75,7 +79,7 @@ class AuthController extends Controller
             ], 401);
         }
 
-        // 3. Check lockout
+        // 5. Check lockout
         if ($user->lock_until && $user->lock_until->isFuture()) {
             return response()->json([
                 'success' => false,
@@ -84,7 +88,7 @@ class AuthController extends Controller
             ], 423);
         }
 
-        // 4. Success
+        // 6. Success
         $user->resetLoginAttempts();
         $user->update(['last_login' => now()]);
         
@@ -324,6 +328,9 @@ class AuthController extends Controller
     {
         $user = $request->user();
         if ($user) {
+            // Invalidate current user cache
+            \Illuminate\Support\Facades\Cache::forget("current_user_data_{$user->id}");
+            
             $user->currentAccessToken()->delete();
             $this->activityLogger->logAuthAction($user, 'logout', 'User logged out', $this->activityLogger->extractRequestInfo($request));
         }
@@ -333,9 +340,16 @@ class AuthController extends Controller
 
     public function getCurrentUser(Request $request)
     {
+        $user = $request->user();
+        $cacheKey = "current_user_data_{$user->id}";
+        
+        $userData = \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function() use ($user) {
+            return $user->load(['assignedRole', 'departmentModel']);
+        });
+
         return response()->json([
             'success' => true,
-            'user' => $request->user()
+            'user' => $userData
         ]);
     }
 
@@ -531,6 +545,11 @@ class AuthController extends Controller
     {
         $user = $request->user();
         $user->update($request->only(['first_name', 'last_name', 'bio']));
+        
+        // Invalidate current user cache
+        \Illuminate\Support\Facades\Cache::forget("current_user_data_{$user->id}");
+        \Illuminate\Support\Facades\Cache::forget("login_user_lookup_{$user->email}");
+
         return response()->json(['success' => true, 'user' => $user]);
     }
 

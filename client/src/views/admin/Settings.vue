@@ -14,6 +14,13 @@ const lockSettings = ref({
   isConfigured: false
 })
 
+const securitySettings = ref({
+  allowedDomains: [],
+  newDomain: ''
+})
+const defaultDomains = ['buksu.edu.ph']
+const isDomainSaving = ref(false)
+
 const originalSettings = ref({
   minutes: 1,
   seconds: 50
@@ -32,6 +39,10 @@ const fetchSettings = async () => {
       minutes: response.data.lock_duration.minutes,
       seconds: response.data.lock_duration.seconds
     }
+    
+    // Fetch system settings (domains)
+    const sysResponse = await api.get('/system-settings')
+    securitySettings.value.allowedDomains = sysResponse.data.allowed_email_domains || []
   } catch (error) {
     console.error('Error fetching settings:', error)
     lockSettings.value = {
@@ -56,6 +67,11 @@ const saveSettings = async () => {
       minutes: lockSettings.value.minutes,
       seconds: lockSettings.value.seconds
     }
+
+    // Save system settings
+    await api.put('/system-settings', {
+      allowed_email_domains: securitySettings.value.allowedDomains
+    })
 
     await Swal.fire({
       title: 'Settings Saved',
@@ -92,6 +108,57 @@ const formatDuration = (minutes, seconds) => {
 const isDirty = () => {
   return lockSettings.value.minutes !== originalSettings.value.minutes ||
          lockSettings.value.seconds !== originalSettings.value.seconds
+}
+
+const addDomain = () => {
+  const domain = securitySettings.value.newDomain.trim()
+  if (domain && !securitySettings.value.allowedDomains.includes(domain)) {
+    // Basic validation
+    if (!domain.includes('.') || domain.includes('@')) {
+      Swal.fire('Invalid Format', 'Please enter a valid domain (e.g., example.com)', 'warning')
+      return
+    }
+    securitySettings.value.allowedDomains.push(domain)
+    securitySettings.value.newDomain = ''
+  }
+}
+
+const removeDomain = (index) => {
+  const domain = securitySettings.value.allowedDomains[index]
+  if (defaultDomains.includes(domain)) {
+     Swal.fire('Default Domain', ' This is a required system domain and cannot be removed.', 'info')
+     return
+  }
+  securitySettings.value.allowedDomains.splice(index, 1)
+}
+
+const saveDomainSettings = async () => {
+  isDomainSaving.value = true
+  try {
+    await api.put('/system-settings', {
+      allowed_email_domains: securitySettings.value.allowedDomains
+    })
+
+    await Swal.fire({
+      title: 'Domains Saved',
+      text: 'Allowed email domains have been updated successfully.',
+      icon: 'success',
+      timer: 2000,
+      showConfirmButton: false
+    })
+    
+    // Refresh to get potentially cleaned/re-ordered list from backend
+    fetchSettings()
+  } catch (error) {
+    console.error('Error saving domains:', error)
+     await Swal.fire({
+      title: 'Error',
+      text: 'Failed to save domain settings.',
+      icon: 'error'
+    })
+  } finally {
+    isDomainSaving.value = false
+  }
 }
 
 onMounted(() => {
@@ -274,6 +341,74 @@ onMounted(() => {
                 <li>• Navigate away</li>
                 <li>• Timeout expires</li>
               </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Domain Management Section -->
+      <div class="bg-base-100 rounded-xl border border-base-200 overflow-hidden mt-6">
+        <div class="p-6 border-b border-base-200">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Shield class="text-primary" :size="20" />
+            </div>
+            <div>
+              <h2 class="text-lg font-bold">Access Control</h2>
+              <p class="text-sm text-base-content/60">Manage allowed email domains for user invitations</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="p-6 space-y-6">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text font-semibold">Allowed Email Domains</span>
+            </label>
+            <div class="flex gap-2 mb-4">
+              <input 
+                v-model="securitySettings.newDomain"
+                @keyup.enter="addDomain"
+                type="text" 
+                placeholder="e.g. buksu.edu.ph" 
+                class="input input-bordered w-full max-w-md"
+              />
+              <button @click="addDomain" class="btn btn-primary text-white">
+                Add Domain
+              </button>
+            </div>
+
+            <div class="flex flex-wrap gap-2">
+              <div 
+                v-for="(domain, index) in securitySettings.allowedDomains" 
+                :key="index"
+                class="badge badge-lg gap-2 p-4"
+                :class="defaultDomains.includes(domain) ? 'badge-neutral' : ''"
+              >
+                <Lock v-if="defaultDomains.includes(domain)" :size="12" class="opacity-50" />
+                {{ domain }}
+                <button 
+                  v-if="!defaultDomains.includes(domain)" 
+                  @click="removeDomain(index)" 
+                  class="btn btn-ghost btn-xs btn-circle text-error"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div v-if="securitySettings.allowedDomains.length === 0" class="text-sm text-base-content/50 italic">
+                No domains configured (Defaults will be used)
+              </div>
+            </div>
+            
+            <div class="flex justify-end mt-4 pt-4 border-t border-base-200">
+               <button 
+                @click="saveDomainSettings" 
+                class="btn btn-primary btn-sm text-white"
+                :disabled="isDomainSaving"
+              >
+                <span v-if="isDomainSaving" class="loading loading-spinner loading-sm"></span>
+                {{ isDomainSaving ? 'Saving...' : 'Save Changes' }}
+              </button>
             </div>
           </div>
         </div>

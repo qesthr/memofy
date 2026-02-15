@@ -167,12 +167,6 @@ const routes = [
         meta: { permission: 'nav.calendar' }
       },
       {
-        path: 'settings',
-        name: 'FacultySettings',
-        component: () => import('../views/faculty/Settings.vue'),
-        meta: { permission: 'nav.settings' }
-      },
-      {
         path: '',
         redirect: '/faculty/dashboard'
       }
