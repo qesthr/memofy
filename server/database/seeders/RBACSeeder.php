@@ -24,6 +24,7 @@ class RBACSeeder extends Seeder
             ['name' => 'memo.unarchive', 'label' => 'Unarchive Memos', 'description' => 'Restore memos from archive', 'category' => 'memo'],
             ['name' => 'memo.remove_permanently', 'label' => 'Permanent Delete', 'description' => 'Remove memos permanently', 'category' => 'memo'],
             ['name' => 'memo.approve', 'label' => 'Approve Memos', 'description' => 'Approve memos submitted for review', 'category' => 'memo'],
+            ['name' => 'memo.acknowledge', 'label' => 'Acknowledge Memos', 'description' => 'Mark received memos as read/acknowledged', 'category' => 'memo'],
             
             // Faculty Tab
             ['name' => 'faculty.add', 'label' => 'Add Faculty', 'description' => 'Add/Invite faculty members', 'category' => 'faculty'],
@@ -33,6 +34,10 @@ class RBACSeeder extends Seeder
             ['name' => 'faculty.unarchive', 'label' => 'Unarchive Faculty', 'description' => 'Restore faculty accounts', 'category' => 'faculty'],
             
             // Archive Tab
+            ['name' => 'archive.view', 'label' => 'View Archive', 'description' => 'Can view archived items in the archive tab', 'category' => 'archive'],
+            ['name' => 'archive.restore', 'label' => 'Restore Item', 'description' => 'Restore an item from the archive', 'category' => 'archive'],
+            ['name' => 'archive.restore_all', 'label' => 'Restore All Items', 'description' => 'Restore all items from the archive', 'category' => 'archive'],
+            ['name' => 'archive.delete_permanently', 'label' => 'Permanent Delete', 'description' => 'Remove archived items permanently', 'category' => 'archive'],
             ['name' => 'archive.unarchive_memo', 'label' => 'Unarchive Memos', 'description' => 'Unarchive memos from the archive tab', 'category' => 'archive'],
             ['name' => 'archive.unarchive_calendar', 'label' => 'Unarchive Events', 'description' => 'Unarchive calendar events', 'category' => 'archive'],
             ['name' => 'archive.remove_permanently', 'label' => 'Permanent Delete', 'description' => 'Remove archived items permanently', 'category' => 'archive'],
@@ -61,6 +66,17 @@ class RBACSeeder extends Seeder
 
             // Signature Management
             ['name' => 'signature.manage', 'label' => 'Manage Signatures', 'description' => 'Create and edit memo signatures', 'category' => 'memo'],
+
+            // Sidebar Navigation Permissions
+            ['name' => 'nav.dashboard', 'label' => 'Dashboard Navigation', 'description' => 'Can access Dashboard sidebar', 'category' => 'navigation'],
+            ['name' => 'nav.users', 'label' => 'Users Navigation', 'description' => 'Can access Users/Faculty sidebar', 'category' => 'navigation'],
+            ['name' => 'nav.memos', 'label' => 'Memos Navigation', 'description' => 'Can access Memos sidebar', 'category' => 'navigation'],
+            ['name' => 'nav.calendar', 'label' => 'Calendar Navigation', 'description' => 'Can access Calendar sidebar', 'category' => 'navigation'],
+            ['name' => 'nav.reports', 'label' => 'Reports Navigation', 'description' => 'Can access Reports sidebar', 'category' => 'navigation'],
+            ['name' => 'nav.activity_logs', 'label' => 'Activity Logs Navigation', 'description' => 'Can access Activity Logs sidebar', 'category' => 'navigation'],
+            ['name' => 'nav.archive', 'label' => 'Archive Navigation', 'description' => 'Can access Archive sidebar', 'category' => 'navigation'],
+            ['name' => 'nav.roles', 'label' => 'Roles Navigation', 'description' => 'Can access Roles sidebar', 'category' => 'navigation'],
+            ['name' => 'nav.settings', 'label' => 'Settings Navigation', 'description' => 'Can access Settings sidebar', 'category' => 'navigation'],
         ];
 
         $permissions = [];
@@ -97,17 +113,22 @@ class RBACSeeder extends Seeder
         $secretaryPermissions = [
             'memo.create', 'memo.send', 'memo.archive', 'memo.view', 'memo.unarchive', 'memo.remove_permanently',
             'faculty.add', 'faculty.edit', 'faculty.archive', 'faculty.view', 'faculty.unarchive',
+            'archive.view', 'archive.restore', 'archive.restore_all', 'archive.delete_permanently',
             'archive.unarchive_memo', 'archive.unarchive_calendar', 'archive.remove_permanently',
             'calendar.add_event', 'calendar.edit_event', 'calendar.archive_event',
-            'theme.select', 'activity.view_department', 'template.manage'
+            'theme.select', 'activity.view_department', 'template.manage',
+            'nav.dashboard', 'nav.memos', 'nav.users', 'nav.archive', 'nav.calendar', 'nav.settings',
+            'memo.acknowledge'
         ];
         $secretaryRole->update(['permission_ids' => $secretaryPermissions]);
 
-        // Faculty Permissions
+        // Faculty Permissions - Read-only calendar access, no event creation
         $facultyPermissions = [
-            'memo.view', 'memo.archive',
+            'memo.view', 'memo.archive', 'memo.acknowledge',
+            'archive.view', 'archive.restore', 'archive.delete_permanently',
             'archive.unarchive_memo', 'archive.remove_permanently',
-            'calendar.add_event', 'calendar.edit_event'
+            // Note: calendar.add_event and calendar.edit_event removed - faculty have read-only calendar access
+            'nav.dashboard', 'nav.memos', 'nav.archive', 'nav.calendar', 'nav.settings'
         ];
         $facultyRole->update(['permission_ids' => $facultyPermissions]);
 

@@ -374,14 +374,13 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="view-container h-[calc(100vh-140px)] flex flex-col overflow-hidden">
-    <!-- Header -->
-    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+  <div class="view-container flex flex-col min-h-0">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
       <div>
         <h1 class="text-2xl font-bold text-base-content">Roles & Permissions</h1>
-        <p class="text-base-content/60 mt-1">Manage user roles and their associated system permissions.</p>
+        <p class="text-base-content/60 mt-1 text-sm">Manage user roles and their associated system permissions.</p>
       </div>
-      <button @click="openAddModal" class="btn btn-primary gap-2 text-white">
+      <button @click="openAddModal" class="btn btn-primary btn-md gap-2 text-white shadow-lg shadow-primary/20">
         <Plus :size="18" />
         New Role
       </button>
@@ -499,7 +498,7 @@ onMounted(() => {
       </div>
 
       <!-- Right Content: Permissions Grid -->
-      <div class="lg:col-span-8 overflow-y-auto custom-scrollbar pr-2" style="max-height: calc(100vh - 160px);">
+      <div class="lg:col-span-8 space-y-6 overflow-y-auto custom-scrollbar pr-2" style="max-height: calc(100vh - 220px);">
         <div v-if="!selectedRoleId" class="flex flex-col items-center justify-center py-20 bg-base-100/50 rounded-2xl border-2 border-dashed border-base-200">
           <Shield :size="48" class="text-base-content/10 mb-4" />
           <p class="text-base-content/40 font-medium">Select a role from the dropdown to manage permissions</p>
@@ -558,7 +557,7 @@ onMounted(() => {
                     </button>
                   </div>
 
-                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <label 
                       v-for="permission in perms" 
                       :key="permission.id"
@@ -624,7 +623,9 @@ onMounted(() => {
               class="input input-bordered w-full"
             />
             <label class="label">
-              <span class="label-text-alt text-base-content/40">Leave blank to auto-generate from label</span>
+              <span class="label-text-alt text-base-content/40">
+                Generated Key: <span class="font-mono text-primary">{{ roleForm.name || (roleForm.label ? roleForm.label.toLowerCase().replace(/\s+/g, '_') : '...') }}</span>
+              </span>
             </label>
           </div>
 

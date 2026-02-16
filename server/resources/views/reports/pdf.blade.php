@@ -330,27 +330,6 @@
             </tbody>
         </table>
 
-        <div class="certification">
-            <strong>System Certification</strong><br>
-            This report is digitally verified and authenticated by the Memofy Core.
-        </div>
-
-        <!-- Signature Section -->
-        <table class="signature-table">
-            <tr>
-                <td width="50%" align="center">
-                    <div class="signature-line"></div>
-                    <div class="stat-label">System Administrator Signature</div>
-                    <div style="font-weight:bold; color:#1e40af">{{ $generated_by }}</div>
-                </td>
-                <td width="50%" align="center">
-                    <div class="signature-line"></div>
-                    <div class="stat-label">Institutional Verification</div>
-                    <div style="font-weight:bold; color:#1e40af">University Admin Office</div>
-                </td>
-            </tr>
-        </table>
-
         <div class="tracking-box">
             System Hash: {{ md5($tracking_number . $generated_at) }} | Auth Code: {{ strtoupper(substr(md5($generated_by), 0, 8)) }}
         </div>

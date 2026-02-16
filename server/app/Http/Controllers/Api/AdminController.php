@@ -110,7 +110,19 @@ class AdminController extends Controller
                 'required',
                 'email',
                 'unique:users,email',
-                'regex:/^[\w\.\-]+@(student\.)?buksu\.edu\.ph$/'
+                function ($attribute, $value, $fail) {
+                    $parts = explode('@', $value);
+                    $domain = array_pop($parts);
+                    
+                    $allowedDomains = \App\Models\SystemSetting::get('allowed_email_domains');
+                    if (!$allowedDomains) {
+                        $allowedDomains = ['buksu.edu.ph', 'student.buksu.edu.ph'];
+                    }
+
+                    if (!in_array($domain, $allowedDomains)) {
+                         $fail('The email domain is not allowed.');
+                    }
+                }
             ],
             'department' => 'required|string|in:Food Technology,Automotive Technology,Electronics Technology,Information Technology/EMC',
             'role' => 'required|string|in:admin,secretary,faculty'

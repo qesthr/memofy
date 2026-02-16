@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { 
   Plus, 
   Search, 
@@ -37,6 +37,35 @@ const facultyForm = ref({
   email: ''
 })
 
+// Pagination state
+const pagination = ref({
+  current_page: 1,
+  last_page: 1,
+  per_page: 50,
+  total: 0
+})
+
+// Smart pagination visible pages
+const visiblePages = computed(() => {
+  const current = pagination.value.current_page
+  const last = pagination.value.last_page
+  const delta = 2
+  const pages = []
+  
+  if (last <= 7) {
+    for (let i = 1; i <= last; i++) pages.push(i)
+  } else {
+    pages.push(1)
+    const start = Math.max(2, current - delta)
+    const end = Math.min(last - 1, current + delta)
+    if (start > 2) pages.push('...')
+    for (let i = start; i <= end; i++) pages.push(i)
+    if (end < last - 1) pages.push('...')
+    if (last > 1) pages.push(last)
+  }
+  return pages
+})
+
 const fetchFaculty = async () => {
   isLoading.value = true
   try {
@@ -44,7 +73,9 @@ const fetchFaculty = async () => {
       params: {
         role: 'faculty',
         search: searchTerm.value,
-        status: activeFilter.value
+        status: activeFilter.value,
+        page: pagination.value.current_page,
+        per_page: pagination.value.per_page
       }
     })
     const data = response.data.data || response.data
@@ -52,10 +83,27 @@ const fetchFaculty = async () => {
       ...f,
       name: f.name || `${f.first_name || ''} ${f.last_name || ''}`.trim()
     }))
+    
+    // Update pagination from response
+    if (response.data.current_page) {
+      pagination.value = {
+        current_page: response.data.current_page || 1,
+        last_page: response.data.last_page || 1,
+        per_page: response.data.per_page || 50,
+        total: response.data.total || 0
+      }
+    }
   } catch (error) {
     console.error('Error fetching faculty:', error)
   } finally {
     isLoading.value = false
+  }
+}
+
+const changePage = (page) => {
+  if (page >= 1 && page <= pagination.value.last_page) {
+    pagination.value.current_page = page
+    fetchFaculty()
   }
 }
 
@@ -163,10 +211,12 @@ const closeModal = () => {
 }
 
 watch(searchTerm, () => {
+  pagination.value.current_page = 1
   fetchFaculty()
 })
 
 watch(activeFilter, () => {
+  pagination.value.current_page = 1
   fetchFaculty()
 })
 
@@ -295,6 +345,38 @@ onMounted(() => {
             </tr>
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- Pagination -->
+    <div v-if="pagination.last_page > 1" class="mt-4 flex items-center justify-between">
+      <span class="text-sm text-base-content/60">
+        Page {{ pagination.current_page }} of {{ pagination.last_page }} ({{ pagination.total }} total)
+      </span>
+      <div class="join">
+        <button 
+          @click="changePage(pagination.current_page - 1)" 
+          class="join-item btn btn-xs btn-ghost" 
+          :disabled="pagination.current_page === 1"
+        >
+          Previous
+        </button>
+        <button 
+          v-for="page in visiblePages" 
+          :key="page"
+          @click="page !== '...' && changePage(page)"
+          :class="['join-item btn btn-xs', pagination.current_page === page ? 'btn-active' : 'btn-ghost', page === '...' ? 'disabled:cursor-default' : '']"
+          :disabled="page === '...'"
+        >
+          {{ page }}
+        </button>
+        <button 
+          @click="changePage(pagination.current_page + 1)" 
+          class="join-item btn btn-xs btn-ghost" 
+          :disabled="pagination.current_page === pagination.last_page"
+        >
+          Next
+        </button>
       </div>
     </div>
 

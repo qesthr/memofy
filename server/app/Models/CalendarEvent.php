@@ -22,7 +22,9 @@ class CalendarEvent extends Model
         'created_by',
         'status',
         'google_calendar_event_ids',
-        'source'
+        'source',
+        'archived_at',
+        'archived_by'
     ];
 
     protected $casts = [
@@ -30,6 +32,7 @@ class CalendarEvent extends Model
         'end' => 'datetime',
         'all_day' => 'boolean',
         'google_calendar_event_ids' => 'array',
+        'archived_at' => 'datetime'
     ];
 
     public function creator()

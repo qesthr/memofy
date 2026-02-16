@@ -45,30 +45,28 @@ const getEventStyle = (event) => {
   const top = (startMinutes / 60) * 60 
   const height = Math.max((duration / 60) * 60, 20) // min 20px
   
-  // Visual distinction for different sources and priorities
-  let bgColor, borderColor
+  // Use the color provided by the API
+  let bgColor = event.color || '#3b82f6'
+  let borderColor = '#3b82f6'
+  
+  // Highlighting: Border color should be a darker version of the priority color
+  const priority = event.priority || 'medium'
+  switch (priority) {
+    case 'high':
+      borderColor = '#D32F2F'
+      break
+    case 'medium':
+      borderColor = '#F57C00'
+      break
+    case 'low':
+      borderColor = '#388E3C'
+      break
+    default:
+      borderColor = '#1d4ed8'
+  }
+  
   if (event.source === 'GOOGLE') {
-    bgColor = '#4285F4'
     borderColor = '#1a73e8'
-  } else {
-    const priority = event.priority || 'medium'
-    switch (priority) {
-      case 'high':
-        bgColor = '#F44336'
-        borderColor = '#D32F2F'
-        break
-      case 'medium':
-        bgColor = '#FF9800'
-        borderColor = '#F57C00'
-        break
-      case 'low':
-        bgColor = '#4CAF50'
-        borderColor = '#388E3C'
-        break
-      default:
-        bgColor = '#3b82f6'
-        borderColor = '#1d4ed8'
-    }
   }
   
   return {
@@ -139,7 +137,7 @@ const allDayEvents = computed(() => {
       <div class="flex relative min-h-[1440px]">
         
         <!-- Time Labels -->
-        <div class="w-20 flex-shrink-0 border-r border-black/10 dark:border-white/10 bg-base-100 z-10">
+        <div class="w-20 shrink-0 border-r border-black/10 dark:border-white/10 bg-base-100 z-10">
           <div v-for="slot in timeSlots" :key="`${slot.hour}-${slot.minute}`" class="h-[30px] relative">
             <span v-if="slot.hour > 0 || slot.minute > 0" class="absolute -top-2.5 right-3 text-[10px] text-base-content/40 font-bold whitespace-nowrap uppercase">
               {{ slot.label }}
