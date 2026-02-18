@@ -4,7 +4,6 @@ import axios from 'axios'
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   headers: {
-    'Content-Type': 'application/json',
     'Accept': 'application/json'
   }
 })
@@ -38,7 +37,7 @@ api.interceptors.response.use(
       } else if (error.response.status === 403) {
         const Swal = (await import('sweetalert2')).default
         Swal.fire({
-          title: 'Access Denied',
+          title: 'Unauthorized Access',
           text: error.response.data.message || 'You do not have permission to perform this action.',
           icon: 'error',
           confirmButtonColor: '#3b82f6',

@@ -41,7 +41,7 @@ return new class extends Migration
 
         Schema::table('calendar_events', function (Blueprint $table) {
             $table->dropColumn('source');
-            $table->json('participants')->nullable()->after('description');
+            $table->json('participants')->nullable();
         });
     }
 };

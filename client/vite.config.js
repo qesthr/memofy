@@ -15,9 +15,11 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
+        // Note: Do NOT set Content-Type header here; let the browser set it automatically
+        // for different request types (application/json for regular requests, 
+        // multipart/form-data for file uploads)
         headers: {
           Accept: 'application/json',
-          "Content-Type": "application/json",
         },
       },
     },

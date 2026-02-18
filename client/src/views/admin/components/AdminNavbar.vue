@@ -1,12 +1,18 @@
 <script setup>
 import { ref } from 'vue'
-import { Search, Bell, User, LogOut, Settings, Palette, Check } from 'lucide-vue-next'
+import { Search, Bell, User, LogOut, Settings, Sun, Moon, Check, Camera } from 'lucide-vue-next'
 import { useAuth } from '@/composables/useAuth'
 import { useTheme } from '@/composables/useTheme'
+import ProfilePhotoModal from '@/components/profile/ProfilePhotoModal.vue'
+import AccountManagementModal from '@/components/profile/AccountManagementModal.vue'
+import NotificationDropdown from '@/components/notifications/NotificationDropdown.vue'
 
 const searchQuery = ref('')
 const { user, logout } = useAuth()
 const { theme, availableThemes, setTheme } = useTheme()
+
+const showPhotoModal = ref(false)
+const showAccountModal = ref(false)
 
 const getInitials = (name) => {
   if (!name) return '?'
@@ -31,47 +37,25 @@ const getInitials = (name) => {
       <!-- Right Section -->
       <div class="navbar-right">
         <!-- Notifications -->
-        <div class="dropdown dropdown-end">
-          <button tabindex="0" class="btn btn-ghost btn-circle">
-            <div class="indicator">
-              <Bell :size="20" />
-              <span class="badge badge-xs badge-primary indicator-item"></span>
-            </div>
-          </button>
-          <div tabindex="0" class="dropdown-content z-[1] mt-3 w-80 card card-compact bg-base-100 shadow-xl border border-base-300">
-            <div class="card-body">
-              <h3 class="font-bold text-lg">Notifications</h3>
-              <div class="py-4 text-center text-sm text-base-content/60">
-                No new notifications
-              </div>
-              <div class="card-actions">
-                <button class="btn btn-primary btn-block btn-sm">View all</button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <NotificationDropdown />
 
         <!-- Theme Selector -->
         <div class="dropdown dropdown-end">
-          <button tabindex="0" class="btn btn-ghost btn-circle" title="Change Theme">
-            <Palette :size="20" />
+          <button tabindex="0" class="btn btn-ghost btn-circle" title="Toggle Theme">
+            <Sun v-if="theme === 'dark'" :size="20" />
+            <Moon v-else :size="20" />
           </button>
-          <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow-2xl bg-base-100 border border-base-300 rounded-xl w-56 mt-4 max-h-[70vh] overflow-y-auto custom-scrollbar flex-nowrap">
+          <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow-2xl bg-base-100 border border-base-300 rounded-xl w-40 mt-4 max-h-[70vh] overflow-y-auto custom-scrollbar flex-nowrap">
             <li class="menu-title px-4 py-2 opacity-60 text-[10px] uppercase tracking-wider font-bold">Select Theme</li>
-            <li v-for="t in availableThemes" :key="t">
+            <li v-for="t in ['light', 'dark']" :key="t">
               <button 
                 @click="setTheme(t)"
                 :class="{ 'active bg-primary text-primary-content': theme === t }"
                 class="flex items-center justify-between py-2 px-4 group text-base-content"
-                :data-theme="t"
               >
                 <div class="flex items-center gap-3">
-                   <div class="flex gap-0.5">
-                      <div class="w-2 h-4 rounded-full bg-primary"></div>
-                      <div class="w-2 h-4 rounded-full bg-secondary"></div>
-                      <div class="w-2 h-4 rounded-full bg-accent"></div>
-                      <div class="w-2 h-4 rounded-full bg-neutral"></div>
-                   </div>
+                   <Sun v-if="t === 'light'" :size="16" />
+                   <Moon v-else :size="16" />
                    <span class="capitalize text-sm font-medium">{{ t }}</span>
                 </div>
                 <Check v-if="theme === t" :size="14" />
@@ -96,14 +80,24 @@ const getInitials = (name) => {
           </div>
           <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow-xl bg-base-100 border border-base-300 rounded-box w-52 mt-3">
             <li class="menu-title px-4 py-2 opacity-60">Account Settings</li>
-            <li><router-link to="/admin/settings"><User :size="16" /> Profile</router-link></li>
-            <li><router-link to="/admin/settings"><Settings :size="16" /> Settings</router-link></li>
+            <li><button @click="showPhotoModal = true"><Camera :size="16" /> Profile Photos</button></li>
+            <li><button @click="showAccountModal = true"><Settings :size="16" /> My Account</button></li>
             <div class="divider my-0"></div>
             <li><button @click="logout" class="text-error"><LogOut :size="16" /> Logout</button></li>
           </ul>
         </div>
       </div>
     </div>
+
+    <!-- Modals -->
+    <ProfilePhotoModal 
+      :is-open="showPhotoModal" 
+      @close="showPhotoModal = false" 
+    />
+    <AccountManagementModal 
+      :is-open="showAccountModal" 
+      @close="showAccountModal = false" 
+    />
   </header>
 </template>
 

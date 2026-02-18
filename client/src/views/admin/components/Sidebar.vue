@@ -19,11 +19,16 @@ import {
 const router = useRouter()
 const route = useRoute()
 const { logout } = useLogout()
-const { can } = useAuth()
+const { user, can } = useAuth()
 
-const userName = ref('--')
-const userRole = ref('Administrator')
-const userInitial = ref('A')
+const userName = computed(() => user.value ? `${user.value.first_name} ${user.value.last_name}` : '--')
+const userRole = computed(() => {
+  if (!user.value) return 'Administrator'
+  const role = typeof user.value.role === 'object' ? user.value.role.name : user.value.role
+  return role.charAt(0).toUpperCase() + role.slice(1)
+})
+const userInitial = computed(() => user.value ? user.value.first_name.charAt(0) : 'A')
+const userEmail = computed(() => user.value?.email || '')
 
 const menuItems = [
   { name: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
@@ -52,15 +57,6 @@ const filteredBottomItems = computed(() => {
 const handleLogout = () => {
   logout()
 }
-
-onMounted(() => {
-  const user = JSON.parse(localStorage.getItem('user'))
-  if (user) {
-    userName.value = user.first_name + ' ' + user.last_name
-    userRole.value = user.role.charAt(0).toUpperCase() + user.role.slice(1)
-    userInitial.value = user.first_name.charAt(0)
-  }
-})
 </script>
 
 <template>
@@ -116,8 +112,9 @@ onMounted(() => {
       <!-- Admin Profile -->
       <div class="admin-profile">
         <div class="avatar">
-          <div class="w-10 h-10 rounded-full bg-primary text-primary-content flex items-center justify-center">
-            <span class="text-sm font-semibold">{{ userInitial }}</span>
+          <div class="w-10 h-10 rounded-full bg-primary text-primary-content flex items-center justify-center overflow-hidden">
+            <img v-if="user?.profile_picture" :src="user.profile_picture" alt="Profile" class="w-full h-full object-cover" />
+            <span v-else class="text-sm font-semibold">{{ userInitial }}</span>
           </div>
         </div>
         <div class="profile-info">

@@ -79,8 +79,8 @@ onMounted(() => {
         <!-- Stats Row (Single Card for Faculty usually, maybe more later) -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
            <div class="bg-base-100 p-6 rounded-2xl shadow-sm border border-base-300 flex items-center gap-4">
-            <div class="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center shrink-0">
-              <FileText class="w-6 h-6 text-secondary" />
+            <div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+              <FileText class="w-6 h-6 text-primary" />
             </div>
             <div>
               <p class="text-sm font-medium text-base-content/60">Received Memos</p>
@@ -128,8 +128,8 @@ onMounted(() => {
                 :key="i"
                 class="aspect-square flex items-center justify-center text-sm rounded-lg"
                 :class="[
-                    date.isSelected ? 'bg-base-100 border-2 border-secondary text-secondary font-bold' : '',
-                    !date.isSelected && date.isToday ? 'bg-secondary text-secondary-content font-bold' : 'text-base-content hover:bg-base-200',
+                    date.isSelected ? 'bg-base-100 border-2 border-primary text-primary font-bold' : '',
+                    !date.isSelected && date.isToday ? 'bg-primary text-primary-content font-bold' : 'text-base-content hover:bg-base-200',
                     !date.day ? 'pointer-events-none' : ''
                 ]"
              >

@@ -6,18 +6,22 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\UserInvitation;
 use App\Services\ActivityLogger;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\UserInvitationMail;
 
 class UserController extends Controller
 {
     protected $activityLogger;
+    protected $notificationService;
 
-    public function __construct(ActivityLogger $activityLogger)
+    public function __construct(ActivityLogger $activityLogger, NotificationService $notificationService)
     {
         $this->activityLogger = $activityLogger;
+        $this->notificationService = $notificationService;
     }
 
     public function index(Request $request)
@@ -69,6 +73,10 @@ class UserController extends Controller
             $query->where('department', $request->department);
         }
 
+        if ($request->department_id) {
+            $query->where('department_id', $request->department_id);
+        }
+
         // Filter by Status
     if ($request->status !== null) {
         if ($request->status === 'active') {
@@ -111,7 +119,7 @@ class UserController extends Controller
     {
         // Admin creates user directly
         $validated = $request->validate([
-            'email' => 'required|email|unique:users',
+            'email' => 'required|email|unique:mongodb.users,email',
             'first_name' => 'required|string',
             'last_name' => 'required|string',
             'role' => 'required|string',
@@ -178,14 +186,14 @@ class UserController extends Controller
         $rules = [
             'first_name' => 'sometimes|string',
             'last_name' => 'sometimes|string',
-            'email' => 'sometimes|email|unique:users,email,' . $id,
+            'email' => 'sometimes|email|unique:mongodb.users,email,' . $id . ',_id',
             'is_active' => 'sometimes|boolean'
         ];
 
         // Admin specific updates
         if ($isAdmin) {
             $rules['role'] = 'sometimes|string|in:admin,secretary,faculty';
-            $rules['department'] = 'sometimes|string|exists:departments,name';
+            $rules['department'] = 'sometimes|string|exists:mongodb.departments,name';
         }
 
         $validated = $request->validate($rules);
@@ -233,11 +241,39 @@ class UserController extends Controller
         $original = $user->getOriginal();
         $user->update($validated);
 
+        // Notify admins if a secretary updates their profile
+        if ($user->role === 'secretary' && $request->user()->id === $user->id) {
+            $changes = $user->getChanges();
+            $updateTypes = [];
+            
+            if (isset($changes['first_name']) || isset($changes['last_name'])) {
+                $updateTypes[] = 'name';
+            }
+            if (isset($changes['email'])) {
+                $updateTypes[] = 'email';
+            }
+            if (isset($changes['department'])) {
+                $updateTypes[] = 'department';
+            }
+            if (isset($changes['signature'])) {
+                $updateTypes[] = 'signature';
+            }
+            
+            if (!empty($updateTypes)) {
+                $this->notificationService->notifyAdminsOfProfileUpdate($user, $updateTypes);
+            }
+        }
+
         $this->activityLogger->logUserAction($request->user(), 'update_user', $user, [
             'changes' => $user->getChanges(),
             'original' => $original,
             ...$this->activityLogger->extractRequestInfo($request)
         ]);
+
+        // Invalidate user cache
+        \Illuminate\Support\Facades\Cache::forget("user_permissions_{$user->id}");
+        \Illuminate\Support\Facades\Cache::forget("current_user_data_{$user->id}");
+        \Illuminate\Support\Facades\Cache::forget("login_user_lookup_{$user->email}");
 
         return response()->json([
             'success' => true,
@@ -269,8 +305,38 @@ class UserController extends Controller
             }
         }
 
-        $user->is_active = !$user->is_active;
+        if ($user->is_active) {
+            $user->is_active = false;
+            $user->archived_at = now();
+            $user->archived_by = (string) $currentUser->id;
+            
+            // Centralized Archive
+            \App\Models\Archive::create([
+                'item_id' => (string) $user->id,
+                'item_type' => 'user',
+                'archived_by' => (string) $currentUser->id,
+                'archived_at' => now(),
+                'role' => (string) $user->role,
+                'department' => (string) $user->department,
+                'department_id' => (string) $user->department_id,
+                'payload' => $user->toArray()
+            ]);
+        } else {
+            $user->is_active = true;
+            $user->archived_at = null;
+            $user->archived_by = null;
+            
+            // Remove from centralized Archive if exists
+            \App\Models\Archive::where('item_id', (string)$user->id)
+                ->where('item_type', 'user')
+                ->delete();
+        }
         $user->save();
+
+        // Invalidate cache
+        \Illuminate\Support\Facades\Cache::forget("user_permissions_{$user->id}");
+        \Illuminate\Support\Facades\Cache::forget("current_user_data_{$user->id}");
+        \Illuminate\Support\Facades\Cache::forget("login_user_lookup_{$user->email}");
 
         $action = $user->is_active ? 'activate_user' : 'deactivate_user';
         $this->activityLogger->logUserAction($currentUser, $action, $user, $this->activityLogger->extractRequestInfo($request));
@@ -321,7 +387,6 @@ class UserController extends Controller
         }
 
         $isSecretary = $currentUser->role === 'secretary';
-        $isAdmin = $currentUser->role === 'admin';
 
         // 1. Strict Validation
         $rules = [
@@ -331,8 +396,8 @@ class UserController extends Controller
                 'email',
                 'unique:users,email',
                 function ($attribute, $value, $fail) {
-                    if (!preg_match('/^[\w\.\-]+@(student\.)?buksu\.edu\.ph$/i', $value)) {
-                        $fail('Only @buksu.edu.ph and @student.buksu.edu.ph email addresses are allowed.');
+                    if (!$this->isEmailDomainAllowed($value)) {
+                        $fail('The email domain is not allowed.');
                     }
                 },
             ],
@@ -344,10 +409,14 @@ class UserController extends Controller
             $rules['department'] = 'required|string|exists:departments,name';
         }
 
+        // Password is optional - will be auto-generated if not provided
+        $rules['password'] = 'nullable|string|min:8';
+
         $request->validate($rules, [
             'email.unique' => 'An account with this email already exists.',
             'department.exists' => 'Invalid department selection.',
             'role.in' => 'Invalid role selection.',
+            'password.min' => 'Password must be at least 8 characters.',
         ]);
 
         try {
@@ -379,15 +448,24 @@ class UserController extends Controller
             $firstName = $parts[0];
             $lastName = $parts[1] ?? '';
 
-            // 5. Create User record (inactive, no password)
+            // 5. Generate or use provided password
+            $providedPassword = $request->password;
+            $password = $providedPassword ?: $this->generateSecurePassword();
+            $hashedPassword = Hash::make($password);
+
+            // 6. Create User record
+            // If password is provided (Direct Creation), set active immediately.
+            // If no password (Legacy Invite), set inactive.
+            $isActive = !empty($providedPassword);
+
             $userData = [
                 'first_name' => $firstName,
                 'last_name' => $lastName,
                 'email' => $request->email,
                 'role' => $role,
                 'department' => $department,
-                'is_active' => false, 
-                'password' => null
+                'is_active' => $isActive, 
+                'password' => $hashedPassword
             ];
 
             // Sync department_id
@@ -398,44 +476,82 @@ class UserController extends Controller
 
             $user = User::create($userData);
 
-            // 5. Generate Token
-            $token = Str::random(64);
-
-            // 6. Create Invitation
-            $invitation = UserInvitation::create([
-                'user_id' => $user->id,
-                'email' => $user->email,
-                'role' => $user->role,
-                'department' => $user->department,
-                'token' => $token,
-                'expires_at' => now()->addHours(48),
-                'invited_by' => $currentUser->id,
-                'status' => 'pending'
-            ]);
-
             // 7. Send Email
-            try {
-                Mail::to($invitation->email)->send(new UserInvitationMail($invitation));
-            } catch (\Exception $e) {
-                \Log::error('Invitation email failed: ' . $e->getMessage());
+            if ($isActive) {
+                // Direct Creation Flow: Send Welcome Email with credentials
+                // We use UserInvitationMail but with a non-persisted Invitation object
+                // to reuse the existing template.
+                $invitation = new UserInvitation();
+                $invitation->email = $user->email;
+                $invitation->role = $user->role;
+                $invitation->department = $user->department;
+                $invitation->status = 'accepted'; // It's already active
+                
+                // Manually set relations for the view
+                $invitation->setRelation('user', $user);
+                $invitation->setRelation('inviter', $currentUser);
+
+                try {
+                    Mail::to($user->email)->send(new UserInvitationMail($invitation, $password));
+                } catch (\Exception $e) {
+                    \Log::error('Welcome email failed: ' . $e->getMessage());
+                     return response()->json([
+                        'success' => true,
+                        'message' => 'User created successfully, but the welcome email could not be sent.',
+                        'user' => $user
+                    ], 201);
+                }
+
+                $this->activityLogger->logUserAction($currentUser, 'create_user', "Created user " . $user->email, [
+                    'role' => $user->role,
+                    'department' => $user->department,
+                    ...$this->activityLogger->extractRequestInfo($request)
+                ]);
+
                 return response()->json([
                     'success' => true,
-                    'message' => 'Faculty account was created, but the invitation email could not be sent.',
+                    'message' => 'User created successfully.',
+                    'user' => $user
+                ], 201);
+
+            } else {
+                // Legacy Invite Flow (Inactive User + Invitation Record)
+                $token = Str::random(64);
+                $invitation = UserInvitation::create([
+                    'user_id' => $user->id,
+                    'email' => $user->email,
+                    'role' => $user->role,
+                    'department' => $user->department,
+                    'token' => $token,
+                    'expires_at' => now()->addHours(48),
+                    'invited_by' => $currentUser->id,
+                    'status' => 'pending'
+                ]);
+
+                try {
+                    $invitation->load('user', 'inviter');
+                    Mail::to($invitation->email)->send(new UserInvitationMail($invitation, $password));
+                } catch (\Exception $e) {
+                    \Log::error('Invitation email failed: ' . $e->getMessage());
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'User added (inactive), but the invitation email could not be sent.',
+                        'user' => $user
+                    ], 201);
+                }
+
+                $this->activityLogger->logUserAction($currentUser, 'invite_user', "Invited " . $user->email, [
+                    'role' => $user->role,
+                    'department' => $user->department,
+                    ...$this->activityLogger->extractRequestInfo($request)
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'User invited successfully. Email sent.',
                     'user' => $user
                 ], 201);
             }
-
-            $this->activityLogger->logUserAction($currentUser, 'invite_user', "Invited " . $user->email, [
-                'role' => $user->role,
-                'department' => $user->department,
-                ...$this->activityLogger->extractRequestInfo($request)
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => $isSecretary ? 'Faculty successfully invited and assigned to your department.' : 'User successfully added. An invitation email has been sent.',
-                'user' => $user
-            ], 201);
 
         } catch (\Exception $e) {
             \Log::error('Invite user failed: ' . $e->getMessage());
@@ -444,6 +560,19 @@ class UserController extends Controller
                 'message' => 'An unexpected error occurred. Please try again later.'
             ], 500);
         }
+    }
+
+    /**
+     * Generate a secure random password
+     */
+    private function generateSecurePassword(): string
+    {
+        $chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+-=[]{}|;:,.<>?';
+        $password = '';
+        for ($i = 0; $i < 12; $i++) {
+            $password .= $chars[random_int(0, strlen($chars) - 1)];
+        }
+        return $password;
     }
 
     public function restoreAll(Request $request)
@@ -455,7 +584,11 @@ class UserController extends Controller
             return response()->json(['message' => 'No archived users to restore'], 200);
         }
         
-        User::where('is_active', false)->update(['is_active' => true]);
+        User::where('is_active', false)->update([
+            'is_active' => true,
+            'archived_at' => null,
+            'archived_by' => null
+        ]);
         
         $this->activityLogger->logUserAction(
             $request->user(), 
@@ -468,5 +601,23 @@ class UserController extends Controller
             'message' => "{$count} users restored successfully",
             'count' => $count
         ]);
+    }
+
+    /**
+     * Check if email domain is allowed
+     */
+    private function isEmailDomainAllowed($email)
+    {
+        $parts = explode('@', $email);
+        $domain = array_pop($parts);
+
+        // Fetch domains from SystemSetting, defaulting to legacy allowed domains
+        $allowedDomains = \App\Models\SystemSetting::get('allowed_email_domains');
+        
+        if (!$allowedDomains) {
+            $allowedDomains = ['buksu.edu.ph', 'student.buksu.edu.ph'];
+        }
+
+        return in_array($domain, $allowedDomains);
     }
 }

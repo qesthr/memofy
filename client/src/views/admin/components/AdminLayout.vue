@@ -23,6 +23,6 @@ import AdminNavbar from './AdminNavbar.vue'
 .main-content {
   @apply ml-64 mt-16 p-6;
   height: calc(100vh - 4rem);
-  overflow: hidden;
+  overflow-y: auto;
 }
 </style>

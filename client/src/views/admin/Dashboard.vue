@@ -7,27 +7,31 @@ const stats = ref([
   {
     title: 'Total Memos',
     value: '0',
+    key: 'total_memos',
     icon: FileText,
     color: 'text-primary',
     bgColor: 'bg-primary/10'
   },
   {
-    title: 'Pending',
+    title: 'Pending Approval',
     value: '0',
+    key: 'pending_approval',
     icon: Hourglass,
-    color: 'text-secondary',
-    bgColor: 'bg-secondary/10'
+    color: 'text-warning',
+    bgColor: 'bg-warning/10'
   },
   {
-    title: 'Overdue Memos',
+    title: 'Upcoming Deadlines',
     value: '0',
+    key: 'upcoming_deadlines',
     icon: AlertCircle,
     color: 'text-error',
     bgColor: 'bg-error/10'
   },
   {
-    title: 'Active Users',
+    title: 'Total Users',
     value: '0',
+    key: 'total_users',
     icon: Users,
     color: 'text-success',
     bgColor: 'bg-success/10'
@@ -41,6 +45,30 @@ const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() +
 const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay()
 
 const calendarDays = ref([])
+const events = ref([])
+
+const recentMemos = ref([])
+const selectedEvent = ref(null)
+const isEventModalOpen = ref(false)
+
+const openEventModal = (event) => {
+  selectedEvent.value = event
+  isEventModalOpen.value = true
+}
+
+const handleDayClick = (dateObj) => {
+  if (!dateObj.isCurrentMonth) return
+  const dayEvents = getDayEvents(dateObj.day, dateObj.isCurrentMonth)
+  if (dayEvents.length > 0) {
+    if (dayEvents.length === 1) {
+      openEventModal(dayEvents[0])
+    } else {
+      // If multiple events, we could show a list, but for now just show the first one
+      openEventModal(dayEvents[0])
+    }
+  }
+}
+
 const generateCalendar = () => {
   const days = []
   const prevMonthDays = new Date(currentDate.getFullYear(), currentDate.getMonth(), 0).getDate()
@@ -64,6 +92,23 @@ const generateCalendar = () => {
   calendarDays.value = days
 }
 
+const getDayEvents = (day, isCurrentMonth) => {
+  if (!isCurrentMonth || !Array.isArray(events.value)) return []
+  const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  return events.value.filter(event => event.start && event.start.startsWith(dateStr))
+}
+
+const getHighestPriorityColor = (day, isCurrentMonth) => {
+  const dayEvents = getDayEvents(day, isCurrentMonth)
+  if (dayEvents.length === 0) return null
+  
+  if (dayEvents.some(e => e.priority === 'high')) return '#F44336'
+  if (dayEvents.some(e => e.priority === 'medium')) return '#FF9800'
+  if (dayEvents.some(e => e.priority === 'low')) return '#4CAF50'
+  
+  return '#3B82F6' // Default Blue
+}
+
 generateCalendar()
 
 const weekDays = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
@@ -74,17 +119,15 @@ import api from '../../services/api'
 const fetchDashboardData = async () => {
   try {
     const response = await api.get('/admin/dashboard-stats')
-    const data = response.data.stats
+    const data = response.data
     
-    // Update values while keeping icons and colors
-    // 0: Total Memos
-    stats.value[0].value = data.total_memos || 0
-    // 1: Pending
-    stats.value[1].value = data.pending_memos || 0
-    // 2: Overdue Memos (Not implemented in backend yet)
-    stats.value[2].value = 0 
-    // 3: Active Users
-    stats.value[3].value = data.active_users || 0
+    // Update Stats
+    stats.value.forEach(stat => {
+      stat.value = data.stats[stat.key] || 0
+    })
+
+    recentMemos.value = data.recent_memos || []
+    events.value = data.calendar_events || []
 
   } catch (error) {
     console.error('Error fetching dashboard data:', error)
@@ -136,8 +179,36 @@ onMounted(() => {
     <div class="content-grid">
       <!-- Recent Memos -->
       <div class="content-card recent-memos">
-        <h2 class="card-title">Recent Memos</h2>
-        <div class="empty-state">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="card-title mb-0">Recent Memos</h2>
+          <router-link to="/admin/memos" class="text-xs text-primary hover:underline">View All</router-link>
+        </div>
+        
+        <div v-if="recentMemos.length > 0" class="memo-list">
+          <div v-for="memo in recentMemos" :key="memo.id" class="memo-item p-3 border-b border-base-200 last:border-0 hover:bg-base-200/50 rounded-lg transition-colors cursor-pointer" @click="$router.push(`/admin/memos?id=${memo.id}`)">
+            <div class="flex items-start gap-3">
+              <div class="memo-avatar p-2 rounded-lg" :class="memo.priority === 'high' ? 'bg-error/10' : memo.priority === 'medium' ? 'bg-warning/10' : 'bg-success/10'">
+                <FileText :size="18" :class="memo.priority === 'high' ? 'text-error' : memo.priority === 'medium' ? 'text-warning' : 'text-success'" />
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between gap-2">
+                  <h3 class="font-semibold text-sm truncate">{{ memo.subject }}</h3>
+                  <span class="text-[10px] text-base-content/50 whitespace-nowrap">{{ new Date(memo.created_at).toLocaleDateString() }}</span>
+                </div>
+                <p class="text-xs text-base-content/60 truncate">{{ memo.message.replace(/<[^>]*>/g, '') }}</p>
+                <div class="flex items-center gap-2 mt-1">
+                  <span class="text-[10px] px-1.5 py-0.5 rounded-full border border-base-300 bg-base-200 uppercase font-medium">
+                    {{ memo.priority }}
+                  </span>
+                  <span v-if="memo.sender" class="text-[10px] text-base-content/40">
+                    From: {{ memo.sender.first_name }} {{ memo.sender.last_name }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-else class="empty-state">
           <FileText :size="48" class="text-base-content/20" />
           <p class="text-base-content/60 font-medium">No memos yet</p>
           <p class="text-base-content/40 text-sm">New submissions will appear here</p>
@@ -167,13 +238,65 @@ onMounted(() => {
             <div 
               v-for="(dateObj, index) in calendarDays" 
               :key="'day-' + index"
-              class="calendar-day"
+              class="calendar-day relative"
               :class="{
                 'other-month': !dateObj.isCurrentMonth,
-                'today': dateObj.isToday
+                'today': dateObj.isToday,
+                'has-events': getDayEvents(dateObj.day, dateObj.isCurrentMonth).length > 0
               }"
+              @click="handleDayClick(dateObj)"
             >
               {{ dateObj.day }}
+              <div v-if="getHighestPriorityColor(dateObj.day, dateObj.isCurrentMonth)" 
+                   class="absolute bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full"
+                   :style="{ backgroundColor: getHighestPriorityColor(dateObj.day, dateObj.isCurrentMonth) }">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Event Detail Modal -->
+        <div v-if="isEventModalOpen && selectedEvent" class="fixed inset-0 z-100 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" @click.self="isEventModalOpen = false">
+          <div class="bg-base-100 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all">
+            <div class="p-6 border-b border-base-200 flex items-center justify-between" :style="{ borderTop: `4px solid ${selectedEvent.color}` }">
+              <h3 class="text-lg font-bold">{{ selectedEvent.title }}</h3>
+              <button @click="isEventModalOpen = false" class="btn btn-ghost btn-sm btn-circle text-base-content/50">✕</button>
+            </div>
+            <div class="p-6 space-y-4">
+              <div class="flex items-start gap-4 text-sm">
+                <div class="p-2 rounded-lg bg-base-200">
+                  <Clock :size="18" class="text-primary" />
+                </div>
+                <div>
+                  <p class="font-semibold">Time & Date</p>
+                  <p class="text-base-content/60">
+                    {{ new Date(selectedEvent.start).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) }}
+                    <span v-if="selectedEvent.end && selectedEvent.start !== selectedEvent.end">
+                      - {{ new Date(selectedEvent.end).toLocaleTimeString([], { timeStyle: 'short' }) }}
+                    </span>
+                  </p>
+                </div>
+              </div>
+
+              <div v-if="selectedEvent.description" class="flex items-start gap-4 text-sm">
+                <div class="p-2 rounded-lg bg-base-200">
+                  <FileText :size="18" class="text-primary" />
+                </div>
+                <div>
+                  <p class="font-semibold">Description</p>
+                  <p class="text-base-content/60 line-clamp-4">{{ selectedEvent.description }}</p>
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between pt-4 border-t border-base-200">
+                <span class="text-[10px] px-2 py-1 rounded-full bg-base-200 font-bold uppercase tracking-wider" :style="{ color: selectedEvent.color }">
+                  {{ selectedEvent.priority }} Priority
+                </span>
+                <div class="flex gap-2">
+                  <button v-if="selectedEvent.memo_id" @click="$router.push(`/admin/memos?id=${selectedEvent.memo_id}`); isEventModalOpen = false" class="btn btn-primary btn-sm">View Memo</button>
+                  <button @click="isEventModalOpen = false" class="btn btn-ghost btn-sm">Close</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -339,5 +462,17 @@ onMounted(() => {
   content: '✓';
   @apply text-success font-bold text-lg;
   position: absolute;
+}
+
+.calendar-day.has-events {
+  @apply font-semibold;
+}
+
+.memo-item {
+  @apply transition-all duration-200;
+}
+
+.memo-item:hover {
+  transform: translateX(4px);
 }
 </style>

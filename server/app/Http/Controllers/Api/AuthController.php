@@ -28,29 +28,37 @@ class AuthController extends Controller
      */
     public function login(Request $request)
     {
+        $isLocal = config('app.env') === 'local';
+        $bypassRecaptcha = config('services.recaptcha.bypass', false) || ($isLocal && $request->has('skip_captcha'));
+
         $request->validate([
             'email' => 'required|email',
             'password' => 'required',
-            'recaptcha_token' => 'required'
+            'recaptcha_token' => $bypassRecaptcha ? 'nullable' : 'required'
         ]);
 
-        // reCAPTCHA Validation
-        $response = \Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
-            'secret' => env('RECAPTCHA_SECRET'),
-            'response' => $request->recaptcha_token,
-            'remoteip' => $request->ip(),
-        ]);
+        // 1. reCAPTCHA Validation - Skip if local and requested
+        if (!$bypassRecaptcha) {
+            $response = \Illuminate\Support\Facades\Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
+                'secret' => config('services.recaptcha.secret'),
+                'response' => $request->recaptcha_token,
+                'remoteip' => $request->ip(),
+            ]);
 
-        if (!$response->json('success')) {
-            return response()->json([
-                'success' => false,
-                'message' => 'reCAPTCHA verification failed. Please try again.'
-            ], 422);
+            if (!$response->json('success')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'reCAPTCHA verification failed. Please try again.'
+                ], 422);
+            }
         }
 
-        $user = User::where('email', $request->email)->first();
+        // 2. Fetch User - Use cache for repeated attempts but verify status
+        $user = \Illuminate\Support\Facades\Cache::remember("login_user_lookup_{$request->email}", 60, function() use ($request) {
+            return User::where('email', $request->email)->first();
+        });
 
-        // 1. Check existence or verification (treated as same for security UX)
+        // 3. Check existence or verification
         if (!$user || !$user->password || !Hash::check($request->password, $user->password)) {
             if ($user) {
                 $user->incrementLoginAttempts();
@@ -63,7 +71,7 @@ class AuthController extends Controller
             ], 401);
         }
 
-        // 2. Check active status
+        // 4. Check active status
         if (!$user->is_active) {
             return response()->json([
                 'success' => false,
@@ -71,7 +79,7 @@ class AuthController extends Controller
             ], 401);
         }
 
-        // 3. Check lockout
+        // 5. Check lockout
         if ($user->lock_until && $user->lock_until->isFuture()) {
             return response()->json([
                 'success' => false,
@@ -80,7 +88,7 @@ class AuthController extends Controller
             ], 423);
         }
 
-        // 4. Success
+        // 6. Success
         $user->resetLoginAttempts();
         $user->update(['last_login' => now()]);
         
@@ -320,6 +328,9 @@ class AuthController extends Controller
     {
         $user = $request->user();
         if ($user) {
+            // Invalidate current user cache
+            \Illuminate\Support\Facades\Cache::forget("current_user_data_{$user->id}");
+            
             $user->currentAccessToken()->delete();
             $this->activityLogger->logAuthAction($user, 'logout', 'User logged out', $this->activityLogger->extractRequestInfo($request));
         }
@@ -329,9 +340,16 @@ class AuthController extends Controller
 
     public function getCurrentUser(Request $request)
     {
+        $user = $request->user();
+        $cacheKey = "current_user_data_{$user->id}";
+        
+        $userData = \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function() use ($user) {
+            return $user->load(['assignedRole', 'departmentModel']);
+        });
+
         return response()->json([
             'success' => true,
-            'user' => $request->user()
+            'user' => $userData
         ]);
     }
 
@@ -526,14 +544,75 @@ class AuthController extends Controller
     public function updateMe(Request $request)
     {
         $user = $request->user();
-        $user->update($request->only(['first_name', 'last_name']));
+        $user->update($request->only(['first_name', 'last_name', 'bio']));
+        
+        // Invalidate current user cache
+        \Illuminate\Support\Facades\Cache::forget("current_user_data_{$user->id}");
+        \Illuminate\Support\Facades\Cache::forget("login_user_lookup_{$user->email}");
+
         return response()->json(['success' => true, 'user' => $user]);
     }
 
     public function uploadMyProfilePicture(Request $request)
     {
-        // Placeholder for future logic
-        return response()->json(['success' => true, 'message' => 'Profile picture upload logic placeholder']);
+        $request->validate([
+            'image' => 'required|string' // We expect base64 from Croppie
+        ]);
+
+        try {
+            $user = $request->user();
+            $imageData = $request->image;
+            
+            // Validate it's a valid data URL
+            if (!preg_match('/^data:image\/(\w+);base64,/', $imageData)) {
+                throw new \Exception('Invalid image data format. Please provide a base64 data URL.');
+            }
+
+            // Directly store the base64 string in the database
+            $user->profile_picture = $imageData;
+            $user->save();
+
+            $this->activityLogger->logUserAction($user, 'upload_profile_picture', "Updated profile picture (stored as base64)", $this->activityLogger->extractRequestInfo($request));
+
+            return response()->json([
+                'success' => true, 
+                'message' => 'Profile picture updated successfully',
+                'user' => $user
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to upload profile picture: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function updatePassword(Request $request)
+    {
+        $request->validate([
+            'current_password' => 'required',
+            'new_password' => 'required|min:8|confirmed',
+        ]);
+
+        $user = $request->user();
+
+        if (!Hash::check($request->current_password, $user->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'The current password you provided is incorrect.'
+            ], 422);
+        }
+
+        $user->update([
+            'password' => Hash::make($request->new_password)
+        ]);
+
+        $this->activityLogger->logAuthAction($user, 'password_change', 'User changed their password', $this->activityLogger->extractRequestInfo($request));
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Password updated successfully'
+        ]);
     }
 
     private function renderPopupHtml($data)

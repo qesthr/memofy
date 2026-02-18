@@ -1,7 +1,7 @@
 <script setup>
-import { ref, onMounted, onUnmounted, getCurrentInstance } from 'vue'
+import { ref, onMounted, onUnmounted, getCurrentInstance, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { Eye, EyeOff } from 'lucide-vue-next'
+import { Eye, EyeOff, X, ShieldCheck, AlertCircle } from 'lucide-vue-next'
 import api from '@/services/api'
 import Swal from 'sweetalert2'
 import { useTheme } from '@/composables/useTheme'
@@ -23,6 +23,14 @@ const rememberMe = ref(false)
 const recaptchaVerified = ref(false)
 const recaptchaToken = ref('')
 const isDev = import.meta.env.MODE === 'development'
+const isRecaptchaLoaded = ref(false)
+const recaptchaWidgetId = ref(null)
+
+// Modal state
+const showRecaptchaModal = ref(false)
+const isVerifyingRecaptcha = ref(false)
+const recaptchaError = ref('')
+const loginFormRef = ref(null)
 
 const { user: authUser, token: authTokenRef } = useAuth()
 
@@ -30,17 +38,153 @@ const togglePassword = () => {
   showPassword.value = !showPassword.value
 }
 
-const handleLogin = async () => {
-  if (!recaptchaVerified.value) {
-    error.value = 'Please verify that you are not a robot before continuing.'
+// Open reCAPTCHA modal
+const openRecaptchaModal = async () => {
+  // Validate form first
+  if (!email.value || !password.value) {
     Swal.fire({
-      icon: 'error',
-      title: 'Verification Required',
-      text: error.value
+      icon: 'warning',
+      title: 'Missing Credentials',
+      text: 'Please enter your email and password before logging in.'
     })
+    return false
+  }
+  
+  recaptchaError.value = ''
+  showRecaptchaModal.value = true
+  
+  // Wait for modal to be in DOM
+  await nextTick()
+  
+  // Load reCAPTCHA script if not loaded
+  if (!window.grecaptcha) {
+    loadRecaptchaScript()
+  } else {
+    isRecaptchaLoaded.value = true
+    renderRecaptcha()
+  }
+  
+  return true
+}
+
+// Close reCAPTCHA modal
+const closeRecaptchaModal = () => {
+  showRecaptchaModal.value = false
+  recaptchaError.value = ''
+  
+  // Reset reCAPTCHA if it was rendered
+  if (window.grecaptcha && recaptchaWidgetId.value !== null) {
+    try {
+      window.grecaptcha.reset(recaptchaWidgetId.value)
+    } catch (e) {
+      console.warn('Could not reset reCAPTCHA:', e)
+    }
+    recaptchaWidgetId.value = null
+    recaptchaVerified.value = false
+    recaptchaToken.value = ''
+  }
+}
+
+// Render reCAPTCHA in modal
+const renderRecaptcha = () => {
+  if (!window.grecaptcha) {
+    recaptchaError.value = 'Verification service not loaded. Please try again.'
     return
   }
+  
+  const container = document.getElementById('recaptcha-container-modal')
+  if (!container) return
+  
+  // Clear any existing content
+  container.innerHTML = ''
+  
+  // Reset widget ID
+  recaptchaWidgetId.value = null
+  
+  // Wait for grecaptcha to be fully ready (for reCAPTCHA v3)
+  const tryRender = () => {
+    if (typeof window.grecaptcha.render === 'function') {
+      try {
+        recaptchaWidgetId.value = window.grecaptcha.render(container, {
+          sitekey: app.appContext.config.globalProperties.$recaptchaSiteKey || '6LeBIdwrAAAAAOIONOkF3vk31VJTzoN1ElEUOhBV',
+          theme: 'light',
+          size: 'normal',
+          callback: onRecaptchaVerify,
+          'expired-callback': onRecaptchaExpired,
+          'error-callback': onRecaptchaError
+        })
+      } catch (e) {
+        console.error('Failed to render reCAPTCHA:', e)
+        recaptchaError.value = 'Failed to load verification. Please try again.'
+      }
+    } else {
+      // Retry in 100ms if render not yet available
+      setTimeout(tryRender, 100)
+    }
+  }
+  
+  tryRender()
+}
 
+// Load reCAPTCHA script
+const loadRecaptchaScript = () => {
+  if (isRecaptchaLoaded.value || document.querySelector('script[src*="recaptcha/api.js"]')) {
+    isRecaptchaLoaded.value = true
+    if (showRecaptchaModal.value) {
+      setTimeout(renderRecaptcha, 100)
+    }
+    return
+  }
+  
+  const script = document.createElement('script')
+  script.src = 'https://www.google.com/recaptcha/api.js'
+  script.async = true
+  script.defer = true
+  script.onload = () => {
+    isRecaptchaLoaded.value = true
+    if (showRecaptchaModal.value) {
+      setTimeout(renderRecaptcha, 100)
+    }
+  }
+  script.onerror = () => {
+    recaptchaError.value = 'Failed to load verification service. Please check your connection.'
+    isRecaptchaLoaded.value = false
+  }
+  document.head.appendChild(script)
+}
+
+// reCAPTCHA callbacks
+const onRecaptchaVerify = (token) => {
+  recaptchaVerified.value = true
+  recaptchaToken.value = token
+  recaptchaError.value = ''
+  
+  // Close modal and submit form after a short delay
+  setTimeout(() => {
+    showRecaptchaModal.value = false
+    submitLoginForm()
+  }, 300)
+}
+
+const onRecaptchaExpired = () => {
+  recaptchaVerified.value = false
+  recaptchaToken.value = ''
+}
+
+const onRecaptchaError = (error) => {
+  console.error('reCAPTCHA error:', error)
+  recaptchaError.value = 'Verification failed. Please try again.'
+  recaptchaVerified.value = false
+  recaptchaToken.value = ''
+}
+
+// Main login handler - now just opens the modal
+const handleLogin = async () => {
+  await openRecaptchaModal()
+}
+
+// Submit the actual login form with credentials and token
+const submitLoginForm = async () => {
   // Show Loading Alert
   Swal.fire({
     title: 'Logging in...',
@@ -101,11 +245,16 @@ const handleLogin = async () => {
     console.error('Login error:', err)
     
     // Reset reCAPTCHA on failure
-    if (window.grecaptcha) {
-      window.grecaptcha.reset()
-      recaptchaVerified.value = false
-      recaptchaToken.value = ''
+    if (window.grecaptcha && recaptchaWidgetId.value !== null) {
+      try {
+        window.grecaptcha.reset(recaptchaWidgetId.value)
+      } catch (e) {
+        console.warn('Could not reset reCAPTCHA:', e)
+      }
     }
+    recaptchaVerified.value = false
+    recaptchaToken.value = ''
+    recaptchaWidgetId.value = null
 
     let errorMsg = 'An unexpected error occurred. Please try again later.'
     let errorTitle = 'Error'
@@ -116,6 +265,8 @@ const handleLogin = async () => {
         errorTitle = 'Authentication Failed'
       } else if (err.response.status === 422) {
         errorTitle = 'Verification Failed'
+      } else if (err.response.status === 423) {
+        errorTitle = 'Account Locked'
       }
     } else if (err.request) {
       errorMsg = 'Cannot connect to the server. Please check your internet connection.'
@@ -175,35 +326,10 @@ const handleMessage = (event) => {
          router.push('/unauthorized')
       }
     })
-  } else if (event.data.type === 'GOOGLE_LOGIN_FAILURE') {
-    const errorMsg = event.data.error || 'Google login failed'
-    error.value = errorMsg
-    
-    if (window.grecaptcha) {
-      window.grecaptcha.reset()
-      recaptchaVerified.value = false
-      recaptchaToken.value = ''
-    }
-
-    Swal.fire({
-      icon: 'error',
-      title: 'Google Auth Error',
-      text: errorMsg
-    })
   }
 }
 
 const openGoogleLogin = () => {
-  if (!recaptchaVerified.value) {
-    error.value = 'Please verify that you are not a robot before continuing.'
-    Swal.fire({
-      icon: 'error',
-      title: 'Verification Required',
-      text: error.value
-    })
-    return
-  }
-
   googleLoginSuccess.value = false
   const width = 500
   const height = 600
@@ -224,12 +350,6 @@ const openGoogleLogin = () => {
       window.googleLoginTimer = null
       
       if (!googleLoginSuccess.value) {
-        if (window.grecaptcha) {
-          window.grecaptcha.reset()
-          recaptchaVerified.value = false
-          recaptchaToken.value = ''
-        }
-
         Swal.fire({
           icon: 'error',
           title: 'Sign-in Cancelled',
@@ -240,27 +360,6 @@ const openGoogleLogin = () => {
   }, 1000)
 }
 
-// reCAPTCHA callback
-const onRecaptchaVerify = (token) => {
-  recaptchaVerified.value = true
-  recaptchaToken.value = token
-  error.value = ''
-}
-
-const onRecaptchaExpired = () => {
-  recaptchaVerified.value = false
-  recaptchaToken.value = ''
-}
-
-// Load reCAPTCHA script
-const loadRecaptchaScript = () => {
-  const script = document.createElement('script')
-  script.src = 'https://www.google.com/recaptcha/api.js'
-  script.async = true
-  script.defer = true
-  document.head.appendChild(script)
-}
-
 onMounted(() => {
   // Clear any existing auth data to ensure clean state
   localStorage.removeItem('token')
@@ -268,17 +367,10 @@ onMounted(() => {
   localStorage.removeItem('role')
   
   window.addEventListener('message', handleMessage)
-  loadRecaptchaScript()
-  
-  // Make callbacks available globally for reCAPTCHA
-  window.onRecaptchaVerify = onRecaptchaVerify
-  window.onRecaptchaExpired = onRecaptchaExpired
 })
 
 onUnmounted(() => {
   window.removeEventListener('message', handleMessage)
-  delete window.onRecaptchaVerify
-  delete window.onRecaptchaExpired
 })
 </script>
 
@@ -318,7 +410,7 @@ onUnmounted(() => {
           <p class="mt-2 text-sm text-gray-500">Welcome back! Please login to continue.</p>
         </div>
 
-        <form class="mt-8 space-y-6" @submit.prevent="handleLogin">
+        <form class="mt-8 space-y-6" @submit.prevent ref="loginFormRef">
           <div class="space-y-4">
             <!-- Email -->
             <div class="relative">
@@ -356,19 +448,12 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <button
-            type="submit"
-            class="hidden w-full btn btn-primary text-white normal-case text-base"
-            ref="loginBtn"
-          >
-            Login
-          </button>
-          
-           <!-- Custom Login Button -->
-           <button 
-            type="submit" 
+          <!-- Custom Login Button -->
+          <button 
+            type="button"
+            @click="handleLogin"
             class="w-full bg-[#4285F4] hover:bg-[#3367D6] text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            :disabled="isLoading || (!recaptchaVerified && !isDev)"
+            :disabled="isLoading"
           >
             <span v-if="isLoading" class="loading loading-spinner loading-sm"></span>
             <span v-else>Login</span>
@@ -392,21 +477,11 @@ onUnmounted(() => {
             type="button"
             @click="openGoogleLogin"
             class="w-full btn btn-outline border-gray-300 hover:bg-gray-50 hover:border-gray-400 normal-case text-base font-medium text-gray-700 space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            :disabled="!recaptchaVerified && !isDev"
+            :disabled="isLoading"
           >
             <img src="../../assets/images/images/google.png" alt="Google" class="w-5 h-5" />
             <span>Sign in with Google</span>
           </button>
-
-          <!-- Real Google reCAPTCHA -->
-          <div class="flex justify-center mt-6">
-            <div 
-              class="g-recaptcha" 
-              :data-sitekey="$recaptchaSiteKey || '6LeBIdwrAAAAAOIONOkF3vk31VJTzoN1ElEUOhBV'"
-              data-callback="onRecaptchaVerify"
-              data-expired-callback="onRecaptchaExpired"
-            ></div>
-          </div>
         </form>
         
         <div v-if="error" class="alert alert-error text-sm mt-4">
@@ -414,6 +489,68 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- reCAPTCHA Modal -->
+    <Teleport to="body">
+      <div v-if="showRecaptchaModal" class="fixed inset-0 z-50 flex items-center justify-center">
+        <!-- Backdrop -->
+        <div 
+          class="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
+          @click="closeRecaptchaModal"
+        ></div>
+        
+        <!-- Modal Content -->
+        <div class="relative bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 transform transition-all">
+          <!-- Modal Header -->
+          <div class="flex items-center justify-between p-4 border-b">
+            <div class="flex items-center gap-2">
+              <ShieldCheck class="w-6 h-6 text-blue-500" />
+              <h3 class="text-lg font-semibold text-gray-900">Verification Required</h3>
+            </div>
+            <button 
+              @click="closeRecaptchaModal"
+              class="p-1 rounded-full hover:bg-gray-100 transition-colors"
+            >
+              <X class="w-5 h-5 text-gray-500" />
+            </button>
+          </div>
+          
+          <!-- Modal Body -->
+          <div class="p-6">
+            <p class="text-sm text-gray-600 mb-4">
+              Please complete the verification below to confirm you're human before logging in.
+            </p>
+            
+            <!-- Error Message -->
+            <div v-if="recaptchaError" class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+              <AlertCircle class="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+              <p class="text-sm text-red-600">{{ recaptchaError }}</p>
+            </div>
+            
+            <!-- reCAPTCHA Container -->
+            <div 
+              id="recaptcha-container-modal"
+              class="flex justify-center min-h-[78px]"
+            ></div>
+            
+            <!-- Loading State -->
+            <div v-if="!isRecaptchaLoaded && !recaptchaError" class="flex justify-center py-8">
+              <div class="flex flex-col items-center gap-2">
+                <div class="loading loading-spinner loading-md text-blue-500"></div>
+                <p class="text-sm text-gray-500">Loading verification...</p>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Modal Footer -->
+          <div class="px-6 py-4 bg-gray-50 rounded-b-xl border-t">
+            <p class="text-xs text-gray-500 text-center">
+              This verification helps protect your account from automated attacks.
+            </p>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
