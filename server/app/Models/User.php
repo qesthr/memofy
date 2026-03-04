@@ -107,6 +107,8 @@ class User extends Authenticatable
         return $this->belongsTo(Department::class, 'department_id');
     }
 
+    const MAX_LOGIN_ATTEMPTS = 5;
+
     /**
      * Compare password (wrapper for Hash::check)
      */
@@ -123,9 +125,11 @@ class User extends Authenticatable
         $this->increment('login_attempts');
         $this->update(['last_failed_login' => now()]);
 
-        if ($this->login_attempts >= 5) {
+        if ($this->login_attempts >= self::MAX_LOGIN_ATTEMPTS) {
             $this->lockAccount();
+            return true; // Locked
         }
+        return false; // Not locked yet
     }
 
     /**

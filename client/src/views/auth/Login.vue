@@ -260,13 +260,26 @@ const submitLoginForm = async () => {
     let errorTitle = 'Error'
 
     if (err.response) {
-      errorMsg = err.response.data.message || 'Login failed. Please check your credentials.'
+      const data = err.response.data
+      errorMsg = data.message || 'Login failed. Please check your credentials.'
+      
       if (err.response.status === 401) {
         errorTitle = 'Authentication Failed'
+        if (data.attempts_left !== undefined) {
+          if (data.attempts_left > 0) {
+            errorMsg = `Incorrect username or password. You have ${data.attempts_left} attempts remaining.`
+          } else {
+            errorMsg = `Incorrect username or password. Your account has been locked.`
+          }
+        }
       } else if (err.response.status === 422) {
         errorTitle = 'Verification Failed'
       } else if (err.response.status === 423) {
         errorTitle = 'Account Locked'
+        const rawSeconds = Math.max(0, Math.floor(data.lock_seconds_remaining || 0))
+        const mins = Math.floor(rawSeconds / 60).toString().padStart(2, '0')
+        const secs = (rawSeconds % 60).toString().padStart(2, '0')
+        errorMsg = `Account is temporarily locked. Wait until time is end to login again. Try again in ${mins}:${secs}.`
       }
     } else if (err.request) {
       errorMsg = 'Cannot connect to the server. Please check your internet connection.'
@@ -277,7 +290,8 @@ const submitLoginForm = async () => {
     Swal.fire({
       icon: 'error',
       title: errorTitle,
-      text: errorMsg
+      text: errorMsg,
+      confirmButtonColor: '#4285F4'
     })
   } finally {
     isLoading.value = false
@@ -352,8 +366,9 @@ const openGoogleLogin = () => {
       if (!googleLoginSuccess.value) {
         Swal.fire({
           icon: 'error',
-          title: 'Sign-in Cancelled',
-          text: 'Google sign-in was not completed. Please try again.'
+          title: 'Access Denied',
+          text: 'Access Denied: Only emails registered by an administrator can log in using Google. Please contact your admin for assistance.',
+          confirmButtonColor: '#4285F4'
         })
       }
     }

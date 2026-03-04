@@ -1,0 +1,28 @@
+
+   FAIL  Tests\Feature\BruteforceProtectionTest
+  ✓ account is loc… 16.83s  
+  ✓ successful logi… 1.65s  
+  ✓ lockout expires… 0.49s  
+  ⨯ lockout only af… 1.50s  
+  ────────────────────────  
+   F…  BulkWriteException   
+  E11000 duplicate key error collection: buksu-memofy.users index: users_email_unique dup key: { email: "faculty@example.com" }
+
+  at vendor\mongodb\mongodb\src\Operation\InsertOne.php:114
+    110▕         $bulk = new Bulk($this->createBulkWriteOptions());
+    111▕ 
+    112▕         $insertedId = $bulk->insert($this->document);
+    113▕ 
+  ➜ 114▕         $writeResult = $server->executeBulkWrite($this->databaseName . '.' . $this->collectionName, $bulk, $this->createExecuteOptions());
+    115▕ 
+    116▕         return new InsertOneResult($writeResult, $insertedId);
+    117▕     }
+    118▕
+
+  1   vendor\mongodb\mongodb\src\Operation\InsertOne.php:114
+  2   vendor\mongodb\mongodb\src\Collection.php:882
+
+
+  Tests:    1 failed, 3 passed (23 assertions)
+  Duration: 28.84s
+

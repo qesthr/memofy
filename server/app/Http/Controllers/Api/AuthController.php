@@ -58,20 +58,14 @@ class AuthController extends Controller
             return User::where('email', $request->email)->first();
         });
 
-        // 3. Check existence or verification
-        if (!$user || !$user->password || !Hash::check($request->password, $user->password)) {
-            if ($user) {
-                $user->incrementLoginAttempts();
-                $this->activityLogger->logAuthAction($user, 'login_failed', 'Failed login attempt', $this->activityLogger->extractRequestInfo($request));
-            }
-            
+        if (!$user) {
             return response()->json([
                 'success' => false,
                 'message' => 'Incorrect username or password.'
             ], 401);
         }
 
-        // 4. Check active status
+        // 3. Check active status
         if (!$user->is_active) {
             return response()->json([
                 'success' => false,
@@ -79,17 +73,45 @@ class AuthController extends Controller
             ], 401);
         }
 
-        // 5. Check lockout
+        // 4. Check lockout
         if ($user->lock_until && $user->lock_until->isFuture()) {
+            $seconds = intval($user->lock_until->diffInSeconds());
+            $mins = str_pad(floor($seconds / 60), 2, '0', STR_PAD_LEFT);
+            $secs = str_pad($seconds % 60, 2, '0', STR_PAD_LEFT);
             return response()->json([
                 'success' => false,
-                'message' => 'Account is temporarily locked. Try again in ' . $user->lock_until->diffInMinutes() . ' minutes.',
-                'lock_time_remaining' => $user->lock_until->diffInMinutes()
+                'message' => "Account is temporarily locked. Wait until time is end to login again. Try again in {$mins}:{$secs}.",
+                'lock_time_remaining' => $user->lock_until->diffInMinutes(),
+                'lock_seconds_remaining' => $seconds
             ], 423);
+        }
+
+        // 5. Check existence or verification
+        if (!$user->password || !Hash::check($request->password, $user->password)) {
+            // Clear cache to ensure next attempt sees updated login_attempts
+            \Illuminate\Support\Facades\Cache::forget("login_user_lookup_{$request->email}");
+
+            $isLocked = $user->incrementLoginAttempts();
+            $maxAttempts = User::MAX_LOGIN_ATTEMPTS;
+            $attemptsLeft = max(0, $maxAttempts - $user->login_attempts);
+
+            $this->activityLogger->logAuthAction($user, 'login_failed', 'Failed login attempt. Attempts left: ' . $attemptsLeft, $this->activityLogger->extractRequestInfo($request));
+            
+            if ($isLocked) {
+                $this->activityLogger->logAuthAction($user, 'account_lockout', 'Account has been locked for 5 minutes due to multiple failed attempts.', $this->activityLogger->extractRequestInfo($request));
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Incorrect username or password.',
+                'attempts_left' => $attemptsLeft,
+                'is_locked' => $isLocked
+            ], 401);
         }
 
         // 6. Success
         $user->resetLoginAttempts();
+        \Illuminate\Support\Facades\Cache::forget("login_user_lookup_{$request->email}");
         $user->update(['last_login' => now()]);
         
         $token = $user->createToken('auth_token')->plainTextToken;
@@ -481,7 +503,7 @@ class AuthController extends Controller
             $user = User::where('email', $googleUser->getEmail())->first();
 
             if (!$user) {
-                return $this->returnPopupError("Access Denied: No account found for {$googleUser->getEmail()}. Please ask an admin to invite you.");
+                return $this->returnPopupError("Access Denied: Only emails registered by an administrator can log in using Google. Please contact your admin for assistance.");
             }
 
             if (!$user->is_active) {

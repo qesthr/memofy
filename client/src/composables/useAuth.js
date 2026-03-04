@@ -3,8 +3,18 @@ import { ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../services/api'
 
+// Safe JSON parse helper to prevent crash on null/"undefined"/malformed values
+const safeParse = (str) => {
+  try {
+    if (!str || str === 'undefined' || str === 'null') return null
+    return JSON.parse(str)
+  } catch {
+    return null
+  }
+}
+
 // Global state
-const user = ref(JSON.parse(localStorage.getItem('user')) || null)
+const user = ref(safeParse(localStorage.getItem('user')))
 const token = ref(localStorage.getItem('token') || null)
 const isAuthenticated = computed(() => !!token.value)
 const loading = ref(false)
