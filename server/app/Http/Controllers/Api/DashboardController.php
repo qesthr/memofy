@@ -67,6 +67,11 @@ class DashboardController extends Controller
                                                     ->where('deadline_at', '>', now())
                                                     ->count();
                 
+                // Calculate Global Acknowledgment Rate
+                $totalAcks = \App\Models\MemoAcknowledgment::count();
+                $acknowledgedCount = \App\Models\MemoAcknowledgment::where('is_acknowledged', true)->count();
+                $stats['acknowledgment_rate'] = $totalAcks > 0 ? round(($acknowledgedCount / $totalAcks) * 100) : 0;
+                
             } else if ($user->hasPermissionTo('faculty.view')) {
                 $stats['total_users'] = User::where('department', $user->department)->count();
                 $stats['active_users'] = User::where('department', $user->department)

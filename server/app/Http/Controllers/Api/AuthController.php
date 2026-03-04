@@ -75,13 +75,13 @@ class AuthController extends Controller
 
         // 4. Check lockout
         if ($user->lock_until && $user->lock_until->isFuture()) {
-            $seconds = intval($user->lock_until->diffInSeconds());
+            $seconds = max(1, now()->diffInSeconds($user->lock_until));
             $mins = str_pad(floor($seconds / 60), 2, '0', STR_PAD_LEFT);
             $secs = str_pad($seconds % 60, 2, '0', STR_PAD_LEFT);
             return response()->json([
                 'success' => false,
                 'message' => "Account is temporarily locked. Wait until time is end to login again. Try again in {$mins}:{$secs}.",
-                'lock_time_remaining' => $user->lock_until->diffInMinutes(),
+                'lock_time_remaining' => ceil($seconds / 60),
                 'lock_seconds_remaining' => $seconds
             ], 423);
         }
@@ -118,11 +118,15 @@ class AuthController extends Controller
         
         $this->activityLogger->logAuthAction($user, 'login_success', 'User logged in', $this->activityLogger->extractRequestInfo($request));
 
+        // Include permissions in the response for frontend access
+        $permissions = $user->permissions;
+
         return response()->json([
             'success' => true,
             'message' => 'Login successful',
             'user' => $user,
-            'token' => $token
+            'token' => $token,
+            'permissions' => $permissions
         ]);
     }
 
@@ -369,9 +373,13 @@ class AuthController extends Controller
             return $user->load(['assignedRole', 'departmentModel']);
         });
 
+        // Include permissions in the response
+        $permissions = $user->permissions;
+
         return response()->json([
             'success' => true,
-            'user' => $userData
+            'user' => $userData,
+            'permissions' => $permissions
         ]);
     }
 
@@ -525,12 +533,16 @@ class AuthController extends Controller
 
     private function returnPopupSuccess($token, $user)
     {
+        // Include permissions in the response
+        $permissions = $user->permissions;
+        
         $payload = [
             'type' => 'GOOGLE_LOGIN_SUCCESS',
             'payload' => [
                 'token' => $token,
                 'user' => $user,
-                'role' => $user->role
+                'role' => $user->role,
+                'permissions' => $permissions
             ]
         ];
 

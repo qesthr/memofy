@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted, getCurrentInstance, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { Eye, EyeOff, X, ShieldCheck, AlertCircle } from 'lucide-vue-next'
 import api from '@/services/api'
 import Swal from 'sweetalert2'
@@ -14,6 +14,7 @@ if (app) {
 }
 
 const router = useRouter()
+const route = useRoute()
 const email = ref('')
 const password = ref('')
 const showPassword = ref(false)
@@ -277,16 +278,49 @@ const submitLoginForm = async () => {
       } else if (err.response.status === 423) {
         errorTitle = 'Account Locked'
         const rawSeconds = Math.max(0, Math.floor(data.lock_seconds_remaining || 0))
-        const mins = Math.floor(rawSeconds / 60).toString().padStart(2, '0')
-        const secs = (rawSeconds % 60).toString().padStart(2, '0')
-        errorMsg = `Account is temporarily locked. Wait until time is end to login again. Try again in ${mins}:${secs}.`
+        let remaining = rawSeconds
+
+        const formatTime = (s) => {
+          const m = Math.floor(s / 60).toString().padStart(2, '0')
+          const sec = (s % 60).toString().padStart(2, '0')
+          return `${m}:${sec}`
+        }
+
+        errorMsg = `Account is temporarily locked. Wait until time is end to login again. Try again in ${formatTime(remaining)}.`
+        error.value = errorMsg
+
+        // Fire with live countdown
+        let countdownInterval = null
+        Swal.fire({
+          icon: 'error',
+          title: 'Account Locked',
+          html: `Account is temporarily locked. Wait until time is end to login again.<br><br><strong style="font-size:1.4rem;letter-spacing:2px;" id="lockout-timer">${formatTime(remaining)}</strong>`,
+          confirmButtonColor: '#4285F4',
+          allowOutsideClick: false,
+          didOpen: () => {
+            countdownInterval = setInterval(() => {
+              remaining--
+              const el = document.getElementById('lockout-timer')
+              if (el) el.textContent = formatTime(Math.max(0, remaining))
+              if (remaining <= 0) {
+                clearInterval(countdownInterval)
+                Swal.close()
+              }
+            }, 1000)
+          },
+          willClose: () => {
+            clearInterval(countdownInterval)
+          }
+        })
+        isLoading.value = false
+        return
       }
     } else if (err.request) {
       errorMsg = 'Cannot connect to the server. Please check your internet connection.'
     }
 
     error.value = errorMsg
-    
+
     Swal.fire({
       icon: 'error',
       title: errorTitle,
@@ -380,6 +414,18 @@ onMounted(() => {
   localStorage.removeItem('token')
   localStorage.removeItem('user')
   localStorage.removeItem('role')
+  
+  // Check for session timeout
+  if (route.query.timeout === '1') {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Session Expired',
+      text: 'Your session has expired due to inactivity. Please log in again.',
+      confirmButtonColor: '#3b82f6'
+    })
+    // Remove query parameter from URL
+    router.replace({ query: {} })
+  }
   
   window.addEventListener('message', handleMessage)
 })

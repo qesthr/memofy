@@ -15,7 +15,8 @@ import {
   File,
   TrendingDown,
   Trophy,
-  History
+  History,
+  CheckCircle
 } from 'lucide-vue-next'
 import { Line, Doughnut, Bar } from 'vue-chartjs'
 import api from '../../services/api'
@@ -109,6 +110,16 @@ const stats = computed(() => {
       bg: 'bg-violet-50/50',
       gradient: 'from-violet-500/10 to-violet-600/5',
       trend: '+5%',
+      trendUp: true
+    },
+    { 
+      label: 'Ack. Rate', 
+      value: (overview.acknowledgment_rate || 0) + '%', 
+      icon: CheckCircle, 
+      color: 'text-indigo-600', 
+      bg: 'bg-indigo-50/50',
+      gradient: 'from-indigo-500/10 to-indigo-600/5',
+      trend: 'Target: 100%',
       trendUp: true
     }
   ]

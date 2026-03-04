@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { FileText, Hourglass, AlertCircle, Users, RefreshCw } from 'lucide-vue-next'
+import { FileText, Hourglass, AlertCircle, Users, RefreshCw, CheckCircle } from 'lucide-vue-next'
 
 // Statistics data - initialized with zeros/placeholders
 const stats = ref([
@@ -11,6 +11,14 @@ const stats = ref([
     icon: FileText,
     color: 'text-primary',
     bgColor: 'bg-primary/10'
+  },
+  {
+    title: 'Acknowledgment Rate',
+    value: '0%',
+    key: 'acknowledgment_rate',
+    icon: CheckCircle,
+    color: 'text-violet-600',
+    bgColor: 'bg-violet-100'
   },
   {
     title: 'Pending Approval',
@@ -123,7 +131,8 @@ const fetchDashboardData = async () => {
     
     // Update Stats
     stats.value.forEach(stat => {
-      stat.value = data.stats[stat.key] || 0
+      const val = data.stats[stat.key] || 0
+      stat.value = stat.key === 'acknowledgment_rate' ? `${val}%` : val
     })
 
     recentMemos.value = data.recent_memos || []

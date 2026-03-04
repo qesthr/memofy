@@ -19,6 +19,9 @@ const editingPermissionIds = ref([])
 
 const users = ref([])
 const selectedUserId = ref('')
+const userForm = ref({
+  status: 'active'
+})
 
 const isUserMode = computed(() => {
   const currentRole = roles.value.find(r => (r.id || r._id) === selectedRoleId.value)
@@ -135,6 +138,9 @@ const selectUser = (userId) => {
   selectedUserId.value = userId
   const user = users.value.find(u => (u.id || u._id) === userId)
   if (user) {
+    // Load user status or default to active
+    userForm.value.status = user.status || 'active'
+    
     // If user has specific permissions, load them. 
     // Otherwise, fallback to the current role permissions which are already in editingPermissionIds
     if (user.permission_ids && user.permission_ids.length > 0) {
@@ -271,21 +277,23 @@ const updateCurrentRole = async () => {
   isLoading.value = true
   try {
     if (selectedUserId.value) {
-      // Update User-specific permissions
+      // Update User-specific permissions and status
       await api.put(`/users/${selectedUserId.value}/permissions`, {
-        permission_ids: editingPermissionIds.value
+        permission_ids: editingPermissionIds.value,
+        status: userForm.value.status
       })
 
       // Update local user data in the users list
       const userIndex = users.value.findIndex(u => (u.id || u._id) === selectedUserId.value)
       if (userIndex !== -1) {
         users.value[userIndex].permission_ids = [...editingPermissionIds.value]
+        users.value[userIndex].status = userForm.value.status
       }
 
       await Swal.fire({
         icon: 'success',
         title: 'User Permissions Updated!',
-        text: 'Individual permissions saved successfully',
+        text: 'Individual permissions and status saved successfully',
         timer: 2000,
         showConfirmButton: false
       })
@@ -438,6 +446,31 @@ onMounted(() => {
                   {{ selectedUserId ? 'Customizing permissions for this user only' : 'Managing default permissions for this role' }}
                 </span>
               </label>
+            </div>
+
+            <!-- User Details Section (when individual user is selected) -->
+            <div v-if="selectedRoleId && selectedUserId" class="space-y-4">
+              <div class="form-control">
+                <label class="label">
+                  <span class="label-text font-semibold">Status</span>
+                </label>
+                <select v-model="userForm.status" class="select select-bordered w-full">
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+
+              <div class="pt-4 flex flex-col gap-2">
+                <button 
+                  @click="updateCurrentRole" 
+                  class="btn btn-primary w-full text-white"
+                  :disabled="isLoading"
+                >
+                  <Check v-if="!isLoading" :size="18" />
+                  <span v-else class="loading loading-spinner loading-sm"></span>
+                  Save Selection
+                </button>
+              </div>
             </div>
 
             <div v-if="selectedRoleId && !selectedUserId" class="space-y-4">
