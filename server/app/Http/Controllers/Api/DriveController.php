@@ -55,6 +55,15 @@ class DriveController extends Controller
         }
     }
 
+    public function status(Request $request)
+    {
+        $token = SystemSetting::get('google_drive_token');
+        return response()->json([
+            'connected' => !empty($token),
+            'folder_id' => config('services.google_drive.folder_id')
+        ]);
+    }
+
     private function returnPopupSuccess()
     {
         $html = <<<HTML

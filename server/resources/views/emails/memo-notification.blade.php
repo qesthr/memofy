@@ -94,13 +94,25 @@
             color: #64748b;
         }
         .attachment-item {
-            display: flex;
-            align-items: center;
             padding: 8px 0;
             border-bottom: 1px solid #e2e8f0;
         }
         .attachment-item:last-child {
             border-bottom: none;
+        }
+        .attachment-image {
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+            margin-top: 8px;
+            display: block;
+            border: 1px solid #e2e8f0;
+        }
+        .attachment-name {
+            display: flex;
+            align-items: center;
+            font-size: 14px;
+            color: #475569;
         }
     </style>
 </head>
@@ -147,12 +159,37 @@
             </div>
             @endif
             
-            @if(isset($memo->attachments) && count($memo->attachments) > 0)
+            @php
+                $attachmentsToDisplay = isset($processedAttachments) ? $processedAttachments : [];
+                if (empty($attachmentsToDisplay) && isset($memo->attachments) && count($memo->attachments) > 0) {
+                    foreach($memo->attachments as $attachment) {
+                        $name = 'Attachment';
+                        if (is_array($attachment)) {
+                            $name = $attachment['file_name'] ?? (isset($attachment['file_path']) ? basename($attachment['file_path']) : 'Attachment');
+                        } elseif (is_string($attachment)) {
+                            $name = basename($attachment);
+                        }
+                        
+                        $attachmentsToDisplay[] = [
+                            'name' => $name,
+                            'is_image' => false,
+                            'base64' => null
+                        ];
+                    }
+                }
+            @endphp
+
+            @if(count($attachmentsToDisplay) > 0)
             <div class="attachments">
-                <h4>📎 Attachments ({{ count($memo->attachments) }})</h4>
-                @foreach($memo->attachments as $attachment)
+                <h4>📎 Attachments ({{ count($attachmentsToDisplay) }})</h4>
+                @foreach($attachmentsToDisplay as $attachment)
                 <div class="attachment-item">
-                    <span>{{ $attachment['name'] ?? basename($attachment) }}</span>
+                    <div class="attachment-name">
+                        <span>{{ $attachment['name'] }}</span>
+                    </div>
+                    @if($attachment['is_image'] && $attachment['base64'])
+                        <img src="{{ $attachment['base64'] }}" class="attachment-image" alt="{{ $attachment['name'] }}">
+                    @endif
                 </div>
                 @endforeach
             </div>

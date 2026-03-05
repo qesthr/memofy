@@ -246,3 +246,4 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 // Google Drive routes (Made public/GET for easier local setup)
 Route::get('/drive/connect', [App\Http\Controllers\Api\DriveController::class, 'connect']);
 Route::get('/drive/callback', [App\Http\Controllers\Api\DriveController::class, 'callback']);
+Route::get('/drive/status', [App\Http\Controllers\Api\DriveController::class, 'status']);

@@ -243,27 +243,83 @@ class MemoController extends Controller
         }
 
         // --- Google Drive Integration ---
+        \Log::info('Initiating Google Drive backup for memo: ' . $memo->id);
         try {
+            // 0. Process attachments for PDF embedding (base64 for images)
+            $processedAttachments = [];
+            if (!empty($memo->attachments) && is_array($memo->attachments)) {
+                foreach ($memo->attachments as $attachment) {
+                    // Safety check: ensure attachment is an array and has file_path
+                    if (!is_array($attachment) || !isset($attachment['file_path'])) {
+                        \Log::warning('Skipping malformed attachment for PDF', ['attachment' => $attachment]);
+                        continue;
+                    }
+
+                    $item = [
+                        'name' => $attachment['file_name'] ?? basename($attachment['file_path']),
+                        'is_image' => false,
+                        'base64' => null
+                    ];
+
+                    $extension = strtolower(pathinfo($attachment['file_path'], PATHINFO_EXTENSION));
+                    $imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
+                    
+                    if (in_array($extension, $imageExtensions)) {
+                        $item['is_image'] = true;
+                        try {
+                            if (\Illuminate\Support\Facades\Storage::disk('public')->exists($attachment['file_path'])) {
+                                $content = \Illuminate\Support\Facades\Storage::disk('public')->get($attachment['file_path']);
+                                if ($content) {
+                                    $mime = \Illuminate\Support\Facades\Storage::disk('public')->mimeType($attachment['file_path']);
+                                    // Limit base64 embedding to files < 2MB to prevent DomPDF memory issues
+                                    if (strlen($content) < 2 * 1024 * 1024) {
+                                        $item['base64'] = 'data:' . $mime . ';base64,' . base64_encode($content);
+                                    } else {
+                                        \Log::info('Image too large for PDF embedding: ' . $item['name']);
+                                        $item['is_image'] = false;
+                                    }
+                                }
+                            } else {
+                                \Log::warning('Attachment file not found on disk: ' . $attachment['file_path']);
+                            }
+                        } catch (\Exception $e) {
+                            \Log::warning('Could not process image for PDF: ' . $e->getMessage());
+                            $item['is_image'] = false; 
+                        }
+                    }
+                    $processedAttachments[] = $item;
+                }
+            }
+
             // 1. Generate PDF of the memo
+            \Log::info('Generating PDF for backup...');
             $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('emails.memo-notification', [
                 'memo' => $memo,
                 'recipient' => (object)['first_name' => 'Recipient', 'last_name' => ''],
                 'sender' => $request->user(),
-                'type' => 'new_memo'
+                'type' => 'new_memo',
+                'processedAttachments' => $processedAttachments
             ]);
             $pdfContent = $pdf->output();
             
             // 2. Upload PDF to Drive
+            $user = $request->user();
+            $creatorName = strtoupper(str_replace(' ', '', ($user->first_name . $user->last_name)));
+            $dateStr = now()->format('m_d_Y');
+            $fileName = "MEMOFY_{$dateStr}_{$creatorName}.pdf";
+
+            \Log::info('Uploading PDF to Google Drive: ' . $fileName);
             $this->driveService->uploadContent(
                 $pdfContent, 
-                "Memo_{$memo->id}_" . \Illuminate\Support\Str::slug($memo->subject) . ".pdf", 
+                $fileName, 
                 'application/pdf'
             );
 
-            // 3. Upload Attachments to Drive
-            if (!empty($memo->attachments)) {
+            // 3. Upload Original Attachments to Drive
+            if (!empty($memo->attachments) && is_array($memo->attachments)) {
                 foreach ($memo->attachments as $attachment) {
-                    if (isset($attachment['file_path'])) {
+                    if (is_array($attachment) && isset($attachment['file_path'])) {
+                        \Log::info('Uploading attachment to Google Drive: ' . ($attachment['file_name'] ?? basename($attachment['file_path'])));
                         $this->driveService->uploadFile(
                             $attachment['file_path'], 
                             $attachment['file_name'] ?? basename($attachment['file_path'])
@@ -271,9 +327,11 @@ class MemoController extends Controller
                     }
                 }
             }
+            \Log::info('Google Drive backup completed successfully for memo: ' . $memo->id);
         } catch (\Exception $e) {
-            \Log::error('Google Drive Auto-Storage Failed: ' . $e->getMessage());
-            // We don't fail the request if Drive upload fails
+            \Log::error('Google Drive Auto-Storage Failed: ' . $e->getMessage(), [
+                'stack' => $e->getTraceAsString()
+            ]);
         }
         // --------------------------------
 

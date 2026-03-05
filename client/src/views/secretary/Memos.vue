@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, watch, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Plus, Search, ChevronDown, Calendar, X, CheckCircle, Clock, Eye, Send, SlidersHorizontal } from 'lucide-vue-next'
+import { Plus, Search, ChevronDown, Calendar, X, CheckCircle, Clock, Eye, Send, SlidersHorizontal, Cloud, ExternalLink } from 'lucide-vue-next'
 import ComposeMemoModal from '@/components/memos/ComposeMemoModal.vue'
 import MemoInboxCard from '@/components/memos/MemoInboxCard.vue'
 import MemoDetailModal from '@/components/memos/MemoDetailModal.vue'
@@ -22,6 +22,7 @@ const currentUserId = storedUser?.id || storedUser?._id || null
 const showComposeModal = ref(false)
 const selectedMemo = ref(null)
 const showDetailModal = ref(false)
+const gdriveConnected = ref(false)
 
 // Additional data
 const departments = ref([])
@@ -144,6 +145,28 @@ const clearFilters = () => {
   dateFilter.value = ''
 }
 
+const checkGDriveStatus = async () => {
+  try {
+    const response = await api.get('/drive/status')
+    gdriveConnected.value = response.data.connected
+  } catch (error) {
+    console.error('Error checking GDrive status:', error)
+  }
+}
+
+const connectGDrive = async () => {
+  const connectUrl = `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'}/drive/connect`
+  window.open(connectUrl, 'GDriveConnect', 'width=600,height=700')
+}
+
+// Listen for connection success from popup
+window.addEventListener('message', (event) => {
+  if (event.data.type === 'GOOGLE_DRIVE_CONNECTED') {
+    gdriveConnected.value = true
+    Swal.fire('Connected!', 'Google Drive linked successfully.', 'success')
+  }
+})
+
 const hasActiveFilters = computed(() => {
   return departmentFilter.value !== 'All Departments' ||
          sortFilter.value !== 'Newest' ||
@@ -160,6 +183,7 @@ const tabs = [
 const route = useRoute()
 
 onMounted(async () => {
+  checkGDriveStatus()
   fetchDepartments()
   
   const memoId = route.query.memoId
@@ -183,6 +207,16 @@ onMounted(async () => {
         <p class="memo-subtitle">Manage and distribute memos</p>
       </div>
       <div class="memo-header-right">
+        <button 
+          @click="connectGDrive" 
+          class="memo-gdrive-btn"
+          :class="{ 'connected': gdriveConnected }"
+        >
+          <Cloud :size="18" />
+          <span>{{ gdriveConnected ? 'Drive Linked' : 'Link Drive' }}</span>
+          <ExternalLink v-if="!gdriveConnected" :size="12" />
+        </button>
+
         <button @click="showComposeModal = true" class="memo-compose-btn">
           <Plus :size="18" :stroke-width="2.5" />
           <span>Compose</span>
@@ -310,6 +344,30 @@ onMounted(async () => {
   @apply flex items-center gap-3;
 }
 
+.memo-gdrive-btn {
+  @apply inline-flex items-center gap-2;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  background: white;
+  border: 1px solid var(--color-memo-border);
+  color: var(--color-memo-text-secondary);
+}
+
+.memo-gdrive-btn:hover {
+  @apply bg-gray-50;
+  border-color: var(--color-memo-indigo);
+  color: var(--color-memo-indigo);
+}
+
+.memo-gdrive-btn.connected {
+  @apply bg-green-50;
+  border-color: #10B981;
+  color: #059669;
+}
 /* Toolbar: Tabs + Filters inline */
 .memo-toolbar {
   @apply flex flex-wrap items-center justify-between gap-3;
