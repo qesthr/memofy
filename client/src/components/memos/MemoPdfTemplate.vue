@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { FileText, Paperclip, Loader2 } from 'lucide-vue-next'
-import { buksuLogoBase64 } from '@/utils/logo'
+import { buksuLogoBase64, memofyLogoBase64 } from '@/utils/logo'
 
 const props = defineProps({
   memo: {
@@ -130,10 +130,10 @@ const contentPages = computed(() => {
         <!-- Page Header with Logo -->
         <div class="memo-header border-b-2 border-black px-12 pt-10 pb-6">
             <div class="flex items-center justify-between">
-                <div class="flex items-center gap-6">
-                    <!-- Logo Section -->
-                     <!-- We need to ensure this image renders in PDF. Base64 is best. -->
-                     <img :src="buksuLogoBase64" alt="BukSU Logo" class="h-16 w-auto object-contain" />
+                <div class="flex items-center gap-4">
+                    <!-- Logos -->
+                    <img :src="memofyLogoBase64" alt="Memofy Logo" class="h-14 w-auto object-contain" />
+                    <img :src="buksuLogoBase64" alt="BukSU Logo" class="h-14 w-auto object-contain" />
                     
                     <div class="border-l-2 border-black pl-6">
                         <h1 class="text-3xl font-black tracking-widest text-black uppercase leading-none mb-1">MEMO</h1>

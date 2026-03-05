@@ -40,6 +40,7 @@ class Notification extends Model
     public const TYPE_PROFILE_UPDATED = 'profile.updated';
     public const TYPE_CALENDAR_SECRETARY_CREATED = 'calendar.secretary_created';
     public const TYPE_MEMO_REMINDER = 'memo.reminder';
+    public const TYPE_MEMO_PENDING_APPROVAL = 'memo.pending_approval';
 
     /**
      * Get the notifiable entity that the notification belongs to.

@@ -324,6 +324,31 @@ class NotificationService
     }
 
     /**
+     * Notify all admins that a secretary submitted a memo for approval
+     */
+    public function notifyAdminsOfMemoSubmission(User $secretary, $memo): void
+    {
+        $admins = User::where('role', 'admin')->get();
+
+        foreach ($admins as $admin) {
+            $data = [
+                'memo_id'        => $memo->id,
+                'memo_subject'   => $memo->subject,
+                'secretary_name' => $secretary->first_name . ' ' . $secretary->last_name,
+                'priority'       => $memo->priority,
+                'message'        => "{$secretary->first_name} {$secretary->last_name} has submitted a memo for your approval: '{$memo->subject}'",
+            ];
+
+            $this->createNotification(
+                $admin,
+                Notification::TYPE_MEMO_PENDING_APPROVAL,
+                $data,
+                "/admin/memos?tab=pending&memoId={$memo->id}"
+            );
+        }
+    }
+
+    /**
      * Notify admin of profile update
      */
     public function notifyAdminsOfProfileUpdate(User $secretary, string $updateType): void
@@ -395,6 +420,7 @@ class NotificationService
             Notification::TYPE_PROFILE_UPDATED => '👤',
             Notification::TYPE_CALENDAR_SECRETARY_CREATED => '📅',
             Notification::TYPE_MEMO_REMINDER => '🔔',
+            Notification::TYPE_MEMO_PENDING_APPROVAL => '⏳',
             default => '🔔'
         };
     }
@@ -414,6 +440,7 @@ class NotificationService
             Notification::TYPE_PROFILE_UPDATED => 'Profile Updated',
             Notification::TYPE_CALENDAR_SECRETARY_CREATED => 'New Calendar Event',
             Notification::TYPE_MEMO_REMINDER => 'Acknowledgment Reminder',
+            Notification::TYPE_MEMO_PENDING_APPROVAL => 'Memo Pending Approval',
             default => 'Notification'
         };
     }

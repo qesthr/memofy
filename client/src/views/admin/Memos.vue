@@ -188,6 +188,12 @@ const tabs = [
 const route = useRoute()
 
 onMounted(async () => {
+  // Pre-select tab from query param (e.g., ?tab=pending from dashboard)
+  const tabParam = route.query.tab
+  if (tabParam && tabs.some(t => t.key === tabParam)) {
+    activeTab.value = tabParam
+  }
+
   const memoId = route.query.memoId
   if (memoId) {
     try {

@@ -215,6 +215,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         // Mark all notifications as read
         Route::post('/mark-all-read', [NotificationController::class, 'markAllAsRead']);
         
+        // Mark all notifications as unread
+        Route::post('/mark-all-unread', [NotificationController::class, 'markAllAsUnread']);
+        
         // Delete notification
         Route::delete('/{id}', [NotificationController::class, 'destroy']);
         

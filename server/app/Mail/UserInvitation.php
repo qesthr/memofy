@@ -12,20 +12,16 @@ class UserInvitation extends Mailable
 {
     use Queueable, SerializesModels;
 
-    public $name;
-    public $role;
+    public $invitation;
     public $setupUrl;
-    public $invitedBy;
 
     /**
      * Create a new message instance.
      */
-    public function __construct($name, $role, $setupUrl, $invitedBy)
+    public function __construct($invitation, $setupUrl)
     {
-        $this->name = $name;
-        $this->role = $role;
+        $this->invitation = $invitation;
         $this->setupUrl = $setupUrl;
-        $this->invitedBy = $invitedBy;
     }
 
     /**

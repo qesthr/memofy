@@ -1,6 +1,7 @@
 <script setup>
-import { ref, onMounted } from 'vue'
-import { FileText, Hourglass, AlertCircle, Users, RefreshCw, CheckCircle } from 'lucide-vue-next'
+import { ref, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { FileText, Hourglass, AlertCircle, Users, RefreshCw, CheckCircle, Clock, X } from 'lucide-vue-next'
 
 // Statistics data - initialized with zeros/placeholders
 const stats = ref([
@@ -121,6 +122,16 @@ generateCalendar()
 
 const weekDays = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
+const pendingCount = ref(0)
+const showPendingBanner = ref(false)
+const bannerDismissed = ref(false)
+
+const router = useRouter()
+
+const goToPending = () => {
+  router.push('/admin/memos?tab=pending')
+}
+
 // Fetch dashboard data
 import api from '../../services/api'
 
@@ -133,6 +144,12 @@ const fetchDashboardData = async () => {
     stats.value.forEach(stat => {
       const val = data.stats[stat.key] || 0
       stat.value = stat.key === 'acknowledgment_rate' ? `${val}%` : val
+      if (stat.key === 'pending_approval') {
+        pendingCount.value = val
+        if (val > 0 && !bannerDismissed.value) {
+          showPendingBanner.value = true
+        }
+      }
     })
 
     recentMemos.value = data.recent_memos || []
@@ -141,6 +158,11 @@ const fetchDashboardData = async () => {
   } catch (error) {
     console.error('Error fetching dashboard data:', error)
   }
+}
+
+const dismissBanner = () => {
+  showPendingBanner.value = false
+  bannerDismissed.value = true
 }
 
 onMounted(() => {
@@ -173,6 +195,9 @@ onMounted(() => {
         v-for="(stat, index) in stats" 
         :key="index"
         class="stat-card"
+        :class="{ 'stat-card-clickable': stat.key === 'pending_approval' }"
+        @click="stat.key === 'pending_approval' ? goToPending() : null"
+        :title="stat.key === 'pending_approval' ? 'Click to review pending memos' : ''"
       >
         <div class="stat-icon" :class="stat.bgColor">
           <component :is="stat.icon" :size="24" :class="stat.color" />
@@ -181,6 +206,26 @@ onMounted(() => {
           <p class="stat-title">{{ stat.title }}</p>
           <p class="stat-value">{{ stat.value }}</p>
         </div>
+        <div v-if="stat.key === 'pending_approval' && pendingCount > 0" class="stat-card-arrow">
+          <span class="text-warning text-xl">›</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pending Approval Alert Banner -->
+    <div v-if="showPendingBanner" class="pending-banner">
+      <div class="pending-banner-content">
+        <div class="pending-banner-icon">
+          <Hourglass :size="20" class="text-warning animate-pulse" />
+        </div>
+        <div class="flex-1">
+          <p class="font-semibold text-sm">{{ pendingCount }} memo{{ pendingCount !== 1 ? 's' : '' }} waiting for your approval</p>
+          <p class="text-xs opacity-70">Secretary-submitted memos need your review before they can be sent to recipients.</p>
+        </div>
+        <button @click="goToPending" class="pending-banner-btn">Review Now</button>
+        <button @click="dismissBanner" class="pending-banner-dismiss">
+          <X :size="16" />
+        </button>
       </div>
     </div>
 
@@ -370,6 +415,46 @@ onMounted(() => {
   @apply bg-base-100 rounded-xl p-5 flex items-center gap-4;
   @apply border border-base-300;
   @apply hover:shadow-md transition-shadow duration-200;
+}
+
+.stat-card-clickable {
+  @apply cursor-pointer hover:border-warning/50 hover:shadow-warning/10;
+  transition: all 0.2s ease;
+}
+.stat-card-clickable:hover {
+  transform: translateY(-2px);
+}
+
+.stat-card-arrow {
+  @apply flex items-center ml-auto opacity-60;
+}
+
+/* Pending Approval Banner */
+.pending-banner {
+  @apply rounded-xl border border-warning/30 bg-warning/10;
+  padding: 12px 20px;
+  animation: banner-slide-in 0.3s ease;
+}
+
+@keyframes banner-slide-in {
+  0% { opacity: 0; transform: translateY(-8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.pending-banner-content {
+  @apply flex items-center gap-3;
+}
+
+.pending-banner-icon {
+  @apply flex items-center justify-center w-9 h-9 rounded-lg bg-warning/20 shrink-0;
+}
+
+.pending-banner-btn {
+  @apply btn btn-warning btn-sm shrink-0 font-semibold;
+}
+
+.pending-banner-dismiss {
+  @apply btn btn-ghost btn-sm btn-circle shrink-0 text-warning;
 }
 
 .stat-icon {

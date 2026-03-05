@@ -22,9 +22,11 @@
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
         .header {
-            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 50%, #60a5fa 100%);
+            background: linear-gradient(135deg, rgba(30, 58, 138, 0.9) 0%, rgba(59, 130, 246, 0.8) 100%), url('{{ $message->embed(public_path('images/email-bg.png')) }}');
+            background-size: cover;
+            background-position: center;
             color: white;
-            padding: 40px 20px;
+            padding: 45px 20px;
             text-align: center;
         }
         .logos {
@@ -188,36 +190,30 @@
 <body>
     <div class="email-container">
         <div class="header">
-            <div class="logos">
-                <div class="logo-circle">
-                    <img src="https://i.imgur.com/your-buksu-logo.png" alt="BukSU Logo" onerror="this.style.display='none'">
-                </div>
-                <div class="logo-circle">
-                    <img src="https://i.imgur.com/your-memofy-logo.png" alt="Memofy Logo" onerror="this.style.display='none'">
-                </div>
-            </div>
             <h1>Welcome to BukSU Memofy!</h1>
             <p>EDUCATE. INNOVATE. LEAD.</p>
         </div>
         
         <div class="content">
-            <div class="greeting">Hello, {{ $invitation->user->first_name }}! 👋</div>
+            <div class="greeting">Hello, {{ $invitation->user->full_name ?? $invitation->name }}! 👋</div>
             
-            <p>You have been invited by <strong>{{ $invitation->inviter->first_name }} {{ $invitation->inviter->last_name }}</strong> to join the <strong>BukSU Memofy Portal</strong>.</p>
+            <p>You have been invited by <strong>{{ $invitation->inviter->full_name ?? 'the Administrator' }}</strong> to join the <strong>BukSU Memofy Portal</strong>.</p>
             
             <p>Your assigned role:</p>
             <div class="role-badge">{{ strtoupper($invitation->role) }}</div>
             
             <div class="divider"></div>
             
+            @if(isset($password) && $password)
             <p style="font-size: 16px; color: #1e40af; font-weight: 600; margin-top: 20px;">
                 🔐 Your Login Credentials
             </p>
             
             <div class="password-box">
-                <div class="password-label">Your Password</div>
+                <div class="password-label">Temporary Password</div>
                 <div class="password-value">{{ $password }}</div>
             </div>
+            @endif
             
             <div class="divider"></div>
             
@@ -228,27 +224,38 @@
             <div class="steps">
                 <div class="step">
                     <div class="step-number">1</div>
-                    <div class="step-text"><strong>Click the button below</strong> to go to the login page.</div>
+                    <div class="step-text"><strong>Click the button below</strong> to set up your account.</div>
                 </div>
                 <div class="step">
                     <div class="step-number">2</div>
-                    <div class="step-text"><strong>Log in</strong> using your email (<strong>{{ $invitation->email }}</strong>) and the password provided above.</div>
+                    <div class="step-text">
+                        @if(isset($password) && $password)
+                        <strong>Log in</strong> using your email (<strong>{{ $invitation->email }}</strong>) and the temporary password above.
+                        @else
+                        <strong>Verify your details</strong> and set your secure password.
+                        @endif
+                    </div>
                 </div>
                 <div class="step">
                     <div class="step-number">3</div>
-                    <div class="step-text"><strong>Change your password</strong> anytime from your Profile Settings after logging in.</div>
+                    <div class="step-text">Once activated, you can access all features of the Memofy Portal.</div>
                 </div>
             </div>
             
             <div style="text-align: center; margin: 30px 0;">
-                <a href="{{ config('app.frontend_url', url('/')) . '/login' }}" class="button">Go to Login →</a>
+                <a href="{{ $setupUrl }}" class="button">
+                    {{ (isset($password) && $password) ? 'Go to Login →' : 'Set Up Account →' }}
+                </a>
             </div>
             
             <div class="info-box">
                 <p style="margin: 0 0 10px 0; font-weight: 600; color: #1e40af;">📋 Important Information:</p>
                 <ul>
                     <li>Your email (<strong>{{ $invitation->email }}</strong>) is your username</li>
-                    <li>Use the password provided above for your first login</li>
+                    <li style="color: #dc2626; font-weight: bold;">This invitation link will expire in 30 days.</li>
+                    @if(isset($password) && $password)
+                    <li>Use the temporary password provided above for your first login</li>
+                    @endif
                     <li>After logging in, you can <strong>change your password</strong> in your Profile Settings</li>
                     <li>You will be redirected to the 
                         @if($invitation->role === 'admin')
@@ -259,7 +266,6 @@
                             <strong>Faculty Dashboard</strong>
                         @endif
                     </li>
-                    <li>Contact your administrator if you need assistance</li>
                 </ul>
             </div>
             

@@ -782,7 +782,7 @@ onUnmounted(() => {
     </div>
 
     <div v-if="showAddUserModal" class="modal modal-open">
-      <div class="modal-box max-w-lg p-0 overflow-hidden">
+      <div class="modal-box max-w-lg p-0 overflow-hidden flex flex-col" style="max-height: 90vh;">
         <!-- Modal Header with decorative background -->
         <div class="bg-gradient-to-r from-primary via-primary/90 to-blue-600 p-6 text-primary-content relative overflow-hidden">
           <!-- Decorative circles -->
@@ -814,8 +814,8 @@ onUnmounted(() => {
           </p>
         </div>
 
-        <!-- Modal Body -->
-        <div class="p-6 space-y-5">
+        <!-- Modal Body (scrollable) -->
+        <div class="p-6 space-y-5 overflow-y-auto flex-1">
           <!-- Name Field -->
           <div class="form-control">
             <label class="label py-1">

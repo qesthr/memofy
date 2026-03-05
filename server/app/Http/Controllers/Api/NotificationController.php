@@ -127,6 +127,30 @@ class NotificationController extends Controller
     }
 
     /**
+     * Mark all notifications as unread
+     */
+    public function markAllAsUnread(Request $request)
+    {
+        $user = $request->user();
+        
+        Notification::where('notifiable_type', User::class)
+                   ->where('notifiable_id', $user->id)
+                   ->update(['read_at' => null]);
+
+        // Get count
+        $count = Notification::where('notifiable_type', User::class)
+                            ->where('notifiable_id', $user->id)
+                            ->unread()
+                            ->count();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'All notifications marked as unread',
+            'unread_count' => $count
+        ]);
+    }
+
+    /**
      * Delete a notification
      */
     public function destroy(Request $request, $id)

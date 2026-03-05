@@ -22,7 +22,9 @@
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
         .header {
-            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 50%, #60a5fa 100%);
+            background: linear-gradient(135deg, rgba(30, 58, 138, 0.9) 0%, rgba(59, 130, 246, 0.8) 100%), url('{{ $message->embed(public_path('images/email-bg.png')) }}');
+            background-size: cover;
+            background-position: center;
             color: white;
             padding: 40px 20px;
             text-align: center;
@@ -117,9 +119,6 @@
 <body>
     <div class="email-container">
         <div class="header">
-            <div class="logo-circle">
-                <img src="https://i.imgur.com/your-memofy-logo.png" alt="Memofy Logo" onerror="this.src='https://via.placeholder.com/60?text=M'">
-            </div>
             <h1>Account Invitation</h1>
             <p>BUKSU MEMOFY PORTAL</p>
         </div>
@@ -134,14 +133,14 @@
             <p style="margin-top: 20px;">To activate your account and set up your password, please click the button below:</p>
             
             <div class="button-container">
-                <a href="{{ config('app.frontend_url') . '/setup-password?token=' . $invitation->token }}" class="button">Set Up My Account →</a>
+                <a href="{{ config('app.frontend_url') . '/auth/setup-password?token=' . $invitation->token }}" class="button">Set Up My Account →</a>
             </div>
 
             <div class="info-box">
                 <p style="margin: 0; font-weight: 600; color: #1e3a8a;">📋 Important Details:</p>
                 <ul>
                     <li><strong>Department:</strong> {{ $invitation->department }}</li>
-                    <li><strong>Link Expiration:</strong> 48 hours</li>
+                    <li><strong>Link Expiration:</strong> 30 days</li>
                     <li><strong>Activation:</strong> Single-use link</li>
                 </ul>
             </div>

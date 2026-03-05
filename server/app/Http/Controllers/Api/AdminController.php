@@ -176,28 +176,24 @@ class AdminController extends Controller
             $token = Str::random(64);
             
             // Store invitation in database
-            DB::table('user_invitations')->insert([
+            $invitation = \App\Models\UserInvitation::create([
                 'user_id' => $user->user_id, // Link to the newly created user
                 'email' => $request->email,
                 'name' => $request->name,
                 'department' => $request->department,
                 'role' => $request->role,
                 'token' => $token,
-                'expires_at' => now()->addHours(48),
-                'created_by' => $request->user()->user_id,
-                'created_at' => now(),
-                'updated_at' => now()
+                'expires_at' => now()->addDays(30),
+                'invited_by' => $request->user()->user_id,
+                'status' => 'pending'
             ]);
 
             // Generate setup URL
             $setupUrl = config('app.frontend_url', 'http://localhost:5174') . '/auth/setup-password?token=' . $token;
 
-            // Get inviter name
-            $invitedBy = $request->user()->full_name;
-
             // Send email
             Mail::to($request->email)->send(
-                new UserInvitation($request->name, $request->role, $setupUrl, $invitedBy)
+                new UserInvitation($invitation, $setupUrl)
             );
 
             return response()->json([

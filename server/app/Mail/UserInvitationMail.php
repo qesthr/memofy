@@ -18,6 +18,7 @@ class UserInvitationMail extends Mailable
      */
     public $invitation;
     public $password;
+    public $setupUrl;
 
     /**
      * Create a new message instance.
@@ -26,6 +27,13 @@ class UserInvitationMail extends Mailable
     {
         $this->invitation = $invitation;
         $this->password = $password;
+        
+        $frontendUrl = config('app.frontend_url', 'http://localhost:5174');
+        if ($invitation->token) {
+            $this->setupUrl = $frontendUrl . '/auth/setup-password?token=' . $invitation->token;
+        } else {
+            $this->setupUrl = $frontendUrl . '/login';
+        }
     }
 
     /**
