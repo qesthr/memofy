@@ -516,7 +516,7 @@ watch(() => props.isOpen, (val) => {
 <template>
   <Teleport to="body">
     <div v-if="isOpen" class="modal modal-open z-99999 items-center justify-center">
-    <div class="modal-box p-0 max-w-6xl w-[95vw] h-[85vh] overflow-hidden rounded-xl bg-base-100 shadow-2xl border border-base-300 flex flex-col">
+    <div class="modal-box p-0 max-w-6xl w-[95vw] max-h-[95vh] h-[90vh] overflow-hidden rounded-xl bg-base-100 shadow-2xl border border-base-300 flex flex-col">
       <!-- Fixed Header -->
       <div class="bg-primary px-5 py-3 flex items-center justify-between text-primary-content shrink-0 z-10">
         <div class="flex items-center gap-2">
@@ -528,16 +528,16 @@ watch(() => props.isOpen, (val) => {
       </div>
 
       <!-- Fixed Metadata Section (Compact) -->
-      <div class="px-5 pt-4 pb-2 space-y-2 shrink-0 bg-base-100">
+      <div class="px-5 py-3 space-y-3 shrink-0 bg-base-100 border-b border-base-200">
         <!-- To Field (Compact Inline) -->
-        <div class="flex items-center gap-2 group">
-          <label class="w-12 text-[10px] font-black text-base-content/50 uppercase tracking-wider shrink-0">TO</label>
-          <div class="relative flex-1 flex flex-wrap items-center gap-1">
+        <div class="flex items-start gap-2 group min-h-[32px]">
+          <label class="w-12 text-[10px] font-black text-base-content/50 uppercase tracking-wider shrink-0 pt-2">TO</label>
+          <div class="relative flex-1 flex flex-wrap items-center gap-1.5 pt-0.5">
             <!-- Selected Recipients Chips (Compact) -->
-            <div v-for="recipient in formData.selectedRecipients" :key="recipient.id" class="badge badge-primary gap-1 py-1 px-2">
-              <span class="text-[9px] font-bold">{{ recipient.first_name }} {{ recipient.last_name }}</span>
+            <div v-for="recipient in formData.selectedRecipients" :key="recipient.id" class="badge badge-primary gap-1 py-1 px-2 h-auto min-h-[22px]">
+              <span class="text-[9px] font-bold py-0.5">{{ recipient.first_name }} {{ recipient.last_name }}</span>
               <button @click="removeRecipient(recipient.id)" class="hover:text-white/80 transition-colors">
-                <X :size="8" />
+                <X :size="10" />
               </button>
             </div>
 
@@ -546,19 +546,19 @@ watch(() => props.isOpen, (val) => {
               @focus="showUserSuggestions = true"
               type="text" 
               placeholder="Add recipient..." 
-              class="input input-ghost focus:bg-transparent border-transparent focus:border-transparent focus:outline-none p-0 text-sm flex-1 min-w-[100px] placeholder:text-base-content/20 font-medium"
+              class="input input-ghost focus:bg-transparent border-transparent focus:border-transparent focus:outline-none p-0 h-8 text-sm flex-1 min-w-[120px] placeholder:text-base-content/20 font-medium"
             />
             <!-- Autocomplete Suggestion -->
-            <div v-if="showUserSuggestions && filteredUsers.length > 0" class="absolute left-0 top-full mt-1 w-full bg-base-100 shadow-2xl border border-base-300 rounded-lg z-60 overflow-hidden">
-              <ul class="menu p-1">
+            <div v-if="showUserSuggestions && filteredUsers.length > 0" class="absolute left-0 top-full mt-2 w-full max-w-md bg-base-100 shadow-2xl border border-base-300 rounded-xl z-[100] overflow-hidden">
+              <ul class="menu p-1.5">
                 <li v-for="user in filteredUsers" :key="user.id">
-                  <button @click="selectUser(user)" class="flex items-center gap-2 py-2 px-3 hover:bg-base-200 rounded-lg transition-colors">
-                    <div class="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-[9px] uppercase">
+                  <button @click="selectUser(user)" class="flex items-center gap-3 py-2.5 px-3 hover:bg-base-200 rounded-lg transition-colors">
+                    <div class="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs uppercase">
                       {{ user.first_name[0] }}{{ user.last_name[0] }}
                     </div>
-                    <div class="flex flex-col items-start">
-                      <span class="font-bold text-xs">{{ user.first_name }} {{ user.last_name }}</span>
-                      <span class="text-[9px] opacity-40 leading-none">{{ user.email }}</span>
+                    <div class="flex flex-col items-start overflow-hidden">
+                      <span class="font-bold text-xs truncate w-full">{{ user.first_name }} {{ user.last_name }}</span>
+                      <span class="text-[9px] opacity-40 leading-none truncate w-full">{{ user.email }}</span>
                     </div>
                   </button>
                 </li>
@@ -567,16 +567,20 @@ watch(() => props.isOpen, (val) => {
           </div>
         </div>
 
+        <div class="divider my-0 h-px bg-base-200 opacity-50"></div>
+
         <!-- Subject Field (Compact Inline) -->
-        <div class="flex items-center gap-2 group">
+        <div class="flex items-center gap-2 group min-h-[32px]">
           <label class="w-12 text-[10px] font-black text-base-content/50 uppercase tracking-wider shrink-0">SUBJECT</label>
           <input 
             v-model="formData.subject"
             type="text" 
-            placeholder="Subject" 
-            class="input input-ghost focus:bg-transparent border-transparent focus:border-transparent focus:outline-none p-0 text-sm w-full placeholder:text-base-content/20 font-medium"
+            placeholder="Type your subject here..." 
+            class="input input-ghost focus:bg-transparent border-transparent focus:border-transparent focus:outline-none p-0 h-8 text-sm w-full placeholder:text-base-content/20 font-bold"
           />
         </div>
+
+        <div class="divider my-0 h-px bg-base-200 opacity-50"></div>
 
         <!-- Controls Row (Compact) -->
         <div class="flex flex-wrap items-center gap-2 py-1">
@@ -669,11 +673,11 @@ watch(() => props.isOpen, (val) => {
         </div>
       </div>
 
-      <!-- Scrollable Content Field (Main Focus) -->
-      <div class="flex-1 overflow-y-auto px-5 pb-4 custom-scrollbar bg-base-100">
+      <!-- Content Field (Scrollable) -->
+      <div class="flex-1 overflow-y-auto px-10 py-6 custom-scrollbar bg-base-100">
         <textarea 
           v-model="formData.content"
-          placeholder="Enter memo content (plain text)..." 
+          placeholder="Start typing your memo content here..." 
           class="textarea textarea-ghost focus:bg-transparent border-transparent focus:border-transparent focus:outline-none p-0 w-full min-h-full text-base resize-none placeholder:text-base-content/20 font-medium leading-relaxed"
         ></textarea>
       </div>
@@ -791,11 +795,11 @@ watch(() => props.isOpen, (val) => {
   width: 6px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0.1);
+  background-color: rgba(0, 0, 0, 0.08);
   border-radius: 10px;
 }
 [data-theme='dark'] .custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: rgba(255, 255, 255, 0.08);
 }
 .custom-scrollbar::-webkit-scrollbar-track {
   background-color: transparent;

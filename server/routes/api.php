@@ -240,4 +240,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     // System Settings
     Route::get('/system-settings', [App\Http\Controllers\Api\SystemSettingController::class, 'index']);
     Route::put('/system-settings', [App\Http\Controllers\Api\SystemSettingController::class, 'update']);
+
 });
+
+// Google Drive routes (Made public/GET for easier local setup)
+Route::get('/drive/connect', [App\Http\Controllers\Api\DriveController::class, 'connect']);
+Route::get('/drive/callback', [App\Http\Controllers\Api\DriveController::class, 'callback']);

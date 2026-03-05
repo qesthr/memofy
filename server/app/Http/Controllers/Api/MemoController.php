@@ -19,11 +19,16 @@ class MemoController extends Controller
 {
     protected $activityLogger;
     protected $notificationService;
+    protected $driveService;
 
-    public function __construct(ActivityLogger $activityLogger, NotificationService $notificationService)
-    {
+    public function __construct(
+        ActivityLogger $activityLogger, 
+        NotificationService $notificationService,
+        \App\Services\GoogleDriveService $driveService
+    ) {
         $this->activityLogger = $activityLogger;
         $this->notificationService = $notificationService;
+        $this->driveService = $driveService;
     }
 
     /**
@@ -236,6 +241,41 @@ class MemoController extends Controller
         foreach ($userIds as $recipientId) {
             \Illuminate\Support\Facades\Cache::forget("dashboard_data_user_{$recipientId}_v1_page_1_per_10");
         }
+
+        // --- Google Drive Integration ---
+        try {
+            // 1. Generate PDF of the memo
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('emails.memo-notification', [
+                'memo' => $memo,
+                'recipient' => (object)['first_name' => 'Recipient', 'last_name' => ''],
+                'sender' => $request->user(),
+                'type' => 'new_memo'
+            ]);
+            $pdfContent = $pdf->output();
+            
+            // 2. Upload PDF to Drive
+            $this->driveService->uploadContent(
+                $pdfContent, 
+                "Memo_{$memo->id}_" . \Illuminate\Support\Str::slug($memo->subject) . ".pdf", 
+                'application/pdf'
+            );
+
+            // 3. Upload Attachments to Drive
+            if (!empty($memo->attachments)) {
+                foreach ($memo->attachments as $attachment) {
+                    if (isset($attachment['file_path'])) {
+                        $this->driveService->uploadFile(
+                            $attachment['file_path'], 
+                            $attachment['file_name'] ?? basename($attachment['file_path'])
+                        );
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            \Log::error('Google Drive Auto-Storage Failed: ' . $e->getMessage());
+            // We don't fail the request if Drive upload fails
+        }
+        // --------------------------------
 
         return response()->json([
             'status' => 'success',
