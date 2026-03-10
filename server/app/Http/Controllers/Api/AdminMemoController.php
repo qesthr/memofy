@@ -12,6 +12,7 @@ use App\Models\Department;
 use App\Models\UserSignature;
 use App\Services\ActivityLogger;
 use App\Services\NotificationService;
+use App\Services\GoogleDriveService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use MongoDB\BSON\ObjectId;
@@ -20,11 +21,16 @@ class AdminMemoController extends Controller
 {
     protected $activityLogger;
     protected $notificationService;
+    protected $driveService;
 
-    public function __construct(ActivityLogger $activityLogger, NotificationService $notificationService)
-    {
+    public function __construct(
+        ActivityLogger $activityLogger, 
+        NotificationService $notificationService,
+        GoogleDriveService $driveService
+    ) {
         $this->activityLogger = $activityLogger;
         $this->notificationService = $notificationService;
+        $this->driveService = $driveService;
     }
 
     /**
@@ -191,6 +197,10 @@ class AdminMemoController extends Controller
             foreach ($recipients as $recipient) {
                 \Illuminate\Support\Facades\Cache::forget("dashboard_data_user_{$recipient->id}_v1_page_1_per_10");
             }
+
+            // --- Google Drive Integration ---
+            $this->driveService->backupMemo($memo, $user);
+            // --------------------------------
         });
 
         return response()->json([

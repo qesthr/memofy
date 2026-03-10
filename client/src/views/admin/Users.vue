@@ -241,9 +241,17 @@ const getStatusBadge = (status) => {
       return 'badge-warning text-white'
     case 'archived':
       return 'badge-error text-white'
+    case 'locked':
+      return 'badge-error text-white'
     default:
       return 'badge-ghost'
   }
+}
+
+// Check if account is locked due to brute force attempts
+const isLoginLocked = (user) => {
+  if (!user.lock_until) return false
+  return new Date(user.lock_until) > new Date()
 }
 
 const validateEmail = (email) => {
@@ -678,7 +686,13 @@ onUnmounted(() => {
                 </span>
               </td>
               <td class="py-4">
-                <span class="badge badge-sm font-semibold capitalize" :class="getStatusBadge(user.display_status)">
+                <template v-if="isLoginLocked(user)">
+                  <span class="badge badge-sm font-semibold badge-error text-white flex items-center gap-1">
+                    <Lock :size="10" />
+                    Locked
+                  </span>
+                </template>
+                <span v-else class="badge badge-sm font-semibold capitalize" :class="getStatusBadge(user.display_status)">
                   {{ user.display_status }}
                 </span>
               </td>
@@ -768,7 +782,7 @@ onUnmounted(() => {
     </div>
 
     <div v-if="showAddUserModal" class="modal modal-open">
-      <div class="modal-box max-w-lg p-0 overflow-hidden">
+      <div class="modal-box max-w-lg p-0 overflow-hidden flex flex-col" style="max-height: 90vh;">
         <!-- Modal Header with decorative background -->
         <div class="bg-gradient-to-r from-primary via-primary/90 to-blue-600 p-6 text-primary-content relative overflow-hidden">
           <!-- Decorative circles -->
@@ -800,8 +814,8 @@ onUnmounted(() => {
           </p>
         </div>
 
-        <!-- Modal Body -->
-        <div class="p-6 space-y-5">
+        <!-- Modal Body (scrollable) -->
+        <div class="p-6 space-y-5 overflow-y-auto flex-1">
           <!-- Name Field -->
           <div class="form-control">
             <label class="label py-1">

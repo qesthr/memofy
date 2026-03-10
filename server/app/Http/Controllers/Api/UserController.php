@@ -523,7 +523,7 @@ class UserController extends Controller
                     'role' => $user->role,
                     'department' => $user->department,
                     'token' => $token,
-                    'expires_at' => now()->addHours(48),
+                    'expires_at' => now()->addDays(30),
                     'invited_by' => $currentUser->id,
                     'status' => 'pending'
                 ]);

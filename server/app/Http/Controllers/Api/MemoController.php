@@ -19,11 +19,16 @@ class MemoController extends Controller
 {
     protected $activityLogger;
     protected $notificationService;
+    protected $driveService;
 
-    public function __construct(ActivityLogger $activityLogger, NotificationService $notificationService)
-    {
+    public function __construct(
+        ActivityLogger $activityLogger, 
+        NotificationService $notificationService,
+        \App\Services\GoogleDriveService $driveService
+    ) {
         $this->activityLogger = $activityLogger;
         $this->notificationService = $notificationService;
+        $this->driveService = $driveService;
     }
 
     /**
@@ -236,6 +241,10 @@ class MemoController extends Controller
         foreach ($userIds as $recipientId) {
             \Illuminate\Support\Facades\Cache::forget("dashboard_data_user_{$recipientId}_v1_page_1_per_10");
         }
+
+        // --- Google Drive Integration ---
+        $this->driveService->backupMemo($memo, $request->user());
+        // --------------------------------
 
         return response()->json([
             'status' => 'success',

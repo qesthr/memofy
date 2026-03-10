@@ -68,7 +68,7 @@ const closeModal = () => {
 <template>
   <Teleport to="body">
     <div v-if="isOpen" class="modal modal-open z-99999 items-center justify-center">
-    <div class="modal-box max-w-2xl w-full rounded-xl bg-base-100 shadow-2xl border border-base-300 p-0 overflow-hidden">
+    <div class="modal-box max-w-2xl w-full max-h-[90vh] rounded-xl bg-base-100 shadow-2xl border border-base-300 p-0 overflow-hidden flex flex-col">
       <!-- Header -->
       <div class="bg-primary px-6 py-4 flex items-center justify-between text-primary-content">
         <h3 class="text-xl font-bold tracking-tight uppercase flex items-center gap-3">
@@ -81,7 +81,7 @@ const closeModal = () => {
       </div>
 
       <!-- Body -->
-      <div class="p-8 space-y-8">
+      <div class="p-8 space-y-8 overflow-y-auto flex-1 custom-scrollbar">
         <!-- Start Section -->
         <div>
           <h4 class="text-sm font-black text-base-content/70 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -255,6 +255,17 @@ const closeModal = () => {
 <style scoped>
 .modal-box {
   animation: modal-pop 0.3s cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+}
+[data-theme='dark'] .custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.08);
 }
 
 @keyframes modal-pop {

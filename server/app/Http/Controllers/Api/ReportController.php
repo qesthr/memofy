@@ -174,6 +174,13 @@ class ReportController extends Controller
                 }
             }
 
+            // Calculate Acknowledgment Rate for this period
+            $totalAcks = \App\Models\MemoAcknowledgment::where('sent_at', '>=', $startDate)->count();
+            $acknowledgedCount = \App\Models\MemoAcknowledgment::where('sent_at', '>=', $startDate)
+                ->where('is_acknowledged', true)
+                ->count();
+            $acknowledgmentRate = $totalAcks > 0 ? round(($acknowledgedCount / $totalAcks) * 100) : 0;
+
             return [
                 'total_users' => $totalUsers,
                 'active_users' => $activeUsers,
@@ -181,6 +188,7 @@ class ReportController extends Controller
                 'memos_this_period' => $memosThisPeriod,
                 'total_activities' => $totalActivities,
                 'memos_by_status' => $memosByStatus,
+                'acknowledgment_rate' => $acknowledgmentRate,
             ];
         });
     }

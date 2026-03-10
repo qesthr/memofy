@@ -303,26 +303,37 @@ class RoleController extends Controller
 
         $validated = $request->validate([
             'permission_ids' => 'nullable|array',
+            'status' => 'nullable|in:active,inactive',
         ]);
 
         $originalPermissions = $targetUser->permission_ids ?? [];
-        $targetUser->update([
-            'permission_ids' => $validated['permission_ids']
-        ]);
+        $originalStatus = $targetUser->status ?? 'active';
+        
+        $updateData = [];
+        if (isset($validated['permission_ids'])) {
+            $updateData['permission_ids'] = $validated['permission_ids'];
+        }
+        if (isset($validated['status'])) {
+            $updateData['status'] = $validated['status'];
+        }
+        
+        $targetUser->update($updateData);
 
         // Invalidate specific user cache
         \Illuminate\Support\Facades\Cache::forget("user_permissions_{$targetUser->id}");
         \Illuminate\Support\Facades\Cache::forget("current_user_data_{$targetUser->id}");
 
-        $this->activityLogger->logUserAction($user, 'update_user_permissions', "Updated individual permissions for user: {$targetUser->email}", [
+        $this->activityLogger->logUserAction($user, 'update_user_permissions', "Updated individual permissions and status for user: {$targetUser->email}", [
             'target_user_id' => $targetUser->id,
-            'original' => $originalPermissions,
-            'new' => $validated['permission_ids']
+            'original_permissions' => $originalPermissions,
+            'original_status' => $originalStatus,
+            'new_permissions' => $validated['permission_ids'] ?? $originalPermissions,
+            'new_status' => $validated['status'] ?? $originalStatus,
         ]);
 
         return response()->json([
             'success' => true,
-            'message' => 'User permissions updated successfully',
+            'message' => 'User permissions and status updated successfully',
             'user' => $targetUser
         ]);
     }

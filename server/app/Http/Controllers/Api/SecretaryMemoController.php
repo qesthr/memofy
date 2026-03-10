@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Department;
 use App\Models\UserSignature;
 use App\Services\ActivityLogger;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use MongoDB\BSON\ObjectId;
@@ -17,10 +18,12 @@ use MongoDB\BSON\ObjectId;
 class SecretaryMemoController extends Controller
 {
     protected $activityLogger;
+    protected $notificationService;
 
-    public function __construct(ActivityLogger $activityLogger)
+    public function __construct(ActivityLogger $activityLogger, NotificationService $notificationService)
     {
         $this->activityLogger = $activityLogger;
+        $this->notificationService = $notificationService;
     }
 
     /**
@@ -286,6 +289,9 @@ class SecretaryMemoController extends Controller
         "Memo '{$memo->subject}' submitted for approval", 
         $this->activityLogger->extractRequestInfo($request)
     );
+
+    // Notify all admins about the pending approval
+    $this->notificationService->notifyAdminsOfMemoSubmission($user, $memo);
 
     return response()->json([
         'status' => 'success',

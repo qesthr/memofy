@@ -28,6 +28,7 @@ class User extends Authenticatable
         'employee_id',
         'profile_picture',
         'is_active',
+        'status',
         'login_attempts',
         'lock_until',
         'violation_count',
@@ -107,6 +108,8 @@ class User extends Authenticatable
         return $this->belongsTo(Department::class, 'department_id');
     }
 
+    const MAX_LOGIN_ATTEMPTS = 5;
+
     /**
      * Compare password (wrapper for Hash::check)
      */
@@ -123,9 +126,11 @@ class User extends Authenticatable
         $this->increment('login_attempts');
         $this->update(['last_failed_login' => now()]);
 
-        if ($this->login_attempts >= 5) {
+        if ($this->login_attempts >= self::MAX_LOGIN_ATTEMPTS) {
             $this->lockAccount();
+            return true; // Locked
         }
+        return false; // Not locked yet
     }
 
     /**
@@ -144,8 +149,10 @@ class User extends Authenticatable
      */
     public function lockAccount()
     {
-        // Progressive lockout logic could go here, currently fixed 5 mins
-        $lockoutMinutes = 5;
+        // Read lockout duration from system settings (admin-configurable), default 15 mins
+        $lockoutMinutes = intval(\App\Models\SystemSetting::get('login_lockout_minutes', 15));
+        $lockoutMinutes = max(1, $lockoutMinutes); // Ensure at least 1 minute
+
         $this->update([
             'lock_until' => now()->addMinutes($lockoutMinutes),
             'violation_count' => $this->violation_count + 1

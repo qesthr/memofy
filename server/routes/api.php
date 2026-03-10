@@ -215,6 +215,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         // Mark all notifications as read
         Route::post('/mark-all-read', [NotificationController::class, 'markAllAsRead']);
         
+        // Mark all notifications as unread
+        Route::post('/mark-all-unread', [NotificationController::class, 'markAllAsUnread']);
+        
         // Delete notification
         Route::delete('/{id}', [NotificationController::class, 'destroy']);
         
@@ -237,4 +240,10 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     // System Settings
     Route::get('/system-settings', [App\Http\Controllers\Api\SystemSettingController::class, 'index']);
     Route::put('/system-settings', [App\Http\Controllers\Api\SystemSettingController::class, 'update']);
+
 });
+
+// Google Drive routes (Made public/GET for easier local setup)
+Route::get('/drive/connect', [App\Http\Controllers\Api\DriveController::class, 'connect']);
+Route::get('/drive/callback', [App\Http\Controllers\Api\DriveController::class, 'callback']);
+Route::get('/drive/status', [App\Http\Controllers\Api\DriveController::class, 'status']);
