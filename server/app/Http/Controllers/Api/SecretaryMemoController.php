@@ -6,17 +6,43 @@ use App\Http\Controllers\Controller;
 use App\Models\Memo;
 use App\Models\MemoAcknowledgment;
 use App\Models\User;
+
+use App\Models\Department;
+use App\Models\UserSignature;
 use App\Services\ActivityLogger;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use MongoDB\BSON\ObjectId;
 
 class SecretaryMemoController extends Controller
 {
     protected $activityLogger;
+    protected $notificationService;
 
-    public function __construct(ActivityLogger $activityLogger)
+    public function __construct(ActivityLogger $activityLogger, NotificationService $notificationService)
     {
         $this->activityLogger = $activityLogger;
+        $this->notificationService = $notificationService;
+    }
+
+    /**
+     * Convert user ID to consistent format for MongoDB comparison
+     */
+    protected function normalizeUserId($userId)
+    {
+        if ($userId instanceof ObjectId) {
+            return $userId;
+        }
+        // Try to create ObjectId from string
+        if (is_string($userId) && strlen((string)$userId) === 24) {
+            try {
+                return new ObjectId((string)$userId);
+            } catch (\Exception $e) {
+                return (string)$userId;
+            }
+        }
+        return (string)$userId;
     }
 
     /**
@@ -31,6 +57,12 @@ class SecretaryMemoController extends Controller
         $page = $request->get('page', 1);
         $perPage = min((int) $request->get('per_page', 15), 50);
         
+        \Illuminate\Support\Facades\Log::info('SecretaryMemoController Request', [
+            'userId' => $user->id,
+            'scope' => $scope,
+            'params' => $request->all()
+        ]);
+        
         // Filter parameters
         $search = $request->get('search');
         $department = $request->get('department');
@@ -40,51 +72,63 @@ class SecretaryMemoController extends Controller
 
         // Eager load with selective columns to reduce data transfer
         $query = Memo::with([
-            'sender:_id,id,first_name,last_name,email,role,department',
-            'recipient:_id,id,first_name,last_name,email,role,department',
+            'sender:_id,id,first_name,last_name,email,role,department,department_id',
+            'recipient:_id,id,first_name,last_name,email,role,department,department_id',
             'department:_id,id,name'
         ]);
         
-        $userId = (string) $user->id;
+        // Normalize user ID for MongoDB comparison
+        $userId = $this->normalizeUserId($user->id);
 
         switch ($scope) {
             case 'sent':
-                $query->where('sender_id', $userId)
-                      ->where('is_draft', false)
-                      ->where('status', '!=', 'pending_approval');
+                $query->whereIn('sender_id', [$userId, (string)$user->id])
+                      ->whereIn('status', ['sent', 'archived']); // Include archived
                 break;
 
             case 'pending':
-                $query->where('sender_id', $userId)
-                      ->where('status', 'pending_approval');
+                $query->whereIn('sender_id', [$userId, (string)$user->id])
+                      ->where('status', 'pending_approval'); // STRICT: Already strict
                 break;
 
-            case 'drafts':
-                $query->where('created_by', $userId)
-                      ->whereIn('is_draft', [true, 1]);
+            case 'received':
+                // RECEIVED: Memos where this secretary is a recipient
+                // Check both direct recipient_id AND MemoAcknowledgment records
+                $memoIdsFromAcknowledgments = MemoAcknowledgment::whereIn('recipient_id', [$userId, (string)$user->id])
+                                                                 ->pluck('memo_id')
+                                                                 ->toArray();
+                
+                $query->where(function ($q) use ($userId, $memoIdsFromAcknowledgments, $user) {
+                    $q->whereIn('recipient_id', [$userId, (string)$user->id])  // Direct recipient
+                      ->orWhereIn('_id', $memoIdsFromAcknowledgments); // Via acknowledgment record
+                })
+                ->where('sender_id', '!=', $userId) // Exclude memos sent by this user
+                ->where('sender_id', '!=', (string)$user->id); // Exclude via string ID too
+                
+                $query->whereIn('status', ['sent', 'read', 'acknowledged', 'archived']);
                 break;
 
             default:
-            // RECEIVED: Memos sent to users in secretary's department
-            $recipientIds = User::where('department_id', (string)$user->department_id)
+            // ALL: Combination of sent and received memos
+            $recipientIds = User::whereIn('department_id', [$user->department_id, $this->normalizeUserId($user->department_id)])
                                ->where('_id', '!=', $userId)
                                ->pluck('id')
                                ->toArray();
                 
-            $recipientIds[] = $userId;
+            $recipientIds[] = $user->id;
+            
+            // Also get memo IDs from acknowledgments
+            $memoIdsFromAcknowledgments = MemoAcknowledgment::whereIn('recipient_id', [$userId, (string)$user->id])
+                                                             ->pluck('memo_id')
+                                                             ->toArray();
                 
-            $query->where(function ($q) use ($userId, $recipientIds) {
-                $q->whereIn('recipient_id', $recipientIds)
-                  ->where('is_draft', false)
-                  ->where('status', '!=', 'pending_approval');
-                  
-                $q->orWhere(function ($sq) use ($userId) {
-                    $sq->where('created_by', $userId)
-                       ->where(function ($ssq) {
-                           $ssq->whereIn('is_draft', [true, 1])
-                               ->orWhere('status', 'pending_approval');
-                       });
-                });
+            $query->where(function ($q) use ($userId, $recipientIds, $memoIdsFromAcknowledgments, $user) {
+                // Memos sent by this user
+                $q->whereIn('sender_id', [$userId, (string)$user->id])
+                  // Or memos sent to this user or their department
+                  ->orWhereIn('recipient_id', $recipientIds)
+                  // Or memos where user has an acknowledgment record
+                  ->orWhereIn('_id', $memoIdsFromAcknowledgments);
             });
             break;
         }
@@ -115,7 +159,9 @@ class SecretaryMemoController extends Controller
             $query->whereDate('created_at', $date);
         }
 
-        $query->orderBy('created_at', $sort);
+        // Priority sorting: Low (0), Medium (1), High (2)
+        $query->orderBy('priority', 'asc')
+              ->orderBy('created_at', $sort);
 
         $memos = $query->paginate($perPage, ['*'], 'page', $page);
 
@@ -130,33 +176,34 @@ class SecretaryMemoController extends Controller
     public function stats(Request $request)
     {
         $user = $request->user();
+        $cacheKey = "secretary_memo_stats_user_{$user->id}_v1";
 
-        // Get recipient IDs in department
-        $recipientIds = User::where('department_id', $user->department_id)
-                           ->where('id', '!=', $user->id)
-                           ->pluck('id')
-                           ->toArray();
-        $recipientIds[] = $user->id;
+        return \Illuminate\Support\Facades\Cache::remember($cacheKey, now()->addSeconds(10), function () use ($user) {
+            // Normalize user ID for MongoDB comparison
+            $userId = $this->normalizeUserId($user->id);
 
-        // Revert to individual counts for MongoDB compatibility
-        $userId = (string) $user->id;
+            // Get recipient IDs in department
+            $deptId = $user->department_id;
+            $normDeptId = $this->normalizeUserId($deptId);
 
-        return response()->json([
-            'sent' => Memo::where('sender_id', $userId)
-                          ->where('is_draft', false)
-                          ->where('status', '!=', 'pending_approval')
-                          ->count(),
-            'received' => Memo::whereIn('recipient_id', $recipientIds)
-                              ->where('is_draft', false)
+            $recipientIds = User::whereIn('department_id', [$deptId, $normDeptId])
+                               ->where('id', '!=', $user->id)
+                               ->pluck('id')
+                               ->toArray();
+            $recipientIds[] = $user->id;
+
+            return [
+                'sent' => Memo::whereIn('sender_id', [$userId, (string)$user->id])
                               ->where('status', '!=', 'pending_approval')
                               ->count(),
-            'pending' => Memo::where('sender_id', $userId)
-                             ->where('status', 'pending_approval')
-                             ->count(),
-            'drafts' => Memo::where('sender_id', $userId)
-                            ->where('is_draft', true)
-                            ->count(),
-        ]);
+                'received' => Memo::whereIn('recipient_id', $recipientIds)
+                                  ->where('status', '!=', 'pending_approval')
+                                  ->count(),
+                'pending' => Memo::whereIn('sender_id', [$userId, (string)$user->id])
+                                 ->where('status', 'pending_approval')
+                                 ->count(),
+            ];
+        });
     }
 
     /**
@@ -170,13 +217,13 @@ class SecretaryMemoController extends Controller
             'department_id' => 'required_without:recipient_ids|exists:departments,id',
             'subject' => 'required|string|max:255',
             'message' => 'required|string',
-            'priority' => 'required|in:urgent,high,normal,low',
+            'priority' => 'required|in:high,medium,low',
             'attachments' => 'nullable|array',
-            'is_draft' => 'boolean',
+
             'scheduled_send_at' => 'nullable|date',
             'schedule_end_at' => 'nullable|date',
+            'deadline_at' => 'nullable|date',
             'all_day_event' => 'nullable|boolean',
-            'signature_id' => 'nullable|exists:user_signatures,id',
             'attachment_path' => 'nullable|string'
         ]);
 
@@ -210,41 +257,48 @@ class SecretaryMemoController extends Controller
             return response()->json(['message' => 'No users found in this department'], 422);
         }
 
-        $memos = [];
-        foreach ($userIds as $recipientId) {
-            $memo = Memo::create([
-                'created_by' => $user->id,
-                'sender_id' => $user->id,
-                'recipient_id' => $recipientId,
-                'department_id' => $request->department_id ?? null,
-                'signature_id' => $request->signature_id ?? null,
-                'subject' => $validated['subject'],
-                'message' => $validated['message'],
-                'priority' => $validated['priority'],
-                'attachments' => $validated['attachments'] ?? [],
-                'status' => 'pending_approval', // Set to pending approval
-                'is_draft' => $validated['is_draft'] ?? false,
-                'version' => 1,
-                'scheduled_send_at' => $validated['scheduled_send_at'] ?? null,
-                'attachment_path' => $validated['attachment_path'] ?? null
-            ]);
-            $memos[] = $memo;
-        }
+        $memo = Memo::create([
+        'created_by' => $user->id,
+        'sender_id' => $user->id,
+        'recipient_id' => null, // Multi-recipient
+        'recipient_ids' => $userIds,
+        'department_id' => $request->department_id ?? null,
+        'subject' => $validated['subject'],
+        'message' => $validated['message'],
+        'priority' => $validated['priority'],
+        'attachments' => $validated['attachments'] ?? [],
+        'status' => 'pending_approval', // Set to pending approval
 
-        $action = ($validated['is_draft'] ?? false) ? 'create_draft_memo' : 'submit_memo_for_approval';
-        $this->activityLogger->logUserAction(
-            $user, 
-            $action, 
-            count($memos) . " memos submitted for approval", 
-            $this->activityLogger->extractRequestInfo($request)
-        );
+        'version' => 1,
+        'scheduled_send_at' => $validated['scheduled_send_at'] ?? null,
+        'schedule_end_at' => $validated['schedule_end_at'] ?? null,
+        'deadline_at' => $validated['deadline_at'] ?? null,
+        'all_day_event' => $validated['all_day_event'] ?? false,
+        'attachment_path' => $validated['attachment_path'] ?? null
+    ]);
 
-        return response()->json([
-            'status' => 'success',
-            'message' => count($memos) . ' memo(s) submitted for Admin approval',
-            'data' => $memos[0]
-        ], 201);
+    // Create calendar event if scheduled or has a deadline (for creator's calendar reminder)
+    if ($memo->scheduled_send_at || $memo->deadline_at) {
+        $this->createCalendarEventForMemo($memo, $user->id);
     }
+
+    $action = 'submit_memo_for_approval';
+    $this->activityLogger->logUserAction(
+        $user, 
+        $action, 
+        "Memo '{$memo->subject}' submitted for approval", 
+        $this->activityLogger->extractRequestInfo($request)
+    );
+
+    // Notify all admins about the pending approval
+    $this->notificationService->notifyAdminsOfMemoSubmission($user, $memo);
+
+    return response()->json([
+        'status' => 'success',
+        'message' => 'Memo submitted for Admin approval',
+        'data' => $memo
+    ], 201);
+}
 
     /**
      * Get acknowledgment status for a memo (Secretary view)
@@ -263,11 +317,20 @@ class SecretaryMemoController extends Controller
         // Get all acknowledgments for department-wide memos
         $acknowledgments = MemoAcknowledgment::where('memo_id', $memoId)->get();
 
-        // Get department members if this was a department-wide memo
-        $recipientIds = User::where('department_id', $user->department_id)
-                          ->where('id', '!=', $user->id)
-                          ->pluck('id')
-                          ->toArray();
+        // Get total recipient IDs based on memo configuration
+        if ($memo->recipient_ids && is_array($memo->recipient_ids)) {
+            $recipientIds = $memo->recipient_ids;
+        } elseif ($memo->department_id) {
+            $normDeptId = $this->normalizeUserId($memo->department_id);
+            $recipientIds = User::whereIn('department_id', [$memo->department_id, $normDeptId])
+                              ->where('id', '!=', $memo->sender_id)
+                              ->pluck('id')
+                              ->toArray();
+        } elseif ($memo->recipient_id) {
+            $recipientIds = [$memo->recipient_id];
+        } else {
+            $recipientIds = [];
+        }
 
         $totalRecipients = count($recipientIds);
         $acknowledgedCount = $acknowledgments->where('is_acknowledged', true)->count();
@@ -285,48 +348,7 @@ class SecretaryMemoController extends Controller
         ]);
     }
 
-    /**
-     * Save memo as draft
-     */
-    public function storeDraft(Request $request)
-    {
-        $validated = $request->validate([
-            'recipient_ids' => 'nullable|array',
-            'recipient_ids.*' => 'exists:users,id',
-            'department_id' => 'nullable|exists:departments,id',
-            'subject' => 'required|string|max:255',
-            'message' => 'required|string',
-            'priority' => 'required|in:urgent,high,normal,low',
-            'attachments' => 'nullable|array',
-            'signature_id' => 'nullable|exists:user_signatures,id',
-            'attachment_path' => 'nullable|string'
-        ]);
 
-        $user = $request->user();
-
-        $memo = Memo::create([
-            'created_by' => $user->id,
-            'sender_id' => $user->id,
-            'recipient_id' => (isset($validated['recipient_ids']) && count($validated['recipient_ids']) === 1) ? $validated['recipient_ids'][0] : null,
-            'recipient_ids' => $validated['recipient_ids'] ?? null,
-            'department_id' => $validated['department_id'] ?? null,
-            'signature_id' => $validated['signature_id'] ?? null,
-            'subject' => $validated['subject'],
-            'message' => $validated['message'],
-            'priority' => $validated['priority'],
-            'attachments' => $validated['attachments'] ?? [],
-            'status' => 'draft',
-            'is_draft' => true,
-            'version' => 1,
-            'attachment_path' => $validated['attachment_path'] ?? null
-        ]);
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Draft saved successfully',
-            'data' => $memo
-        ], 201);
-    }
 
     /**
      * Delete a memo (Secretary can delete their own drafts)
@@ -341,8 +363,8 @@ class SecretaryMemoController extends Controller
             return response()->json(['message' => 'Unauthorized to delete this memo'], 403);
         }
 
-        if (!$memo->is_draft && $memo->status !== 'pending_approval') {
-            return response()->json(['message' => 'Only drafts or pending memos can be deleted'], 422);
+        if ($memo->status !== 'pending_approval') {
+            return response()->json(['message' => 'Only pending memos can be deleted'], 422);
         }
 
         $memo->delete();
@@ -357,54 +379,7 @@ class SecretaryMemoController extends Controller
         return response()->json(['message' => 'Memo deleted successfully']);
     }
 
-    /**
-     * Update a draft memo
-     */
-    public function update(Request $request, $id)
-    {
-        $user = $request->user();
-        $memo = Memo::findOrFail($id);
 
-        // Only allow update of own drafts
-        if ($memo->sender_id !== $user->id) {
-            return response()->json(['message' => 'Unauthorized to update this memo'], 403);
-        }
-
-        if (!$memo->is_draft) {
-            return response()->json(['message' => 'Only drafts can be updated'], 422);
-        }
-
-        $validated = $request->validate([
-            'recipient_ids' => 'nullable|array',
-            'recipient_ids.*' => 'exists:users,id',
-            'department_id' => 'nullable|exists:departments,id',
-            'subject' => 'sometimes|string|max:255',
-            'message' => 'sometimes|string',
-            'priority' => 'sometimes|in:urgent,high,normal,low',
-            'attachments' => 'nullable|array',
-            'signature_id' => 'nullable|exists:user_signatures,id',
-            'attachment_path' => 'nullable|string'
-        ]);
-
-        if (isset($validated['recipient_ids'])) {
-            $validated['recipient_id'] = count($validated['recipient_ids']) === 1 ? $validated['recipient_ids'][0] : null;
-        }
-
-        $memo->update($validated);
-
-        $this->activityLogger->logUserAction(
-            $user,
-            'update_draft_memo',
-            "Updated draft memo {$id}",
-            $this->activityLogger->extractRequestInfo($request)
-        );
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Draft updated successfully',
-            'data' => $memo
-        ]);
-    }
 
     /**
      * Bulk delete memos (Secretary can delete their own drafts/pending)
@@ -424,8 +399,7 @@ class SecretaryMemoController extends Controller
         $memos = Memo::whereIn('id', $ids)
                     ->where('sender_id', $user->id)
                     ->where(function ($query) {
-                        $query->where('is_draft', true)
-                              ->orWhere('status', 'pending_approval');
+                        $query->where('status', 'pending_approval');
                     })
                     ->get();
         
@@ -459,56 +433,56 @@ class SecretaryMemoController extends Controller
         ]);
     }
 
+
+
     /**
-     * Bulk submit memos for approval
+     * Create a calendar event for a scheduled memo
      */
-    public function bulkSubmitForApproval(Request $request)
+    private function createCalendarEventForMemo($memo, $userId)
     {
-        $user = $request->user();
-        
-        $validated = $request->validate([
-            'ids' => 'required|array',
-            'ids.*' => 'exists:memos,id'
-        ]);
-        
-        $ids = $validated['ids'];
-        
-        // Get user's draft memos
-        $drafts = Memo::whereIn('id', $ids)
-                     ->where('sender_id', $user->id)
-                     ->where('is_draft', true)
-                     ->get();
-        
-        $submitted = [];
-        $skipped = [];
-        
-        foreach ($ids as $id) {
-            $memo = $drafts->firstWhere('id', $id);
-            if ($memo) {
-                $memo->update([
-                    'status' => 'pending_approval',
-                    'is_draft' => false
-                ]);
-                $submitted[] = $id;
-            } else {
-                $skipped[] = $id;
-            }
-        }
-        
-        $this->activityLogger->logUserAction(
-            $user,
-            'bulk_submit_memos',
-            "Bulk submitted " . count($submitted) . " memos for approval",
-            ['submitted' => $submitted, 'skipped' => $skipped]
-        );
-        
-        return response()->json([
-            'status' => 'success',
-            'message' => "Submitted " . count($submitted) . " memo(s) for approval",
-            'data' => [
-                'submitted' => $submitted,
-                'skipped' => $skipped
+        $calendarEvent = \App\Models\CalendarEvent::updateOrCreate(
+            ['memo_id' => $memo->id],
+            [
+                'title' => ($memo->deadline_at ? "[Deadline] " : "[Scheduled] ") . $memo->subject,
+                'description' => $memo->message,
+                'start' => $memo->deadline_at ?? $memo->scheduled_send_at,
+                'end' => $memo->schedule_end_at ?? ($memo->deadline_at ?? $memo->scheduled_send_at),
+                'all_day' => $memo->all_day_event ?? false,
+                'category' => $memo->deadline_at ? 'deadline' : $this->mapPriorityToCategory($memo->priority),
+                'created_by' => $userId,
+                'status' => $memo->deadline_at ? 'pending' : 'scheduled',
+                'source' => $memo->deadline_at ? 'DEADLINE' : 'MEMO'
             ]
+        );
+
+        // Clear and add participants: only the creator for now as it's pending approval
+        \App\Models\CalendarEventParticipant::where('calendar_event_id', $calendarEvent->id)->delete();
+        
+        \App\Models\CalendarEventParticipant::create([
+            'calendar_event_id' => $calendarEvent->id,
+            'user_id' => $userId,
+            'status' => 'accepted'
         ]);
+
+        return $calendarEvent;
     }
+
+    /**
+     * Map memo priority to calendar category
+     */
+    private function mapPriorityToCategory($priority)
+    {
+        $mapping = [
+            'high' => 'high',
+            'medium' => 'standard',
+            'low' => 'low'
+        ];
+
+        return $mapping[$priority] ?? 'standard';
+    }
+
+
+
+        
+
 }

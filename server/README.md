@@ -7,52 +7,265 @@
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
 </p>
 
-## About Laravel
+## About BukSU Memofy
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+BukSU Memofy is a department memo management system built with Laravel and MongoDB. It provides a comprehensive platform for managing departmental communications, memos, and notifications.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+### Features
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- **Memo Management**: Create, send, archive, and track memos
+- **Role-Based Access Control**: Admin, Secretary, and Faculty roles with granular permissions
+- **Google Integration**: OAuth, Calendar, Drive, and Analytics APIs
+- **Email Notifications**: SMTP-based email notifications for memo activities
+- **Calendar Integration**: Schedule memos and events with Google Calendar sync
 
-## Learning Laravel
+---
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+## Installation
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd server
+   ```
 
-## Laravel Sponsors
+2. **Install dependencies**
+   ```bash
+   composer install
+   ```
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+3. **Environment setup**
+   ```bash
+   cp .env.example .env
+   php artisan key:generate
+   ```
 
-### Premium Partners
+4. **Configure `.env`** with your database and API credentials
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+5. **Run migrations and seeders**
+   ```bash
+   php artisan migrate
+   php artisan db:seed
+   ```
 
-## Contributing
+---
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+## Database Seeders
 
-## Code of Conduct
+### Quick Start - Seed All Data
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Run all seeders in the correct order:
 
-## Security Vulnerabilities
+```bash
+php artisan db:seed
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+This will run:
+1. `DepartmentTableSeeder` - Creates departments
+2. `UsersTableSeeder` - Creates test users
+3. `RBACSeeder` - Creates roles and permissions
+
+### Individual Seeders
+
+#### 1. Departments Seeder
+
+Creates 4 departments:
+- Food Technology (FT)
+- Automotive Technology (AT)
+- Electronics Technology (ET)
+- Information Technology/EMC (IT)
+
+```bash
+php artisan db:seed --class=DepartmentTableSeeder
+```
+
+#### 2. Users Seeder
+
+Creates 9 test users (3 of each role):
+
+| Role | Email | Password |
+|------|-------|----------|
+| Admin | Admin1@buksu.edu.ph to Admin3@buksu.edu.ph | Admin123! |
+| Secretary | Secretary1@buksu.edu.ph to Secretary3@buksu.edu.ph | Secretary123! |
+| Faculty | Faculty1@buksu.edu.ph to Faculty3@buksu.edu.ph | Faculty123! |
+
+```bash
+php artisan db:seed --class=UsersTableSeeder
+```
+
+#### 3. RBAC (Roles & Permissions) Seeder
+
+Creates roles and permissions:
+- **Admin**: Full system access
+- **Secretary**: Department management, memo creation, faculty management
+- **Faculty**: View memos, acknowledge memos, read-only calendar
+
+```bash
+php artisan db:seed --class=RBACSeeder
+```
+
+#### 4. Memo Seeder
+
+Creates random memos for testing. Uses custom artisan command for flexibility.
+
+**Basic usage (100 memos):**
+```bash
+php artisan memos:seed
+```
+
+**Custom count:**
+```bash
+php artisan memos:seed --count=150
+```
+
+**Clear existing memos first:**
+```bash
+php artisan memos:seed --count=200 --truncate
+```
+
+**Alternative via db:seed:**
+```bash
+php artisan db:seed --class=MemoSeeder
+```
+
+**Memo Status Distribution:**
+| Status | Percentage | Description |
+|--------|------------|-------------|
+| `pending_approval` | 20% | For Review |
+| `sent` | 60% | Approved/Disseminated |
+| `read` | 20% | Acknowledged |
+
+**Note:** Draft status is excluded. All memos have realistic content with randomized subjects, messages, priorities, and recipients.
+
+---
+
+## Custom Artisan Commands
+
+### Server & Status Commands
+
+#### Start server with service status check
+```bash
+php artisan serve:status
+```
+Shows status of all configured APIs before starting the server.
+
+#### Check service status only
+```bash
+php artisan services:check
+```
+Displays connection status for:
+- Database (MongoDB)
+- Google OAuth
+- Google Drive API
+- Google Calendar API
+- Google Analytics API
+- SMTP Mail
+- reCAPTCHA
+- Frontend URL
+
+### Memo Commands
+
+#### Seed random memos
+```bash
+php artisan memos:seed [--count=NUMBER] [--truncate]
+```
+
+#### Send scheduled memos
+```bash
+php artisan memos:send-scheduled
+```
+Sends memos that have reached their scheduled send time.
+
+---
+
+## Testing
+
+### Running Tests
+
+```bash
+# Run all tests
+php artisan test
+
+# Run specific test file
+php artisan test --filter MemoTest
+```
+
+### Test Data Setup
+
+For testing, run the seeders in order:
+
+```bash
+# Fresh database with all test data
+php artisan migrate:fresh --seed
+
+# Or step by step
+php artisan migrate:fresh
+php artisan db:seed --class=DepartmentTableSeeder
+php artisan db:seed --class=UsersTableSeeder
+php artisan db:seed --class=RBACSeeder
+php artisan memos:seed --count=50
+```
+
+### Test User Credentials
+
+| Role | Email | Password |
+|------|-------|----------|
+| Admin | Admin1@buksu.edu.ph | Admin123! |
+| Secretary | Secretary1@buksu.edu.ph | Secretary123! |
+| Faculty | Faculty1@buksu.edu.ph | Faculty123! |
+
+---
+
+## API Configuration
+
+The following APIs are configured in `.env`:
+
+| Service | Required Env Variables |
+|---------|----------------------|
+| MongoDB | `MONGODB_URI`, `MONGODB_DATABASE` |
+| Google OAuth | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL` |
+| Google Drive | `GOOGLE_DRIVE_CLIENT_ID`, `GOOGLE_DRIVE_CLIENT_SECRET`, `GOOGLE_DRIVE_FOLDER_ID` |
+| Google Calendar | `GOOGLE_CALENDAR_CLIENT_ID`, `GOOGLE_CALENDAR_CLIENT_SECRET`, `GOOGLE_CALENDAR_API_KEY` |
+| Google Analytics | `GOOGLE_ANALYTICS_CLIENT_ID`, `GOOGLE_ANALYTICS_CLIENT_SECRET`, `GOOGLE_ANALYTICS_PROPERTY_ID` |
+| SMTP Mail | `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD` |
+| reCAPTCHA | `RECAPTCHA_SECRET`, `RECAPTCHA_SITE_KEY` |
+
+---
+
+## Development
+
+### Start Development Server
+
+```bash
+# With service status check
+php artisan serve:status
+
+# Standard Laravel serve
+php artisan serve
+```
+
+### Queue Processing
+
+For scheduled memos and background jobs:
+
+```bash
+php artisan queue:work
+```
+
+### Schedule Runner
+
+For cron-based scheduled tasks:
+
+```bash
+php artisan schedule:run
+```
+
+Or add to crontab:
+```
+* * * * * cd /path-to-project/server && php artisan schedule:run >> /dev/null 2>&1
+```
+
+---
 
 ## License
 

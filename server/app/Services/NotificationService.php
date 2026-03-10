@@ -64,7 +64,7 @@ class NotificationService
             $creator,
             Notification::TYPE_MEMO_APPROVED,
             $data,
-            "/secretary/memos/{$memo->id}"
+            "/{$creator->role}/memos?memoId={$memo->id}"
         );
     }
 
@@ -86,7 +86,7 @@ class NotificationService
             $creator,
             Notification::TYPE_MEMO_REJECTED,
             $data,
-            "/secretary/memos/{$memo->id}"
+            "/{$creator->role}/memos?memoId={$memo->id}"
         );
     }
 
@@ -109,7 +109,7 @@ class NotificationService
             $recipient,
             Notification::TYPE_MEMO_RECEIVED,
             $data,
-            "/faculty/memos/{$memo->id}"
+            "/{$recipient->role}/memos?memoId={$memo->id}"
         );
     }
 
@@ -130,7 +130,7 @@ class NotificationService
             $secretary,
             Notification::TYPE_MEMO_ACKNOWLEDGED,
             $data,
-            "/secretary/memos/{$memo->id}"
+            "/{$secretary->role}/memos?memoId={$memo->id}"
         );
     }
 
@@ -156,7 +156,7 @@ class NotificationService
                 $recipient,
                 Notification::TYPE_CALENDAR_INVITATION,
                 $data,
-                "/calendar?event={$event->id}"
+                "/{$recipient->role}/calendar?event={$event->id}"
             );
             
             if ($notification) {
@@ -172,7 +172,7 @@ class NotificationService
      */
     public function notifyCalendarUpdated(User $host, $event): void
     {
-        $participants = $event->participants()->where('user_id', '!=', $host->id)->get();
+        $participants = $event->participants()->with('user')->where('user_id', '!=', $host->id)->get();
         
         foreach ($participants as $participant) {
             $data = [
@@ -188,7 +188,7 @@ class NotificationService
                 $participant->user,
                 Notification::TYPE_CALENDAR_UPDATED,
                 $data,
-                "/calendar?event={$event->id}"
+                "/{$participant->user->role}/calendar?event={$event->id}"
             );
         }
     }
@@ -210,7 +210,7 @@ class NotificationService
             $creator,
             Notification::TYPE_CALENDAR_RESPONSE,
             $data,
-            "/calendar?event={$event->id}"
+            "/{$creator->role}/calendar?event={$event->id}"
         );
     }
 
@@ -262,7 +262,7 @@ class NotificationService
             $recipient,
             Notification::TYPE_CALENDAR_SECRETARY_CREATED,
             $data,
-            "/calendar?event={$event->id}"
+            "/{$recipient->role}/calendar?event={$event->id}"
         );
     }
 
@@ -289,6 +289,66 @@ class NotificationService
     }
 
     /**
+     * Send reminders to recipients who haven't acknowledged a memo
+     */
+    public function sendAcknowledgmentReminders($memo, User $sender, $recipients): array
+    {
+        $sent = [];
+        
+        foreach ($recipients as $recipient) {
+            $data = [
+                'memo_id' => $memo->id,
+                'memo_subject' => $memo->subject,
+                'sender_name' => $sender->first_name . ' ' . $sender->last_name,
+                'message' => "Reminder: Please acknowledge receipt of memo: '{$memo->subject}'",
+                'priority' => $memo->priority,
+                'sender_role' => $sender->role
+            ];
+
+            $notification = $this->createNotification(
+                $recipient,
+                Notification::TYPE_MEMO_REMINDER,
+                $data,
+                "/{$recipient->role}/memos?memoId={$memo->id}"
+            );
+            
+            if ($notification) {
+                $sent[] = (string)$recipient->id;
+            }
+        }
+
+        return [
+            'sent' => count($sent),
+            'recipients' => $sent
+        ];
+    }
+
+    /**
+     * Notify all admins that a secretary submitted a memo for approval
+     */
+    public function notifyAdminsOfMemoSubmission(User $secretary, $memo): void
+    {
+        $admins = User::where('role', 'admin')->get();
+
+        foreach ($admins as $admin) {
+            $data = [
+                'memo_id'        => $memo->id,
+                'memo_subject'   => $memo->subject,
+                'secretary_name' => $secretary->first_name . ' ' . $secretary->last_name,
+                'priority'       => $memo->priority,
+                'message'        => "{$secretary->first_name} {$secretary->last_name} has submitted a memo for your approval: '{$memo->subject}'",
+            ];
+
+            $this->createNotification(
+                $admin,
+                Notification::TYPE_MEMO_PENDING_APPROVAL,
+                $data,
+                "/admin/memos?tab=pending&memoId={$memo->id}"
+            );
+        }
+    }
+
+    /**
      * Notify admin of profile update
      */
     public function notifyAdminsOfProfileUpdate(User $secretary, string $updateType): void
@@ -302,15 +362,33 @@ class NotificationService
 
     /**
      * Send email notification
+     * Note: In development/testing environment, emails are not sent to avoid delivery errors
+     * with dummy email addresses. Only in-app notifications are created.
      */
     protected function sendEmailNotification(User $user, Notification $notification): void
     {
+        // Skip actual email sending in non-production environments
+        // This prevents delivery errors with dummy/test email addresses
+        if (app()->environment('local', 'development', 'testing')) {
+            Log::info('Email notification skipped (development mode)', [
+                'user_id' => $user->id,
+                'user_email' => $user->email,
+                'notification_type' => $notification->type,
+                'notification_title' => $notification->data['title'] ?? 'N/A'
+            ]);
+            return;
+        }
+
+        // Only send actual emails in production environment
         try {
             Mail::to($user->email)->send(new MemoNotification(
                 (object)[
+                    'id' => $notification->data['memo_id'] ?? null,
                     'subject' => $notification->data['title'] ?? 'Notification',
                     'message' => $notification->data['message'] ?? '',
-                    'priority' => $notification->data['priority'] ?? 'normal'
+                    'priority' => $notification->data['priority'] ?? 'normal',
+                    'created_at' => now(),
+                    'attachments' => []
                 ],
                 $user,
                 (object)[
@@ -341,6 +419,8 @@ class NotificationService
             Notification::TYPE_CALENDAR_UPDATED => '🔄',
             Notification::TYPE_PROFILE_UPDATED => '👤',
             Notification::TYPE_CALENDAR_SECRETARY_CREATED => '📅',
+            Notification::TYPE_MEMO_REMINDER => '🔔',
+            Notification::TYPE_MEMO_PENDING_APPROVAL => '⏳',
             default => '🔔'
         };
     }
@@ -359,6 +439,8 @@ class NotificationService
             Notification::TYPE_CALENDAR_UPDATED => 'Calendar Event Updated',
             Notification::TYPE_PROFILE_UPDATED => 'Profile Updated',
             Notification::TYPE_CALENDAR_SECRETARY_CREATED => 'New Calendar Event',
+            Notification::TYPE_MEMO_REMINDER => 'Acknowledgment Reminder',
+            Notification::TYPE_MEMO_PENDING_APPROVAL => 'Memo Pending Approval',
             default => 'Notification'
         };
     }

@@ -29,6 +29,11 @@ class UserInvitation extends Model
         return $this->belongsTo(User::class, 'invited_by');
     }
     
+    public function user()
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
+    
     // Check if valid
     public function isValid()
     {

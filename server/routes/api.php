@@ -7,8 +7,7 @@ use App\Http\Controllers\Api\MemoController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\DepartmentController;
-use App\Http\Controllers\Api\UserSignatureController;
-use App\Http\Controllers\Api\MemoTemplateController;
+
 use App\Http\Controllers\Api\FileController;
 use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\LockController;
@@ -16,6 +15,7 @@ use App\Http\Controllers\Api\ArchiveController;
 use App\Http\Controllers\Api\SecretaryMemoController;
 use App\Http\Controllers\Api\AdminMemoController;
 use App\Http\Controllers\Api\NotificationController;
+
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -128,13 +128,14 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::delete('/memos/{memo}', [MemoController::class, 'destroy'])->middleware('can:memo.archive');
     Route::post('/memos/{id}/rollback', [MemoController::class, 'rollback'])->middleware('can:memo.unarchive');
     Route::post('/memos/{id}/acknowledge', [MemoController::class, 'acknowledge'])->middleware('can:memo.view');
+    Route::post('/memos/{id}/reminder', [MemoController::class, 'sendReminder']);
 
     // Secretary Memo Routes
     Route::prefix('secretary/memos')->middleware('role:secretary')->group(function () {
         Route::get('/', [SecretaryMemoController::class, 'index']);
         Route::get('/stats', [SecretaryMemoController::class, 'stats']);
         Route::post('/submit-for-approval', [SecretaryMemoController::class, 'submitForApproval']);
-        Route::post('/draft', [SecretaryMemoController::class, 'storeDraft']);
+
         Route::put('/{memo}', [SecretaryMemoController::class, 'update']);
         Route::delete('/{memo}', [SecretaryMemoController::class, 'destroy']);
         Route::delete('/bulk-delete', [SecretaryMemoController::class, 'bulkDestroy']);
@@ -151,8 +152,11 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::get('/{id}/acknowledgments', [AdminMemoController::class, 'acknowledgmentStats']);
     });
 
+
+
     // Activity Logs
     Route::get('/activity-logs', [ActivityLogController::class, 'index']);
+    Route::get('/activity-logs/export/pdf', [ActivityLogController::class, 'exportPdf']);
     Route::get('/activity-logs/{id}', [ActivityLogController::class, 'show']);
 
     // User Management
@@ -171,14 +175,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('/users/restore-all', [UserController::class, 'restoreAll'])->middleware('can:faculty.unarchive');
 
     // Memo Customization
+    Route::get('/departments/members', [DepartmentController::class, 'members']);
+    Route::get('/departments/{id}/members', [DepartmentController::class, 'members']);
     Route::apiResource('departments', DepartmentController::class);
+
     
-    Route::get('/user-signatures', [UserSignatureController::class, 'index']);
-    Route::post('/user-signatures', [UserSignatureController::class, 'store']);
-    Route::delete('/user-signatures/{userSignature}', [UserSignatureController::class, 'destroy']);
-    Route::post('/user-signatures/{userSignature}/default', [UserSignatureController::class, 'setDefault']);
-    
-    Route::apiResource('memo-templates', MemoTemplateController::class);
+
     
     // Roles & Permissions
     Route::get('/roles', [RoleController::class, 'index']);
@@ -213,6 +215,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         // Mark all notifications as read
         Route::post('/mark-all-read', [NotificationController::class, 'markAllAsRead']);
         
+        // Mark all notifications as unread
+        Route::post('/mark-all-unread', [NotificationController::class, 'markAllAsUnread']);
+        
         // Delete notification
         Route::delete('/{id}', [NotificationController::class, 'destroy']);
         
@@ -231,4 +236,14 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         });
         // .users, .activityLogs maps to standard resources above
     });
+
+    // System Settings
+    Route::get('/system-settings', [App\Http\Controllers\Api\SystemSettingController::class, 'index']);
+    Route::put('/system-settings', [App\Http\Controllers\Api\SystemSettingController::class, 'update']);
+
 });
+
+// Google Drive routes (Made public/GET for easier local setup)
+Route::get('/drive/connect', [App\Http\Controllers\Api\DriveController::class, 'connect']);
+Route::get('/drive/callback', [App\Http\Controllers\Api\DriveController::class, 'callback']);
+Route::get('/drive/status', [App\Http\Controllers\Api\DriveController::class, 'status']);

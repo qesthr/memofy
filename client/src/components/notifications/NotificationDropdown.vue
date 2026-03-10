@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { Bell, Check, Trash2, FileText, Calendar, User, CheckCheck } from 'lucide-vue-next'
 import api from '@/services/api'
 
@@ -10,27 +11,51 @@ const props = defineProps({
   }
 })
 
+const router = useRouter()
 const notifications = ref([])
 const loading = ref(false)
 const unreadCount = ref(0)
+const filter = ref('all') // 'all' or 'unread'
 
 const fetchNotifications = async () => {
   loading.value = true
   try {
-    const response = await api.get('/notifications')
-    notifications.value = response.data.slice(0, props.maxItems)
-    unreadCount.value = response.data.filter(n => !n.read_at).length
+    const params = {}
+    if (filter.value === 'unread') {
+      params.unread_only = true
+    }
+    
+    const response = await api.get('/notifications', { params })
+    // Handle different API response structures (paginated or flat)
+    const notificationsData = response.data.data?.data || response.data.data || response.data || []
+    
+    // Ensure we have an array
+    if (Array.isArray(notificationsData)) {
+      notifications.value = notificationsData.slice(0, props.maxItems)
+      unreadCount.value = response.data.unread_count || notificationsData.filter(n => !n.read_at).length
+    } else {
+      console.warn('Unexpected notifications response format:', response.data)
+      notifications.value = []
+      unreadCount.value = 0
+    }
   } catch (error) {
     console.error('Failed to fetch notifications:', error)
+    notifications.value = []
+    unreadCount.value = 0
   } finally {
     loading.value = false
   }
 }
 
+const setFilter = (newFilter) => {
+  filter.value = newFilter
+  fetchNotifications()
+}
+
 const fetchUnreadCount = async () => {
   try {
     const response = await api.get('/notifications/unread-count')
-    unreadCount.value = response.data.count
+    unreadCount.value = response.data.unread_count || response.data.count
   } catch (error) {
     console.error('Failed to fetch unread count:', error)
   }
@@ -53,6 +78,16 @@ const markAllAsRead = async () => {
     unreadCount.value = 0
   } catch (error) {
     console.error('Failed to mark all notifications as read:', error)
+  }
+}
+
+const markAllAsUnread = async () => {
+  try {
+    const response = await api.post('/notifications/mark-all-unread')
+    notifications.value.forEach(n => n.read_at = null)
+    unreadCount.value = response.data.unread_count || notifications.value.length
+  } catch (error) {
+    console.error('Failed to mark all notifications as unread:', error)
   }
 }
 
@@ -89,15 +124,24 @@ const formatTime = (date) => {
   return d.toLocaleDateString()
 }
 
-const getLink = (notification) => {
+const handleNotificationClick = async (notification) => {
+  // Mark as read first
+  await markAsRead(notification)
+  
+  // Navigate based on notification type
   const data = notification.data || {}
-  if (notification.type.startsWith('memo')) {
-    return data.memo_id ? `/faculty/memos/${data.memo_id}` : '/faculty/memos'
+  const role = localStorage.getItem('role') || 'faculty'
+  
+  if (notification.type.startsWith('memo') && data.memo_id) {
+    // Navigate to memos page with memoId query parameter to open the modal
+    router.push(`/${role}/memos?memoId=${data.memo_id}`)
+  } else if (notification.type.startsWith('calendar') && data.event_id) {
+    router.push(`/${role}/calendar?event=${data.event_id}`)
+  } else if (notification.link) {
+    router.push(notification.link)
+  } else if (data.link) {
+    router.push(data.link)
   }
-  if (notification.type.startsWith('calendar')) {
-    return data.event_id ? `/calendar?event=${data.event_id}` : '/calendar'
-  }
-  return '/notifications'
 }
 
 onMounted(() => {
@@ -120,19 +164,48 @@ onMounted(() => {
     </button>
     <div 
       tabindex="0" 
-      class="dropdown-content z-[1] mt-3 w-80 card card-compact bg-base-100 shadow-xl border border-base-300"
+      class="dropdown-content z-[100] mt-3 w-80 card card-compact bg-base-100 shadow-xl border border-base-300"
     >
       <div class="card-body">
-        <div class="flex justify-between items-center">
-          <h3 class="font-bold text-lg">Notifications</h3>
-          <button 
-            v-if="unreadCount > 0"
-            @click="markAllAsRead"
-            class="btn btn-ghost btn-xs text-info"
-          >
-            <CheckCheck :size="14" />
-            Mark all read
-          </button>
+        <div class="flex flex-col gap-3">
+          <div class="flex justify-between items-center">
+            <h3 class="font-bold text-lg">Notifications</h3>
+            <div class="flex gap-1">
+              <button 
+                @click="markAllAsRead"
+                class="btn btn-ghost btn-xs text-success"
+                title="Mark all as read"
+              >
+                <CheckCheck :size="14" />
+                Read All
+              </button>
+              <button 
+                @click="markAllAsUnread"
+                class="btn btn-ghost btn-xs text-warning"
+                title="Mark all as unread"
+              >
+                <Bell :size="14" />
+                Unread All
+              </button>
+            </div>
+          </div>
+
+          <!-- Filters -->
+          <div class="tabs tabs-boxed tabs-sm bg-base-200 p-0.5">
+            <button 
+              :class="['tab flex-1 h-8 rounded-md transition-all', filter === 'all' ? 'tab-active bg-primary text-primary-content shadow-sm' : 'hover:bg-base-300']"
+              @click="setFilter('all')"
+            >
+              All
+            </button>
+            <button 
+              :class="['tab flex-1 h-8 rounded-md transition-all', filter === 'unread' ? 'tab-active bg-primary text-primary-content shadow-sm' : 'hover:bg-base-300']"
+              @click="setFilter('unread')"
+            >
+              Unread
+              <span v-if="unreadCount > 0" class="badge badge-xs badge-error ml-1">{{ unreadCount }}</span>
+            </button>
+          </div>
         </div>
         
         <div class="divider my-1"></div>
@@ -161,38 +234,42 @@ onMounted(() => {
             :key="notification.id"
             :class="[
               'notification-item p-3 rounded-lg mb-2 cursor-pointer transition-all hover:bg-base-200',
-              !notification.read_at ? 'bg-base-200/50' : ''
+              !notification.read_at ? 'bg-base-200/50 border-l-4 border-primary' : 'border-l-4 border-transparent'
             ]"
-            @click="markAsRead(notification)"
+            @click="handleNotificationClick(notification)"
           >
             <div class="flex gap-3">
               <!-- Icon -->
-              <div :class="['p-2 rounded-full', getNotificationColor(notification.type)]">
+              <div :class="['p-2 rounded-full h-fit self-start', getNotificationColor(notification.type)]">
                 <component :is="getNotificationIcon(notification.type)" :size="18" />
               </div>
               
               <!-- Content -->
               <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium line-clamp-2">
+                <p class="text-xs font-semibold uppercase opacity-50 mb-0.5">
+                  {{ notification.type.split('.')[0] }}
+                </p>
+                <p class="text-sm font-medium line-clamp-2 leading-relaxed">
                   {{ notification.data?.message || 'New notification' }}
                 </p>
-                <p class="text-xs text-base-content/50 mt-1">
-                  {{ formatTime(notification.created_at) }}
+                <p class="text-[10px] text-base-content/50 mt-1 flex items-center gap-1">
+                  <span>{{ formatTime(notification.created_at) }}</span>
+                  <span v-if="!notification.read_at" class="w-1 h-1 bg-primary rounded-full"></span>
                 </p>
               </div>
               
               <!-- Actions -->
-              <div class="flex flex-col gap-1">
+              <div class="flex flex-col gap-1 self-center">
                 <button 
                   v-if="!notification.read_at"
-                  class="btn btn-ghost btn-xs text-success"
+                  class="btn btn-ghost btn-square btn-xs text-success bg-success/10 hover:bg-success/20"
                   title="Mark as read"
                   @click.stop="markAsRead(notification)"
                 >
                   <Check :size="14" />
                 </button>
                 <button 
-                  class="btn btn-ghost btn-xs text-error"
+                  class="btn btn-ghost btn-square btn-xs text-error bg-error/10 hover:bg-error/20"
                   title="Delete"
                   @click.stop="deleteNotification(notification.id)"
                 >
@@ -201,15 +278,6 @@ onMounted(() => {
               </div>
             </div>
           </div>
-        </div>
-        
-        <div class="card-actions mt-2">
-          <router-link 
-            to="/notifications" 
-            class="btn btn-info btn-block btn-sm"
-          >
-            View all notifications
-          </router-link>
         </div>
       </div>
     </div>

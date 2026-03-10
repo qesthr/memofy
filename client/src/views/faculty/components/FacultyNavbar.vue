@@ -36,8 +36,8 @@ const getInitials = (name) => {
 
       <!-- Right Section -->
       <div class="navbar-right">
-        <!-- Notifications -->
-        <NotificationDropdown />
+        <!-- Notification System -->
+        <NotificationDropdown :maxItems="20" />
 
         <!-- Theme Selector -->
         <div class="dropdown dropdown-end">
@@ -45,7 +45,7 @@ const getInitials = (name) => {
             <Sun v-if="theme === 'dark'" :size="20" />
             <Moon v-else :size="20" />
           </button>
-          <ul tabindex="0" class="dropdown-content z-[2] menu p-2 shadow-2xl bg-base-100 border border-base-300 rounded-xl w-40 mt-4 max-h-[70vh] overflow-y-auto custom-scrollbar flex-nowrap">
+          <ul tabindex="0" class="dropdown-content z-2 menu p-2 shadow-2xl bg-base-100 border border-base-300 rounded-xl w-40 mt-4 max-h-[70vh] overflow-y-auto custom-scrollbar flex-nowrap">
             <li class="menu-title px-4 py-2 opacity-60 text-[10px] uppercase tracking-wider font-bold">Select Theme</li>
             <li v-for="t in ['light', 'dark']" :key="t">
               <button 
@@ -68,17 +68,17 @@ const getInitials = (name) => {
         <div class="dropdown dropdown-end">
           <div tabindex="0" role="button" class="user-badge cursor-pointer">
             <div class="avatar online">
-              <div class="w-8 h-8 rounded-full bg-secondary text-secondary-content flex items-center justify-center overflow-hidden">
+              <div class="w-8 h-8 rounded-full bg-primary text-primary-content flex items-center justify-center overflow-hidden">
                 <img v-if="user?.profile_picture" :src="user.profile_picture" :alt="user.full_name" />
                 <span v-else class="text-xs font-semibold">{{ getInitials(user?.full_name) }}</span>
               </div>
             </div>
             <div class="hidden sm:flex flex-col items-start ml-2">
-              <span class="text-xs font-bold text-secondary leading-none">Faculty</span>
+              <span class="text-xs font-bold text-primary leading-none">Faculty</span>
               <span class="text-[10px] text-base-content/60 leading-tight">{{ user?.first_name }}</span>
             </div>
           </div>
-          <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow-xl bg-base-100 border border-base-300 rounded-box w-52 mt-3">
+          <ul tabindex="0" class="dropdown-content z-1 menu p-2 shadow-xl bg-base-100 border border-base-300 rounded-box w-52 mt-3">
             <li class="menu-title px-4 py-2 opacity-60">Account</li>
             <li><button @click="showPhotoModal = true"><Camera :size="16" /> Profile Photos</button></li>
             <li><button @click="showAccountModal = true"><Settings :size="16" /> My Account</button></li>
@@ -125,7 +125,7 @@ const getInitials = (name) => {
 .search-input {
   @apply w-full pl-10 pr-4 py-2 rounded-lg;
   @apply bg-base-200 border border-transparent;
-  @apply focus:outline-none focus:border-secondary focus:bg-base-100;
+  @apply focus:outline-none focus:border-primary focus:bg-base-100;
   @apply transition-all duration-200;
   @apply text-sm;
 }

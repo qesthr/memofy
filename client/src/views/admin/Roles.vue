@@ -19,6 +19,9 @@ const editingPermissionIds = ref([])
 
 const users = ref([])
 const selectedUserId = ref('')
+const userForm = ref({
+  status: 'active'
+})
 
 const isUserMode = computed(() => {
   const currentRole = roles.value.find(r => (r.id || r._id) === selectedRoleId.value)
@@ -135,6 +138,9 @@ const selectUser = (userId) => {
   selectedUserId.value = userId
   const user = users.value.find(u => (u.id || u._id) === userId)
   if (user) {
+    // Load user status or default to active
+    userForm.value.status = user.status || 'active'
+    
     // If user has specific permissions, load them. 
     // Otherwise, fallback to the current role permissions which are already in editingPermissionIds
     if (user.permission_ids && user.permission_ids.length > 0) {
@@ -271,21 +277,23 @@ const updateCurrentRole = async () => {
   isLoading.value = true
   try {
     if (selectedUserId.value) {
-      // Update User-specific permissions
+      // Update User-specific permissions and status
       await api.put(`/users/${selectedUserId.value}/permissions`, {
-        permission_ids: editingPermissionIds.value
+        permission_ids: editingPermissionIds.value,
+        status: userForm.value.status
       })
 
       // Update local user data in the users list
       const userIndex = users.value.findIndex(u => (u.id || u._id) === selectedUserId.value)
       if (userIndex !== -1) {
         users.value[userIndex].permission_ids = [...editingPermissionIds.value]
+        users.value[userIndex].status = userForm.value.status
       }
 
       await Swal.fire({
         icon: 'success',
         title: 'User Permissions Updated!',
-        text: 'Individual permissions saved successfully',
+        text: 'Individual permissions and status saved successfully',
         timer: 2000,
         showConfirmButton: false
       })
@@ -374,14 +382,13 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="view-container h-[calc(100vh-140px)] flex flex-col overflow-hidden">
-    <!-- Header -->
-    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+  <div class="view-container flex flex-col min-h-0">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
       <div>
         <h1 class="text-2xl font-bold text-base-content">Roles & Permissions</h1>
-        <p class="text-base-content/60 mt-1">Manage user roles and their associated system permissions.</p>
+        <p class="text-base-content/60 mt-1 text-sm">Manage user roles and their associated system permissions.</p>
       </div>
-      <button @click="openAddModal" class="btn btn-primary gap-2 text-white">
+      <button @click="openAddModal" class="btn btn-primary btn-md gap-2 text-white shadow-lg shadow-primary/20">
         <Plus :size="18" />
         New Role
       </button>
@@ -439,6 +446,31 @@ onMounted(() => {
                   {{ selectedUserId ? 'Customizing permissions for this user only' : 'Managing default permissions for this role' }}
                 </span>
               </label>
+            </div>
+
+            <!-- User Details Section (when individual user is selected) -->
+            <div v-if="selectedRoleId && selectedUserId" class="space-y-4">
+              <div class="form-control">
+                <label class="label">
+                  <span class="label-text font-semibold">Status</span>
+                </label>
+                <select v-model="userForm.status" class="select select-bordered w-full">
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+
+              <div class="pt-4 flex flex-col gap-2">
+                <button 
+                  @click="updateCurrentRole" 
+                  class="btn btn-primary w-full text-white"
+                  :disabled="isLoading"
+                >
+                  <Check v-if="!isLoading" :size="18" />
+                  <span v-else class="loading loading-spinner loading-sm"></span>
+                  Save Selection
+                </button>
+              </div>
             </div>
 
             <div v-if="selectedRoleId && !selectedUserId" class="space-y-4">
@@ -499,7 +531,7 @@ onMounted(() => {
       </div>
 
       <!-- Right Content: Permissions Grid -->
-      <div class="lg:col-span-8 overflow-y-auto custom-scrollbar pr-2" style="max-height: calc(100vh - 160px);">
+      <div class="lg:col-span-8 space-y-6 overflow-y-auto custom-scrollbar pr-2" style="max-height: calc(100vh - 220px);">
         <div v-if="!selectedRoleId" class="flex flex-col items-center justify-center py-20 bg-base-100/50 rounded-2xl border-2 border-dashed border-base-200">
           <Shield :size="48" class="text-base-content/10 mb-4" />
           <p class="text-base-content/40 font-medium">Select a role from the dropdown to manage permissions</p>
@@ -558,7 +590,7 @@ onMounted(() => {
                     </button>
                   </div>
 
-                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <label 
                       v-for="permission in perms" 
                       :key="permission.id"
@@ -624,7 +656,9 @@ onMounted(() => {
               class="input input-bordered w-full"
             />
             <label class="label">
-              <span class="label-text-alt text-base-content/40">Leave blank to auto-generate from label</span>
+              <span class="label-text-alt text-base-content/40">
+                Generated Key: <span class="font-mono text-primary">{{ roleForm.name || (roleForm.label ? roleForm.label.toLowerCase().replace(/\s+/g, '_') : '...') }}</span>
+              </span>
             </label>
           </div>
 

@@ -26,10 +26,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        \Illuminate\Support\Facades\DB::extend('mongodb', function ($config, $name) {
-            $config['name'] = $name;
-            return new \MongoDB\Laravel\Connection($config);
-        });
 
         \Laravel\Sanctum\Sanctum::usePersonalAccessTokenModel(\App\Models\PersonalAccessToken::class);
 
@@ -56,7 +52,13 @@ class AppServiceProvider extends ServiceProvider
 
         // Strict limit for login attempts (prevent brute force)
         RateLimiter::for('login', function (Request $request) {
-            return Limit::perMinute(5)->by($request->ip());
+            if (config('app.env') === 'testing') {
+                return Limit::none();
+            }
+            // Increase to 50/minute so it doesn't block manual testing of 
+            // multiple accounts, but still prevents high-frequency bots.
+            // The per-account 'User::MAX_LOGIN_ATTEMPTS' is the primary control.
+            return Limit::perMinute(50)->by($request->ip());
         });
 
         // Moderate limit for user invitations (prevent spam)

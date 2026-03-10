@@ -208,8 +208,12 @@ onUnmounted(() => {
         style="background-image: url('/src/assets/images/images/UNI.jpg')"
       ></div>
       <div class="relative z-10 flex flex-col items-center justify-center text-center p-12">
-        <img src="../../assets/images/images/Buksu-Logo.png" alt="BukSU Logo" class="w-64 mb-8 drop-shadow-xl" />
-        <h1 class="text-4xl font-bold text-white tracking-wide mb-2 uppercase">BukSU</h1>
+        <div class="flex items-center gap-8 mb-8">
+          <img src="../../assets/images/images/memofy-logo.png" alt="Memofy Logo" class="w-40 drop-shadow-xl" />
+          <div class="h-20 w-px bg-white/20"></div>
+          <img src="../../assets/images/images/Buksu-Logo.png" alt="BukSU Logo" class="w-40 drop-shadow-xl" />
+        </div>
+        <h1 class="text-4xl font-bold text-white tracking-wide mb-2 uppercase">BukSU Memofy</h1>
         <p class="text-yellow-400 font-semibold text-lg tracking-wider uppercase">Educate. Innovate. Lead.</p>
       </div>
       <div class="absolute right-0 top-0 bottom-0 w-24 bg-[#0ea5e9] skew-x-[-10deg] translate-x-12"></div>
@@ -254,6 +258,12 @@ onUnmounted(() => {
             <div class="flex justify-between items-center text-sm">
               <span class="text-gray-500">Assigned Role</span>
               <span class="badge badge-primary px-4 py-3 capitalize">{{ invitationData?.role }}</span>
+            </div>
+            <div class="pt-2 border-t border-gray-100">
+              <p class="text-xs text-center text-red-500 font-medium flex items-center justify-center gap-1">
+                <span class="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></span>
+                Link expires on {{ new Date(invitationData?.expires_at).toLocaleDateString(undefined, { dateStyle: 'long' }) }}
+              </p>
             </div>
           </div>
 

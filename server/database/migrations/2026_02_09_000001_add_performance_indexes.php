@@ -20,47 +20,36 @@ return new class extends Migration
         if (Schema::hasTable('memos')) {
             Schema::table('memos', function ($table) {
                 // Index for sender_id filtering (used in sent/drafts views)
-                if (!$this->hasIndex('memos', 'idx_memos_sender_id')) {
+                if (!$this->hasIndex('memos', 'idx_memos_sender_id', 'sender_id')) {
                     $table->index('sender_id', 'idx_memos_sender_id');
                 }
                 
                 // Index for recipient_id filtering (used in received views)
-                if (!$this->hasIndex('memos', 'idx_memos_recipient_id')) {
+                if (!$this->hasIndex('memos', 'idx_memos_recipient_id', 'recipient_id')) {
                     $table->index('recipient_id', 'idx_memos_recipient_id');
                 }
                 
                 // Index for status filtering (used in approval workflow)
-                if (!$this->hasIndex('memos', 'idx_memos_status')) {
+                if (!$this->hasIndex('memos', 'idx_memos_status', 'status')) {
                     $table->index('status', 'idx_memos_status');
                 }
                 
                 // Index for priority filtering
-                if (!$this->hasIndex('memos', 'idx_memos_priority')) {
+                if (!$this->hasIndex('memos', 'idx_memos_priority', 'priority')) {
                     $table->index('priority', 'idx_memos_priority');
                 }
                 
-                // Composite index for the most common query pattern: sent memos
-                if (!$this->hasIndex('memos', 'idx_memos_sender_status_draft')) {
-                    $table->index(['sender_id', 'status', 'is_draft'], 'idx_memos_sender_status_draft');
-                }
+
                 
-                // Composite index for received memos pattern
-                if (!$this->hasIndex('memos', 'idx_memos_recipient_status_draft')) {
-                    $table->index(['recipient_id', 'status', 'is_draft'], 'idx_memos_recipient_status_draft');
-                }
-                
-                // Index for created_by (drafts queries)
-                if (!$this->hasIndex('memos', 'idx_memos_created_by')) {
-                    $table->index('created_by', 'idx_memos_created_by');
-                }
+
                 
                 // Index for department_id filtering
-                if (!$this->hasIndex('memos', 'idx_memos_department_id')) {
+                if (!$this->hasIndex('memos', 'idx_memos_department_id', 'department_id')) {
                     $table->index('department_id', 'idx_memos_department_id');
                 }
                 
                 // Index for scheduled_send_at (calendar events)
-                if (!$this->hasIndex('memos', 'idx_memos_scheduled_send_at')) {
+                if (!$this->hasIndex('memos', 'idx_memos_scheduled_send_at', 'scheduled_send_at')) {
                     $table->index('scheduled_send_at', 'idx_memos_scheduled_send_at');
                 }
             });
@@ -73,27 +62,27 @@ return new class extends Migration
         if (Schema::hasTable('users')) {
             Schema::table('users', function ($table) {
                 // Composite index for role + department filtering ( secretaries view)
-                if (!$this->hasIndex('users', 'idx_users_role_department')) {
+                if (!$this->hasIndex('users', 'idx_users_role_department', ['role', 'department'])) {
                     $table->index(['role', 'department'], 'idx_users_role_department');
                 }
                 
                 // Composite index for role + is_active filtering
-                if (!$this->hasIndex('users', 'idx_users_role_active')) {
+                if (!$this->hasIndex('users', 'idx_users_role_active', ['role', 'is_active'])) {
                     $table->index(['role', 'is_active'], 'idx_users_role_active');
                 }
                 
                 // Composite index for department + is_active filtering
-                if (!$this->hasIndex('users', 'idx_users_department_active')) {
+                if (!$this->hasIndex('users', 'idx_users_department_active', ['department', 'is_active'])) {
                     $table->index(['department', 'is_active'], 'idx_users_department_active');
                 }
                 
                 // Index for department_id (MongoDB-style)
-                if (!$this->hasIndex('users', 'idx_users_department_id')) {
+                if (!$this->hasIndex('users', 'idx_users_department_id', 'department_id')) {
                     $table->index('department_id', 'idx_users_department_id');
                 }
                 
                 // Index for role_id (foreign key to roles table)
-                if (!$this->hasIndex('users', 'idx_users_role_id')) {
+                if (!$this->hasIndex('users', 'idx_users_role_id', 'role_id')) {
                     $table->index('role_id', 'idx_users_role_id');
                 }
             });
@@ -106,22 +95,22 @@ return new class extends Migration
         if (Schema::hasTable('user_activity_logs')) {
             Schema::table('user_activity_logs', function ($table) {
                 // Composite index for actor + date filtering (activity logs)
-                if (!$this->hasIndex('user_activity_logs', 'idx_logs_actor_created')) {
+                if (!$this->hasIndex('user_activity_logs', 'idx_logs_actor_created', ['actor_id', 'created_at'])) {
                     $table->index(['actor_id', 'created_at'], 'idx_logs_actor_created');
                 }
                 
                 // Composite index for action + date filtering
-                if (!$this->hasIndex('user_activity_logs', 'idx_logs_action_created')) {
+                if (!$this->hasIndex('user_activity_logs', 'idx_logs_action_created', ['action', 'created_at'])) {
                     $table->index(['action', 'created_at'], 'idx_logs_action_created');
                 }
                 
                 // Index for actor_email (used in search)
-                if (!$this->hasIndex('user_activity_logs', 'idx_logs_actor_email')) {
+                if (!$this->hasIndex('user_activity_logs', 'idx_logs_actor_email', 'actor_email')) {
                     $table->index('actor_email', 'idx_logs_actor_email');
                 }
                 
                 // Index for actor_department (for department-scoped views)
-                if (!$this->hasIndex('user_activity_logs', 'idx_logs_actor_department')) {
+                if (!$this->hasIndex('user_activity_logs', 'idx_logs_actor_department', 'actor_department')) {
                     $table->index('actor_department', 'idx_logs_actor_department');
                 }
             });
@@ -134,17 +123,17 @@ return new class extends Migration
         if (Schema::hasTable('calendar_events')) {
             Schema::table('calendar_events', function ($table) {
                 // Index for created_by (user's own events)
-                if (!$this->hasIndex('calendar_events', 'idx_events_created_by')) {
+                if (!$this->hasIndex('calendar_events', 'idx_events_created_by', 'created_by')) {
                     $table->index('created_by', 'idx_events_created_by');
                 }
                 
                 // Index for memo_id (events linked to memos)
-                if (!$this->hasIndex('calendar_events', 'idx_events_memo_id')) {
+                if (!$this->hasIndex('calendar_events', 'idx_events_memo_id', 'memo_id')) {
                     $table->index('memo_id', 'idx_events_memo_id');
                 }
                 
                 // Index for status
-                if (!$this->hasIndex('calendar_events', 'idx_events_status')) {
+                if (!$this->hasIndex('calendar_events', 'idx_events_status', 'status')) {
                     $table->index('status', 'idx_events_status');
                 }
             });
@@ -157,17 +146,17 @@ return new class extends Migration
         if (Schema::hasTable('calendar_event_participants')) {
             Schema::table('calendar_event_participants', function ($table) {
                 // Composite index for user + event filtering (user's invitations)
-                if (!$this->hasIndex('calendar_event_participants', 'idx_participants_user_event')) {
+                if (!$this->hasIndex('calendar_event_participants', 'idx_participants_user_event', ['user_id', 'calendar_event_id'])) {
                     $table->index(['user_id', 'calendar_event_id'], 'idx_participants_user_event');
                 }
                 
                 // Index for user_id (events user is invited to)
-                if (!$this->hasIndex('calendar_event_participants', 'idx_participants_user_id')) {
+                if (!$this->hasIndex('calendar_event_participants', 'idx_participants_user_id', 'user_id')) {
                     $table->index('user_id', 'idx_participants_user_id');
                 }
                 
                 // Index for calendar_event_id (participants of an event)
-                if (!$this->hasIndex('calendar_event_participants', 'idx_participants_event_id')) {
+                if (!$this->hasIndex('calendar_event_participants', 'idx_participants_event_id', 'calendar_event_id')) {
                     $table->index('calendar_event_id', 'idx_participants_event_id');
                 }
             });
@@ -180,22 +169,22 @@ return new class extends Migration
         if (Schema::hasTable('notifications')) {
             Schema::table('notifications', function ($table) {
                 // Composite index for user notifications
-                if (!$this->hasIndex('notifications', 'idx_notifications_notifiable')) {
+                if (!$this->hasIndex('notifications', 'idx_notifications_notifiable', ['notifiable_type', 'notifiable_id'])) {
                     $table->index(['notifiable_type', 'notifiable_id'], 'idx_notifications_notifiable');
                 }
                 
                 // Composite index for unread notifications (most common filter)
-                if (!$this->hasIndex('notifications', 'idx_notifications_unread')) {
+                if (!$this->hasIndex('notifications', 'idx_notifications_unread', ['notifiable_type', 'notifiable_id', 'read_at'])) {
                     $table->index(['notifiable_type', 'notifiable_id', 'read_at'], 'idx_notifications_unread');
                 }
                 
                 // Index for created_at (sorting by newest)
-                if (!$this->hasIndex('notifications', 'idx_notifications_created')) {
+                if (!$this->hasIndex('notifications', 'idx_notifications_created', 'created_at')) {
                     $table->index('created_at', 'idx_notifications_created');
                 }
                 
                 // Index for type (filtering by notification type)
-                if (!$this->hasIndex('notifications', 'idx_notifications_type')) {
+                if (!$this->hasIndex('notifications', 'idx_notifications_type', 'type')) {
                     $table->index('type', 'idx_notifications_type');
                 }
             });
@@ -205,10 +194,31 @@ return new class extends Migration
     /**
      * Check if an index exists on a table.
      */
-    protected function hasIndex(string $table, string $indexName): bool
+    protected function hasIndex(string $table, string $indexName, $columns = null): bool
     {
         try {
-            // For MySQL/PostgreSQL
+            // For MongoDB, use the raw collection to check indexes
+            if (DB::connection()->getDriverName() === 'mongodb') {
+                $collection = DB::connection()->getCollection($table);
+                foreach ($collection->listIndexes() as $index) {
+                    // Check by name
+                    if ($index->getName() === $indexName) {
+                        return true;
+                    }
+                    
+                    // Check by columns if provided
+                    if ($columns) {
+                        $keys = (array)$index->getKey();
+                        $indexFields = array_keys($keys);
+                        $targetFields = is_array($columns) ? $columns : [$columns];
+                        
+                        if ($indexFields === $targetFields) {
+                            return true;
+                        }
+                    }
+                }
+            }
+
             if (DB::connection()->getDriverName() === 'mysql') {
                 $indexes = DB::select("SHOW INDEX FROM {$table}");
                 foreach ($indexes as $index) {
@@ -224,10 +234,8 @@ return new class extends Migration
                     }
                 }
             }
-            // For MongoDB, indexes are managed differently
             return false;
         } catch (\Exception $e) {
-            // If we can't check, assume it doesn't exist
             return false;
         }
     }
@@ -244,9 +252,7 @@ return new class extends Migration
                 'idx_memos_recipient_id',
                 'idx_memos_status',
                 'idx_memos_priority',
-                'idx_memos_sender_status_draft',
-                'idx_memos_recipient_status_draft',
-                'idx_memos_created_by',
+
                 'idx_memos_department_id',
                 'idx_memos_scheduled_send_at',
             ],

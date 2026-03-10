@@ -1,5 +1,352 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 @plugin "daisyui" {
-    themes: all;
+  themes: all;
+}
+
+/* ─── Design System Tokens ─── */
+@theme {
+  --color-memo-surface: #FFFFFF;
+  --color-memo-bg: #FAF9F6;
+  --color-memo-border: #E8E5E0;
+  --color-memo-border-hover: #D4D0C8;
+  --color-memo-text-primary: #1A1A1A;
+  --color-memo-text-secondary: #6B7280;
+  --color-memo-text-muted: #9CA3AF;
+  --color-memo-indigo: #4F46E5;
+  --color-memo-indigo-light: #EEF2FF;
+  --color-memo-indigo-hover: #4338CA;
+  --color-memo-success: #10B981;
+  --color-memo-warning: #F59E0B;
+  --color-memo-error: #EF4444;
+}
+
+/* ─── Base Theme Override ─── */
+:root {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  /* Prevent global scroll */
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  /* Lock the viewport */
+}
+
+[data-theme="light"] {
+  --b1: 250 249 246;
+  /* #FAF9F6 Off White */
+}
+
+[data-theme="dark"] {
+  --color-memo-surface: #1d232a;
+  --color-memo-bg: #191e24;
+  --color-memo-border: #2a323c;
+  --color-memo-border-hover: #374151;
+  --color-memo-text-primary: #a6adbb;
+  --color-memo-text-secondary: #74808c;
+  --color-memo-text-muted: #555e6b;
+  --color-memo-indigo: #6366f1;
+  --color-memo-indigo-light: rgba(99, 102, 241, 0.1);
+  --color-memo-indigo-hover: #818cf8;
+}
+
+/* ─── Reusable Card Surface ─── */
+.memo-card {
+  background: var(--color-memo-surface);
+  border-radius: 16px;
+  border: 1px solid var(--color-memo-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.memo-card:hover {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.04);
+}
+
+/* ─── Skeleton Animation ─── */
+@keyframes memo-skeleton-pulse {
+
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+
+  50% {
+    opacity: 0.8;
+  }
+}
+
+.memo-skeleton {
+  animation: memo-skeleton-pulse 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  background: linear-gradient(90deg, var(--color-memo-bg) 25%, var(--color-memo-border) 50%, var(--color-memo-bg) 75%);
+  background-size: 200% 100%;
+  animation: memo-skeleton-pulse 1.8s ease-in-out infinite, memo-skeleton-shimmer 2s linear infinite;
+  border-radius: 8px;
+}
+
+@keyframes memo-skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* ─── Pill Tabs ─── */
+.memo-pill-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: var(--color-memo-surface);
+  border: 1px solid var(--color-memo-border);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.memo-pill-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--color-memo-text-secondary);
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.memo-pill-tab:hover:not(.active) {
+  color: var(--color-memo-text-primary);
+  background: var(--color-memo-bg);
+}
+
+.memo-pill-tab.active {
+  color: #ffffff;
+  background: var(--color-memo-indigo);
+  box-shadow: 0 1px 3px rgba(79, 70, 229, 0.3), 0 2px 8px rgba(79, 70, 229, 0.15);
+}
+
+.memo-pill-tab .tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--color-memo-text-secondary);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.memo-pill-tab.active .tab-badge {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+/* ─── Filter Input ─── */
+.memo-filter-input {
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--color-memo-border);
+  background: var(--color-memo-surface);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-memo-text-primary);
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+.memo-filter-input:focus {
+  border-color: var(--color-memo-indigo);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.08);
+}
+
+.memo-filter-input::placeholder {
+  color: var(--color-memo-text-muted);
+}
+
+/* ─── Compose Button ─── */
+.memo-compose-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 24px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--color-memo-indigo);
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(79, 70, 229, 0.3), 0 4px 12px rgba(79, 70, 229, 0.15);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.memo-compose-btn:hover {
+  background: var(--color-memo-indigo-hover);
+  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.4), 0 8px 20px rgba(79, 70, 229, 0.2);
+  transform: translateY(-1px);
+}
+
+.memo-compose-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(79, 70, 229, 0.3);
+}
+
+/* ─── Memo Row ─── */
+.memo-row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #F0EEEB;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.memo-row:last-child {
+  border-bottom: none;
+}
+
+.memo-row:hover {
+  background: var(--color-memo-indigo-light);
+}
+
+.memo-row:hover::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--color-memo-indigo);
+  border-radius: 0 3px 3px 0;
+}
+
+.memo-row .memo-actions {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.memo-row:hover .memo-actions {
+  opacity: 1;
+}
+
+/* ─── Priority Indicator ─── */
+.priority-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 6px;
+}
+
+.priority-dot.low {
+  background: var(--color-memo-success);
+}
+
+.priority-dot.medium,
+.priority-dot.normal {
+  background: var(--color-memo-warning);
+}
+
+.priority-dot.high {
+  background: var(--color-memo-error);
+}
+
+.priority-dot.urgent {
+  background: var(--color-memo-error);
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
+}
+
+/* ─── Status Badge ─── */
+.memo-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: capitalize;
+}
+
+.memo-status-badge.sent {
+  background: #ECFDF5;
+  color: #059669;
+}
+
+.memo-status-badge.pending_approval {
+  background: #FEF3C7;
+  color: #D97706;
+}
+
+.memo-status-badge.read {
+  background: #F3F4F6;
+  color: #6B7280;
+}
+
+/* ─── Unread Dot ─── */
+.unread-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-memo-indigo);
+  flex-shrink: 0;
+  animation: unread-pulse 2s ease-in-out infinite;
+}
+
+@keyframes unread-pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* ─── Custom Scrollbar ─── */
+.memo-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.memo-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.memo-scrollbar::-webkit-scrollbar-thumb {
+  background: #D4D0C8;
+  border-radius: 10px;
+}
+
+.memo-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #B0ACA5;
 }

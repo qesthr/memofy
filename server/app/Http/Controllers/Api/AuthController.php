@@ -28,7 +28,8 @@ class AuthController extends Controller
      */
     public function login(Request $request)
     {
-        $bypassRecaptcha = config('services.recaptcha.bypass', false);
+        $isLocal = config('app.env') === 'local';
+        $bypassRecaptcha = config('services.recaptcha.bypass', false) || ($isLocal && $request->has('skip_captcha'));
 
         $request->validate([
             'email' => 'required|email',
@@ -36,9 +37,9 @@ class AuthController extends Controller
             'recaptcha_token' => $bypassRecaptcha ? 'nullable' : 'required'
         ]);
 
-        // reCAPTCHA Validation
+        // 1. reCAPTCHA Validation - Skip if local and requested
         if (!$bypassRecaptcha) {
-            $response = \Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
+            $response = \Illuminate\Support\Facades\Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
                 'secret' => config('services.recaptcha.secret'),
                 'response' => $request->recaptcha_token,
                 'remoteip' => $request->ip(),
@@ -52,22 +53,19 @@ class AuthController extends Controller
             }
         }
 
-        $user = User::where('email', $request->email)->first();
+        // 2. Fetch User - Use cache for repeated attempts but verify status
+        $user = \Illuminate\Support\Facades\Cache::remember("login_user_lookup_{$request->email}", 60, function() use ($request) {
+            return User::where('email', $request->email)->first();
+        });
 
-        // 1. Check existence or verification (treated as same for security UX)
-        if (!$user || !$user->password || !Hash::check($request->password, $user->password)) {
-            if ($user) {
-                $user->incrementLoginAttempts();
-                $this->activityLogger->logAuthAction($user, 'login_failed', 'Failed login attempt', $this->activityLogger->extractRequestInfo($request));
-            }
-            
+        if (!$user) {
             return response()->json([
                 'success' => false,
                 'message' => 'Incorrect username or password.'
             ], 401);
         }
 
-        // 2. Check active status
+        // 3. Check active status
         if (!$user->is_active) {
             return response()->json([
                 'success' => false,
@@ -75,28 +73,60 @@ class AuthController extends Controller
             ], 401);
         }
 
-        // 3. Check lockout
+        // 4. Check lockout
         if ($user->lock_until && $user->lock_until->isFuture()) {
+            $seconds = max(1, now()->diffInSeconds($user->lock_until));
+            $mins = str_pad(floor($seconds / 60), 2, '0', STR_PAD_LEFT);
+            $secs = str_pad($seconds % 60, 2, '0', STR_PAD_LEFT);
             return response()->json([
                 'success' => false,
-                'message' => 'Account is temporarily locked. Try again in ' . $user->lock_until->diffInMinutes() . ' minutes.',
-                'lock_time_remaining' => $user->lock_until->diffInMinutes()
+                'message' => "Account is temporarily locked. Wait until time is end to login again. Try again in {$mins}:{$secs}.",
+                'lock_time_remaining' => ceil($seconds / 60),
+                'lock_seconds_remaining' => $seconds
             ], 423);
         }
 
-        // 4. Success
+        // 5. Check existence or verification
+        if (!$user->password || !Hash::check($request->password, $user->password)) {
+            // Clear cache to ensure next attempt sees updated login_attempts
+            \Illuminate\Support\Facades\Cache::forget("login_user_lookup_{$request->email}");
+
+            $isLocked = $user->incrementLoginAttempts();
+            $maxAttempts = User::MAX_LOGIN_ATTEMPTS;
+            $attemptsLeft = max(0, $maxAttempts - $user->login_attempts);
+
+            $this->activityLogger->logAuthAction($user, 'login_failed', 'Failed login attempt. Attempts left: ' . $attemptsLeft, $this->activityLogger->extractRequestInfo($request));
+            
+            if ($isLocked) {
+                $this->activityLogger->logAuthAction($user, 'account_lockout', 'Account has been locked for 5 minutes due to multiple failed attempts.', $this->activityLogger->extractRequestInfo($request));
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Incorrect username or password.',
+                'attempts_left' => $attemptsLeft,
+                'is_locked' => $isLocked
+            ], 401);
+        }
+
+        // 6. Success
         $user->resetLoginAttempts();
+        \Illuminate\Support\Facades\Cache::forget("login_user_lookup_{$request->email}");
         $user->update(['last_login' => now()]);
         
         $token = $user->createToken('auth_token')->plainTextToken;
         
         $this->activityLogger->logAuthAction($user, 'login_success', 'User logged in', $this->activityLogger->extractRequestInfo($request));
 
+        // Include permissions in the response for frontend access
+        $permissions = $user->permissions;
+
         return response()->json([
             'success' => true,
             'message' => 'Login successful',
             'user' => $user,
-            'token' => $token
+            'token' => $token,
+            'permissions' => $permissions
         ]);
     }
 
@@ -324,6 +354,9 @@ class AuthController extends Controller
     {
         $user = $request->user();
         if ($user) {
+            // Invalidate current user cache
+            \Illuminate\Support\Facades\Cache::forget("current_user_data_{$user->id}");
+            
             $user->currentAccessToken()->delete();
             $this->activityLogger->logAuthAction($user, 'logout', 'User logged out', $this->activityLogger->extractRequestInfo($request));
         }
@@ -333,9 +366,20 @@ class AuthController extends Controller
 
     public function getCurrentUser(Request $request)
     {
+        $user = $request->user();
+        $cacheKey = "current_user_data_{$user->id}";
+        
+        $userData = \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function() use ($user) {
+            return $user->load(['assignedRole', 'departmentModel']);
+        });
+
+        // Include permissions in the response
+        $permissions = $user->permissions;
+
         return response()->json([
             'success' => true,
-            'user' => $request->user()
+            'user' => $userData,
+            'permissions' => $permissions
         ]);
     }
 
@@ -467,7 +511,7 @@ class AuthController extends Controller
             $user = User::where('email', $googleUser->getEmail())->first();
 
             if (!$user) {
-                return $this->returnPopupError("Access Denied: No account found for {$googleUser->getEmail()}. Please ask an admin to invite you.");
+                return $this->returnPopupError("Access Denied: Only emails registered by an administrator can log in using Google. Please contact your admin for assistance.");
             }
 
             if (!$user->is_active) {
@@ -489,12 +533,16 @@ class AuthController extends Controller
 
     private function returnPopupSuccess($token, $user)
     {
+        // Include permissions in the response
+        $permissions = $user->permissions;
+        
         $payload = [
             'type' => 'GOOGLE_LOGIN_SUCCESS',
             'payload' => [
                 'token' => $token,
                 'user' => $user,
-                'role' => $user->role
+                'role' => $user->role,
+                'permissions' => $permissions
             ]
         ];
 
@@ -531,6 +579,11 @@ class AuthController extends Controller
     {
         $user = $request->user();
         $user->update($request->only(['first_name', 'last_name', 'bio']));
+        
+        // Invalidate current user cache
+        \Illuminate\Support\Facades\Cache::forget("current_user_data_{$user->id}");
+        \Illuminate\Support\Facades\Cache::forget("login_user_lookup_{$user->email}");
+
         return response()->json(['success' => true, 'user' => $user]);
     }
 

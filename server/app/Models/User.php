@@ -28,6 +28,7 @@ class User extends Authenticatable
         'employee_id',
         'profile_picture',
         'is_active',
+        'status',
         'login_attempts',
         'lock_until',
         'violation_count',
@@ -43,7 +44,9 @@ class User extends Authenticatable
         'reset_code_expires_at',
         'role_id',
         'permission_ids',
-        'bio'
+        'bio',
+        'archived_at',
+        'archived_by'
     ];
 
     /**
@@ -75,6 +78,7 @@ class User extends Authenticatable
         'password' => 'hashed',
         'department_id' => 'string',
         'reset_code_expires_at' => 'datetime',
+        'archived_at' => 'datetime'
     ];
 
     /**
@@ -83,6 +87,15 @@ class User extends Authenticatable
     public function getFullNameAttribute()
     {
         return "{$this->first_name} {$this->last_name}";
+    }
+
+    /**
+     * Check if the user has an administrative role.
+     */
+    public function isAdmin()
+    {
+        $role = strtolower($this->role ?? '');
+        return in_array($role, ['admin', 'superadmin', 'super_admin']);
     }
 
     public function assignedRole()
@@ -94,6 +107,8 @@ class User extends Authenticatable
     {
         return $this->belongsTo(Department::class, 'department_id');
     }
+
+    const MAX_LOGIN_ATTEMPTS = 5;
 
     /**
      * Compare password (wrapper for Hash::check)
@@ -111,9 +126,11 @@ class User extends Authenticatable
         $this->increment('login_attempts');
         $this->update(['last_failed_login' => now()]);
 
-        if ($this->login_attempts >= 5) {
+        if ($this->login_attempts >= self::MAX_LOGIN_ATTEMPTS) {
             $this->lockAccount();
+            return true; // Locked
         }
+        return false; // Not locked yet
     }
 
     /**
@@ -132,8 +149,10 @@ class User extends Authenticatable
      */
     public function lockAccount()
     {
-        // Progressive lockout logic could go here, currently fixed 5 mins
-        $lockoutMinutes = 5;
+        // Read lockout duration from system settings (admin-configurable), default 15 mins
+        $lockoutMinutes = intval(\App\Models\SystemSetting::get('login_lockout_minutes', 15));
+        $lockoutMinutes = max(1, $lockoutMinutes); // Ensure at least 1 minute
+
         $this->update([
             'lock_until' => now()->addMinutes($lockoutMinutes),
             'violation_count' => $this->violation_count + 1
@@ -172,6 +191,12 @@ class User extends Authenticatable
      */
     public function hasPermissionTo($permissionName)
     {
+        // Global bypass for Admin/Superadmin
+        $roleName = strtolower($this->getAttribute('role') ?? '');
+        if ($roleName === 'admin' || $roleName === 'superadmin' || $roleName === 'super_admin') {
+            return true;
+        }
+
         $permissions = $this->permissions;
         return is_array($permissions) && in_array($permissionName, $permissions);
     }
@@ -181,28 +206,31 @@ class User extends Authenticatable
      */
     public function getPermissionsAttribute()
     {
-        // 1. Check for user-specific permissions (Override)
-        if (!empty($this->permission_ids)) {
-            return $this->permission_ids;
-        }
-
-        // 2. Fallback to Role permissions 
-        $roleModel = $this->assignedRole;
-
-        // 3. Resolve Role Model if not loaded (fallback for legacy role field)
-        if (!$roleModel) {
-            $roleField = strtolower($this->getAttribute('role') ?? '');
-            if ($roleField) {
-                // Use i-like for case-insensitive search if needed, or stick to where
-                $roleModel = Role::where('name', $roleField)->first();
-            }
-        }
+        $cacheKey = "user_permissions_{$this->id}";
         
-        // 4. Return permission names
-        if (!$roleModel || !$roleModel->permission_ids) {
-            return [];
-        }
+        return \Illuminate\Support\Facades\Cache::remember($cacheKey, now()->addHour(), function () {
+            // 1. Check for user-specific permissions (Override)
+            if (!empty($this->permission_ids)) {
+                return $this->permission_ids;
+            }
 
-        return $roleModel->permission_ids;
+            // 2. Fallback to Role permissions 
+            $roleModel = $this->assignedRole;
+
+            // 3. Resolve Role Model if not loaded (fallback for legacy role field)
+            if (!$roleModel) {
+                $roleField = strtolower($this->getAttribute('role') ?? '');
+                if ($roleField) {
+                    $roleModel = Role::where('name', $roleField)->first();
+                }
+            }
+            
+            // 4. Return permission names
+            if (!$roleModel || !$roleModel->permission_ids) {
+                return [];
+            }
+
+            return $roleModel->permission_ids;
+        });
     }
 }

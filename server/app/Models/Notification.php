@@ -11,6 +11,9 @@ class Notification extends Model
 
     protected $collection = 'notifications';
 
+    // Use MongoDB's default _id as primary key to avoid duplicate key errors
+    protected $primaryKey = '_id';
+
     protected $fillable = [
         'type',
         'notifiable_type',
@@ -36,6 +39,8 @@ class Notification extends Model
     public const TYPE_CALENDAR_RESPONSE = 'calendar.response';
     public const TYPE_PROFILE_UPDATED = 'profile.updated';
     public const TYPE_CALENDAR_SECRETARY_CREATED = 'calendar.secretary_created';
+    public const TYPE_MEMO_REMINDER = 'memo.reminder';
+    public const TYPE_MEMO_PENDING_APPROVAL = 'memo.pending_approval';
 
     /**
      * Get the notifiable entity that the notification belongs to.
@@ -105,16 +110,16 @@ class Notification extends Model
     {
         $data = $this->data;
         
+        if (isset($data['link'])) {
+            return $data['link'];
+        }
+
         if (isset($data['memo_id'])) {
             return '/memos/' . $data['memo_id'];
         }
         
         if (isset($data['event_id'])) {
             return '/calendar?event=' . $data['event_id'];
-        }
-        
-        if (isset($data['link'])) {
-            return $data['link'];
         }
         
         return '/notifications';

@@ -17,13 +17,23 @@ class UserInvitationMail extends Mailable
      * Create a new message instance.
      */
     public $invitation;
+    public $password;
+    public $setupUrl;
 
     /**
      * Create a new message instance.
      */
-    public function __construct($invitation)
+    public function __construct($invitation, $password = null)
     {
         $this->invitation = $invitation;
+        $this->password = $password;
+        
+        $frontendUrl = config('app.frontend_url', 'http://localhost:5174');
+        if ($invitation->token) {
+            $this->setupUrl = $frontendUrl . '/auth/setup-password?token=' . $invitation->token;
+        } else {
+            $this->setupUrl = $frontendUrl . '/login';
+        }
     }
 
     /**
@@ -42,7 +52,7 @@ class UserInvitationMail extends Mailable
     public function content(): Content
     {
         return new Content(
-            view: 'emails.invitation',
+            view: 'emails.user-invitation',
         );
     }
 

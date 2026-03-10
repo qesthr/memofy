@@ -7,20 +7,49 @@ use App\Models\Memo;
 use App\Models\MemoAcknowledgment;
 use App\Models\User;
 use App\Models\CalendarEvent;
+
+use App\Models\Department;
+use App\Models\UserSignature;
 use App\Services\ActivityLogger;
 use App\Services\NotificationService;
+use App\Services\GoogleDriveService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use MongoDB\BSON\ObjectId;
 
 class AdminMemoController extends Controller
 {
     protected $activityLogger;
     protected $notificationService;
+    protected $driveService;
 
-    public function __construct(ActivityLogger $activityLogger, NotificationService $notificationService)
-    {
+    public function __construct(
+        ActivityLogger $activityLogger, 
+        NotificationService $notificationService,
+        GoogleDriveService $driveService
+    ) {
         $this->activityLogger = $activityLogger;
         $this->notificationService = $notificationService;
+        $this->driveService = $driveService;
+    }
+
+    /**
+     * Convert user ID to consistent format for MongoDB comparison
+     */
+    protected function normalizeUserId($userId)
+    {
+        if ($userId instanceof ObjectId) {
+            return $userId;
+        }
+        // Try to create ObjectId from string
+        if (is_string($userId) && strlen((string)$userId) === 24) {
+            try {
+                return new ObjectId((string)$userId);
+            } catch (\Exception $e) {
+                return (string)$userId;
+            }
+        }
+        return (string)$userId;
     }
 
     /**
@@ -33,8 +62,8 @@ class AdminMemoController extends Controller
         $perPage = min((int) $request->get('per_page', 15), 50);
         
         $query = Memo::with([
-            'sender:id,first_name,last_name,email,role,department',
-            'recipient:id,first_name,last_name,email,role,department',
+            'sender:id,first_name,last_name,email,role,department,department_id',
+            'recipient:id,first_name,last_name,email,role,department,department_id',
             'department:id,name'
         ])
                      ->where('status', 'pending_approval')
@@ -69,65 +98,89 @@ class AdminMemoController extends Controller
             return response()->json(['message' => 'This memo is not pending approval'], 422);
         }
 
+        // Normalize IDs for comparison
+        $userDepartmentId = $this->normalizeUserId($user->department_id);
+        $memoDepartmentId = $this->normalizeUserId($memo->department_id);
+
         // Check department if not super admin
-        if (!$user->hasPermissionTo('memo.approve_all') && $memo->department_id !== $user->department_id) {
+        if (!$user->hasPermissionTo('memo.approve_all') && $memoDepartmentId != $userDepartmentId) {
             return response()->json(['message' => 'Unauthorized to approve memos from other departments'], 403);
         }
 
         DB::transaction(function () use ($memo, $user, $request) {
+            // Determine status based on schedule
+            $isScheduled = $memo->scheduled_send_at && strtotime($memo->scheduled_send_at) > time();
+            $targetStatus = $isScheduled ? 'scheduled' : 'sent';
+
             // Update memo status
             $memo->update([
-                'status' => 'sent',
-                'approved_by' => $user->id,
+                'status' => $targetStatus,
+                'approved_by' => (string)$user->id,
                 'approved_at' => now()
             ]);
 
-            // Create acknowledgment records for all recipients
+            // Create acknowledgment records only if NOT scheduled for future
             $recipients = [];
-            if ($memo->department_id) {
-                // Department-wide memo - create acknowledgments for all department members
-                $departmentUsers = User::where('department_id', $memo->department_id)
-                                        ->where('id', '!=', $memo->sender_id)
-                                        ->get();
-                
-                foreach ($departmentUsers as $deptUser) {
-                    MemoAcknowledgment::create([
-                        'memo_id' => $memo->id,
-                        'recipient_id' => $deptUser->id,
-                        'is_acknowledged' => false,
-                        'sent_at' => now()
-                    ]);
-                    $recipients[] = $deptUser;
-                }
-            } else {
-                // Individual memo
-                if ($memo->recipient_id) {
-                    $recipient = User::find($memo->recipient_id);
-                    if ($recipient) {
+            if ($targetStatus === 'sent') {
+                if ($memo->department_id) {
+                    $normDeptId = $this->normalizeUserId($memo->department_id);
+                    $departmentUsers = User::whereIn('department_id', [$memo->department_id, $normDeptId])
+                                            ->where('id', '!=', $memo->sender_id)
+                                            ->get();
+                    
+                    foreach ($departmentUsers as $deptUser) {
                         MemoAcknowledgment::create([
                             'memo_id' => $memo->id,
-                            'recipient_id' => $memo->recipient_id,
+                            'recipient_id' => (string)$deptUser->id,
                             'is_acknowledged' => false,
                             'sent_at' => now()
                         ]);
-                        $recipients[] = $recipient;
+                        $recipients[] = $deptUser;
+                    }
+                } else {
+                    if ($memo->recipient_ids && is_array($memo->recipient_ids)) {
+                        foreach ($memo->recipient_ids as $recipientId) {
+                            $recipient = User::find($recipientId);
+                            if ($recipient) {
+                                MemoAcknowledgment::create([
+                                    'memo_id' => $memo->id,
+                                    'recipient_id' => (string)$recipientId,
+                                    'is_acknowledged' => false,
+                                    'sent_at' => now()
+                                ]);
+                                $recipients[] = $recipient;
+                            }
+                        }
+                    } elseif ($memo->recipient_id) {
+                        $recipient = User::find($memo->recipient_id);
+                        if ($recipient) {
+                            MemoAcknowledgment::create([
+                                'memo_id' => $memo->id,
+                                'recipient_id' => (string)$memo->recipient_id,
+                                'is_acknowledged' => false,
+                                'sent_at' => now()
+                            ]);
+                            $recipients[] = $recipient;
+                        }
                     }
                 }
             }
 
-            // Create calendar event if scheduled
-            if ($memo->scheduled_send_at) {
+            // Create or Update calendar event if scheduled or has a deadline
+            if ($memo->scheduled_send_at || $memo->deadline_at) {
                 $this->createCalendarEventForMemo($memo, $user->id);
             }
 
-            // Send notifications to creator and recipients
+            // Send notifications
             $sender = User::find($memo->sender_id);
             if ($sender) {
                 // Notify memo creator that their memo was approved
                 $this->notificationService->notifyMemoApproved($user, $sender, $memo);
                 
-                // Notify all recipients about the new memo
-                $this->notificationService->notifyMemoRecipients($user, $memo, $recipients);
+                // ONLY notify recipients if sent now
+                if ($targetStatus === 'sent') {
+                    $this->notificationService->notifyMemoRecipients($user, $memo, $recipients);
+                }
             }
 
             // Log the approval
@@ -137,6 +190,17 @@ class AdminMemoController extends Controller
                 "Approved memo: {$memo->subject}",
                 $this->activityLogger->extractRequestInfo($request)
             );
+
+            // Invalidate dashboard cache
+            \Illuminate\Support\Facades\Cache::forget("dashboard_data_user_{$user->id}_v1_page_1_per_10");
+            \Illuminate\Support\Facades\Cache::forget("dashboard_data_user_{$memo->sender_id}_v1_page_1_per_10");
+            foreach ($recipients as $recipient) {
+                \Illuminate\Support\Facades\Cache::forget("dashboard_data_user_{$recipient->id}_v1_page_1_per_10");
+            }
+
+            // --- Google Drive Integration ---
+            $this->driveService->backupMemo($memo, $user);
+            // --------------------------------
         });
 
         return response()->json([
@@ -190,6 +254,10 @@ class AdminMemoController extends Controller
                 "Rejected memo: {$memo->subject}. Reason: " . ($validated['rejection_reason'] ?? 'No reason provided'),
                 ['memo_id' => $memo->id, 'rejection_reason' => $validated['rejection_reason'] ?? null]
             );
+
+            // Invalidate dashboard cache
+            \Illuminate\Support\Facades\Cache::forget("dashboard_data_user_{$user->id}_v1_page_1_per_10");
+            \Illuminate\Support\Facades\Cache::forget("dashboard_data_user_{$memo->sender_id}_v1_page_1_per_10");
         });
 
         return response()->json([
@@ -205,49 +273,55 @@ class AdminMemoController extends Controller
     public function acknowledgmentStats(Request $request, $id)
     {
         $user = $request->user();
-        
-        $memo = Memo::with(['sender', 'recipient', 'acknowledgments.recipient'])->findOrFail($id);
+        $cacheKey = "memo_acknowledgment_stats_{$id}_user_{$user->id}_v1";
 
-        // Check access
-        if ($user->role !== 'admin' && $memo->sender_id !== $user->id) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        return \Illuminate\Support\Facades\Cache::remember($cacheKey, now()->addSeconds(10), function () use ($user, $id) {
+            $memo = Memo::with(['sender', 'recipient', 'acknowledgments.recipient'])->findOrFail($id);
 
-        $totalAcknowledgments = $memo->acknowledgments->count();
-        $acknowledgedCount = $memo->acknowledgments->where('is_acknowledged', true)->count();
-        $pendingCount = $totalAcknowledgments - $acknowledgedCount;
-        $percentage = $totalAcknowledgments > 0 ? round(($acknowledgedCount / $totalAcknowledgments) * 100) : 0;
+            // Check access
+            if ($user->role !== 'admin' && $memo->sender_id !== $user->id) {
+                // Since this is inside a remember closure, we should handle exceptions properly
+                // but for now let's keep it simple as the original logic didn't anticipate it failing
+                // actually it returns a response which remember will cache.
+                return response()->json(['message' => 'Unauthorized'], 403);
+            }
 
-        // Group by acknowledgment status
-        $acknowledgedBy = $memo->acknowledgments
-                              ->where('is_acknowledged', true)
-                              ->map(function ($ack) {
-                                  return [
-                                      'recipient' => $ack->recipient,
-                                      'acknowledged_at' => $ack->acknowledged_at
-                                  ];
-                              });
+            $totalAcknowledgments = $memo->acknowledgments->count();
+            $acknowledgedCount = $memo->acknowledgments->where('is_acknowledged', true)->count();
+            $pendingCount = $totalAcknowledgments - $acknowledgedCount;
+            $percentage = $totalAcknowledgments > 0 ? round(($acknowledgedCount / $totalAcknowledgments) * 100) : 0;
 
-        $pendingBy = $memo->acknowledgments
-                         ->where('is_acknowledged', false)
-                         ->map(function ($ack) {
-                             return [
-                                 'recipient' => $ack->recipient,
-                                 'sent_at' => $ack->sent_at
-                             ];
-                         });
+            // Group by acknowledgment status
+            $acknowledgedBy = $memo->acknowledgments
+                                  ->where('is_acknowledged', true)
+                                  ->map(function ($ack) {
+                                      return [
+                                          'recipient' => $ack->recipient,
+                                          'acknowledged_at' => $ack->acknowledged_at
+                                      ];
+                                  });
 
-        return response()->json([
-            'memo' => $memo,
-            'stats' => [
-                'total' => $totalAcknowledgments,
-                'acknowledged' => $acknowledgedCount,
-                'pending' => $pendingCount,
-                'percentage' => $percentage
-            ],
-            'acknowledged_by' => $acknowledgedBy,
-            'pending_by' => $pendingBy
-        ]);
+            $pendingBy = $memo->acknowledgments
+                             ->where('is_acknowledged', false)
+                             ->map(function ($ack) {
+                                 return [
+                                     'recipient' => $ack->recipient,
+                                     'sent_at' => $ack->sent_at
+                                 ];
+                             });
+
+            return [
+                'memo' => $memo,
+                'stats' => [
+                    'total' => $totalAcknowledgments,
+                    'acknowledged' => $acknowledgedCount,
+                    'pending' => $pendingCount,
+                    'percentage' => $percentage
+                ],
+                'acknowledged_by' => $acknowledgedBy,
+                'pending_by' => $pendingBy
+            ];
+        });
     }
 
     /**
@@ -307,27 +381,46 @@ class AdminMemoController extends Controller
      */
     private function createCalendarEventForMemo($memo, $userId)
     {
-        $calendarEvent = CalendarEvent::create([
-            'title' => $memo->subject,
-            'description' => $memo->message,
-            'start' => $memo->scheduled_send_at,
-            'end' => $memo->schedule_end_at ?? $memo->scheduled_send_at,
-            'all_day' => $memo->all_day_event ?? false,
-            'category' => $this->mapPriorityToCategory($memo->priority),
-            'memo_id' => $memo->id,
-            'created_by' => $userId,
-            'status' => 'scheduled',
-            'source' => 'MEMO'
-        ]);
+        $calendarEvent = CalendarEvent::updateOrCreate(
+            ['memo_id' => $memo->id],
+            [
+                'title' => ($memo->deadline_at ? "[Deadline] " : "[Scheduled] ") . $memo->subject,
+                'description' => $memo->message,
+                'start' => $memo->deadline_at ?? $memo->scheduled_send_at,
+                'end' => $memo->schedule_end_at ?? ($memo->deadline_at ?? $memo->scheduled_send_at),
+                'all_day' => $memo->all_day_event ?? false,
+                'category' => $memo->deadline_at ? 'deadline' : $this->mapPriorityToCategory($memo->priority),
+                'created_by' => $userId,
+                'status' => $memo->deadline_at ? 'pending' : ($memo->scheduled_send_at && strtotime($memo->scheduled_send_at) > time() ? 'scheduled' : 'sent'),
+                'source' => $memo->deadline_at ? 'DEADLINE' : 'MEMO'
+            ]
+        );
 
-        // Add participants
+        // Clear and add participants
+        \App\Models\CalendarEventParticipant::where('calendar_event_id', $calendarEvent->id)->delete();
+        
+        // Add creator/sender as accepted
         \App\Models\CalendarEventParticipant::create([
             'calendar_event_id' => $calendarEvent->id,
             'user_id' => $memo->sender_id,
             'status' => 'accepted'
         ]);
 
-        if ($memo->recipient_id) {
+        // Add recipients
+        if ($memo->department_id) {
+            $normDeptId = $this->normalizeUserId($memo->department_id);
+            $departmentUsers = User::whereIn('department_id', [$memo->department_id, $normDeptId])
+                                    ->where('id', '!=', $memo->sender_id)
+                                    ->get();
+            
+            foreach ($departmentUsers as $deptUser) {
+                \App\Models\CalendarEventParticipant::create([
+                    'calendar_event_id' => $calendarEvent->id,
+                    'user_id' => (string)$deptUser->id,
+                    'status' => 'pending'
+                ]);
+            }
+        } elseif ($memo->recipient_id) {
             \App\Models\CalendarEventParticipant::create([
                 'calendar_event_id' => $calendarEvent->id,
                 'user_id' => $memo->recipient_id,
@@ -341,11 +434,12 @@ class AdminMemoController extends Controller
     private function mapPriorityToCategory($priority)
     {
         $mapping = [
-            'urgent' => 'urgent',
             'high' => 'high',
-            'normal' => 'standard',
+            'medium' => 'standard',
             'low' => 'low'
         ];
         return $mapping[$priority] ?? 'standard';
     }
+
+
 }

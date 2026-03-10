@@ -34,6 +34,10 @@ class RBACSeeder extends Seeder
             ['name' => 'faculty.unarchive', 'label' => 'Unarchive Faculty', 'description' => 'Restore faculty accounts', 'category' => 'faculty'],
             
             // Archive Tab
+            ['name' => 'archive.view', 'label' => 'View Archive', 'description' => 'Can view archived items in the archive tab', 'category' => 'archive'],
+            ['name' => 'archive.restore', 'label' => 'Restore Item', 'description' => 'Restore an item from the archive', 'category' => 'archive'],
+            ['name' => 'archive.restore_all', 'label' => 'Restore All Items', 'description' => 'Restore all items from the archive', 'category' => 'archive'],
+            ['name' => 'archive.delete_permanently', 'label' => 'Permanent Delete', 'description' => 'Remove archived items permanently', 'category' => 'archive'],
             ['name' => 'archive.unarchive_memo', 'label' => 'Unarchive Memos', 'description' => 'Unarchive memos from the archive tab', 'category' => 'archive'],
             ['name' => 'archive.unarchive_calendar', 'label' => 'Unarchive Events', 'description' => 'Unarchive calendar events', 'category' => 'archive'],
             ['name' => 'archive.remove_permanently', 'label' => 'Permanent Delete', 'description' => 'Remove archived items permanently', 'category' => 'archive'],
@@ -109,6 +113,7 @@ class RBACSeeder extends Seeder
         $secretaryPermissions = [
             'memo.create', 'memo.send', 'memo.archive', 'memo.view', 'memo.unarchive', 'memo.remove_permanently',
             'faculty.add', 'faculty.edit', 'faculty.archive', 'faculty.view', 'faculty.unarchive',
+            'archive.view', 'archive.restore', 'archive.restore_all', 'archive.delete_permanently',
             'archive.unarchive_memo', 'archive.unarchive_calendar', 'archive.remove_permanently',
             'calendar.add_event', 'calendar.edit_event', 'calendar.archive_event',
             'theme.select', 'activity.view_department', 'template.manage',
@@ -117,11 +122,12 @@ class RBACSeeder extends Seeder
         ];
         $secretaryRole->update(['permission_ids' => $secretaryPermissions]);
 
-        // Faculty Permissions
+        // Faculty Permissions - Read-only calendar access, no event creation
         $facultyPermissions = [
             'memo.view', 'memo.archive', 'memo.acknowledge',
+            'archive.view', 'archive.restore', 'archive.delete_permanently',
             'archive.unarchive_memo', 'archive.remove_permanently',
-            'calendar.add_event', 'calendar.edit_event',
+            // Note: calendar.add_event and calendar.edit_event removed - faculty have read-only calendar access
             'nav.dashboard', 'nav.memos', 'nav.archive', 'nav.calendar', 'nav.settings'
         ];
         $facultyRole->update(['permission_ids' => $facultyPermissions]);

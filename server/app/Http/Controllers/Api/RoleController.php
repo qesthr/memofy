@@ -229,6 +229,12 @@ class RoleController extends Controller
             'permission_ids' => $validated['permission_ids']
         ]);
 
+        // Invalidate cache for all users (simplest way without tags is to clear a version or just wait for TTL)
+        // For now, let's at least clear a global flag if we used one, but we are using per-user.
+        // To be safe and fast, we can't easily clear all users, but we can clear the individual user cache 
+        // if this was an individual permission update. This method is for ROLES.
+        \Illuminate\Support\Facades\Cache::forget("role_permissions_{$role->name}");
+
         $this->activityLogger->logUserAction($user, 'update_role_permissions', "Updated permissions for role: {$role->label}", [
             'role_id' => $role->id,
             'original' => $originalPermissions,
@@ -297,22 +303,37 @@ class RoleController extends Controller
 
         $validated = $request->validate([
             'permission_ids' => 'nullable|array',
+            'status' => 'nullable|in:active,inactive',
         ]);
 
         $originalPermissions = $targetUser->permission_ids ?? [];
-        $targetUser->update([
-            'permission_ids' => $validated['permission_ids']
-        ]);
+        $originalStatus = $targetUser->status ?? 'active';
+        
+        $updateData = [];
+        if (isset($validated['permission_ids'])) {
+            $updateData['permission_ids'] = $validated['permission_ids'];
+        }
+        if (isset($validated['status'])) {
+            $updateData['status'] = $validated['status'];
+        }
+        
+        $targetUser->update($updateData);
 
-        $this->activityLogger->logUserAction($user, 'update_user_permissions', "Updated individual permissions for user: {$targetUser->email}", [
+        // Invalidate specific user cache
+        \Illuminate\Support\Facades\Cache::forget("user_permissions_{$targetUser->id}");
+        \Illuminate\Support\Facades\Cache::forget("current_user_data_{$targetUser->id}");
+
+        $this->activityLogger->logUserAction($user, 'update_user_permissions', "Updated individual permissions and status for user: {$targetUser->email}", [
             'target_user_id' => $targetUser->id,
-            'original' => $originalPermissions,
-            'new' => $validated['permission_ids']
+            'original_permissions' => $originalPermissions,
+            'original_status' => $originalStatus,
+            'new_permissions' => $validated['permission_ids'] ?? $originalPermissions,
+            'new_status' => $validated['status'] ?? $originalStatus,
         ]);
 
         return response()->json([
             'success' => true,
-            'message' => 'User permissions updated successfully',
+            'message' => 'User permissions and status updated successfully',
             'user' => $targetUser
         ]);
     }
@@ -337,6 +358,10 @@ class RoleController extends Controller
         $targetUser->update([
             'role' => $validated['role_name']
         ]);
+
+        // Invalidate specific user cache
+        \Illuminate\Support\Facades\Cache::forget("user_permissions_{$targetUser->id}");
+        \Illuminate\Support\Facades\Cache::forget("current_user_data_{$targetUser->id}");
 
         $this->activityLogger->logUserAction($user, 'assign_role', "Assigned role {$newRole->label} to {$targetUser->email}", [
             'user_id' => $targetUser->id,

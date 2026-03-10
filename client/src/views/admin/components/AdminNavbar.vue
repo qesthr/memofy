@@ -37,7 +37,7 @@ const getInitials = (name) => {
       <!-- Right Section -->
       <div class="navbar-right">
         <!-- Notifications -->
-        <NotificationDropdown />
+        <NotificationDropdown :maxItems="20" />
 
         <!-- Theme Selector -->
         <div class="dropdown dropdown-end">

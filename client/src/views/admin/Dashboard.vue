@@ -1,19 +1,46 @@
 <script setup>
-import { ref, onMounted } from 'vue'
-import { FileText, Hourglass, AlertCircle, Users, RefreshCw } from 'lucide-vue-next'
+import { ref, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { FileText, Hourglass, AlertCircle, Users, RefreshCw, CheckCircle, Clock, X } from 'lucide-vue-next'
 
 // Statistics data - initialized with zeros/placeholders
 const stats = ref([
   {
     title: 'Total Memos',
     value: '0',
+    key: 'total_memos',
     icon: FileText,
     color: 'text-primary',
     bgColor: 'bg-primary/10'
   },
   {
-    title: 'Active Users',
+    title: 'Acknowledgment Rate',
+    value: '0%',
+    key: 'acknowledgment_rate',
+    icon: CheckCircle,
+    color: 'text-violet-600',
+    bgColor: 'bg-violet-100'
+  },
+  {
+    title: 'Pending Approval',
     value: '0',
+    key: 'pending_approval',
+    icon: Hourglass,
+    color: 'text-warning',
+    bgColor: 'bg-warning/10'
+  },
+  {
+    title: 'Upcoming Deadlines',
+    value: '0',
+    key: 'upcoming_deadlines',
+    icon: AlertCircle,
+    color: 'text-error',
+    bgColor: 'bg-error/10'
+  },
+  {
+    title: 'Total Users',
+    value: '0',
+    key: 'total_users',
     icon: Users,
     color: 'text-success',
     bgColor: 'bg-success/10'
@@ -27,6 +54,30 @@ const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() +
 const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay()
 
 const calendarDays = ref([])
+const events = ref([])
+
+const recentMemos = ref([])
+const selectedEvent = ref(null)
+const isEventModalOpen = ref(false)
+
+const openEventModal = (event) => {
+  selectedEvent.value = event
+  isEventModalOpen.value = true
+}
+
+const handleDayClick = (dateObj) => {
+  if (!dateObj.isCurrentMonth) return
+  const dayEvents = getDayEvents(dateObj.day, dateObj.isCurrentMonth)
+  if (dayEvents.length > 0) {
+    if (dayEvents.length === 1) {
+      openEventModal(dayEvents[0])
+    } else {
+      // If multiple events, we could show a list, but for now just show the first one
+      openEventModal(dayEvents[0])
+    }
+  }
+}
+
 const generateCalendar = () => {
   const days = []
   const prevMonthDays = new Date(currentDate.getFullYear(), currentDate.getMonth(), 0).getDate()
@@ -50,9 +101,36 @@ const generateCalendar = () => {
   calendarDays.value = days
 }
 
+const getDayEvents = (day, isCurrentMonth) => {
+  if (!isCurrentMonth || !Array.isArray(events.value)) return []
+  const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  return events.value.filter(event => event.start && event.start.startsWith(dateStr))
+}
+
+const getHighestPriorityColor = (day, isCurrentMonth) => {
+  const dayEvents = getDayEvents(day, isCurrentMonth)
+  if (dayEvents.length === 0) return null
+  
+  if (dayEvents.some(e => e.priority === 'high')) return '#F44336'
+  if (dayEvents.some(e => e.priority === 'medium')) return '#FF9800'
+  if (dayEvents.some(e => e.priority === 'low')) return '#4CAF50'
+  
+  return '#3B82F6' // Default Blue
+}
+
 generateCalendar()
 
 const weekDays = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+
+const pendingCount = ref(0)
+const showPendingBanner = ref(false)
+const bannerDismissed = ref(false)
+
+const router = useRouter()
+
+const goToPending = () => {
+  router.push('/admin/memos?tab=pending')
+}
 
 // Fetch dashboard data
 import api from '../../services/api'
@@ -60,16 +138,31 @@ import api from '../../services/api'
 const fetchDashboardData = async () => {
   try {
     const response = await api.get('/admin/dashboard-stats')
-    const data = response.data.stats
+    const data = response.data
     
-    // 0: Total Memos
-    stats.value[0].value = data.total_memos || 0
-    // 1: Active Users
-    stats.value[1].value = data.active_users || 0
+    // Update Stats
+    stats.value.forEach(stat => {
+      const val = data.stats[stat.key] || 0
+      stat.value = stat.key === 'acknowledgment_rate' ? `${val}%` : val
+      if (stat.key === 'pending_approval') {
+        pendingCount.value = val
+        if (val > 0 && !bannerDismissed.value) {
+          showPendingBanner.value = true
+        }
+      }
+    })
+
+    recentMemos.value = data.recent_memos || []
+    events.value = data.calendar_events || []
 
   } catch (error) {
     console.error('Error fetching dashboard data:', error)
   }
+}
+
+const dismissBanner = () => {
+  showPendingBanner.value = false
+  bannerDismissed.value = true
 }
 
 onMounted(() => {
@@ -102,6 +195,9 @@ onMounted(() => {
         v-for="(stat, index) in stats" 
         :key="index"
         class="stat-card"
+        :class="{ 'stat-card-clickable': stat.key === 'pending_approval' }"
+        @click="stat.key === 'pending_approval' ? goToPending() : null"
+        :title="stat.key === 'pending_approval' ? 'Click to review pending memos' : ''"
       >
         <div class="stat-icon" :class="stat.bgColor">
           <component :is="stat.icon" :size="24" :class="stat.color" />
@@ -110,6 +206,26 @@ onMounted(() => {
           <p class="stat-title">{{ stat.title }}</p>
           <p class="stat-value">{{ stat.value }}</p>
         </div>
+        <div v-if="stat.key === 'pending_approval' && pendingCount > 0" class="stat-card-arrow">
+          <span class="text-warning text-xl">›</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pending Approval Alert Banner -->
+    <div v-if="showPendingBanner" class="pending-banner">
+      <div class="pending-banner-content">
+        <div class="pending-banner-icon">
+          <Hourglass :size="20" class="text-warning animate-pulse" />
+        </div>
+        <div class="flex-1">
+          <p class="font-semibold text-sm">{{ pendingCount }} memo{{ pendingCount !== 1 ? 's' : '' }} waiting for your approval</p>
+          <p class="text-xs opacity-70">Secretary-submitted memos need your review before they can be sent to recipients.</p>
+        </div>
+        <button @click="goToPending" class="pending-banner-btn">Review Now</button>
+        <button @click="dismissBanner" class="pending-banner-dismiss">
+          <X :size="16" />
+        </button>
       </div>
     </div>
 
@@ -117,8 +233,36 @@ onMounted(() => {
     <div class="content-grid">
       <!-- Recent Memos -->
       <div class="content-card recent-memos">
-        <h2 class="card-title">Recent Memos</h2>
-        <div class="empty-state">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="card-title mb-0">Recent Memos</h2>
+          <router-link to="/admin/memos" class="text-xs text-primary hover:underline">View All</router-link>
+        </div>
+        
+        <div v-if="recentMemos.length > 0" class="memo-list">
+          <div v-for="memo in recentMemos" :key="memo.id" class="memo-item p-3 border-b border-base-200 last:border-0 hover:bg-base-200/50 rounded-lg transition-colors cursor-pointer" @click="$router.push(`/admin/memos?id=${memo.id}`)">
+            <div class="flex items-start gap-3">
+              <div class="memo-avatar p-2 rounded-lg" :class="memo.priority === 'high' ? 'bg-error/10' : memo.priority === 'medium' ? 'bg-warning/10' : 'bg-success/10'">
+                <FileText :size="18" :class="memo.priority === 'high' ? 'text-error' : memo.priority === 'medium' ? 'text-warning' : 'text-success'" />
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between gap-2">
+                  <h3 class="font-semibold text-sm truncate">{{ memo.subject }}</h3>
+                  <span class="text-[10px] text-base-content/50 whitespace-nowrap">{{ new Date(memo.created_at).toLocaleDateString() }}</span>
+                </div>
+                <p class="text-xs text-base-content/60 truncate">{{ memo.message.replace(/<[^>]*>/g, '') }}</p>
+                <div class="flex items-center gap-2 mt-1">
+                  <span class="text-[10px] px-1.5 py-0.5 rounded-full border border-base-300 bg-base-200 uppercase font-medium">
+                    {{ memo.priority }}
+                  </span>
+                  <span v-if="memo.sender" class="text-[10px] text-base-content/40">
+                    From: {{ memo.sender.first_name }} {{ memo.sender.last_name }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-else class="empty-state">
           <FileText :size="48" class="text-base-content/20" />
           <p class="text-base-content/60 font-medium">No memos yet</p>
           <p class="text-base-content/40 text-sm">New submissions will appear here</p>
@@ -148,13 +292,65 @@ onMounted(() => {
             <div 
               v-for="(dateObj, index) in calendarDays" 
               :key="'day-' + index"
-              class="calendar-day"
+              class="calendar-day relative"
               :class="{
                 'other-month': !dateObj.isCurrentMonth,
-                'today': dateObj.isToday
+                'today': dateObj.isToday,
+                'has-events': getDayEvents(dateObj.day, dateObj.isCurrentMonth).length > 0
               }"
+              @click="handleDayClick(dateObj)"
             >
               {{ dateObj.day }}
+              <div v-if="getHighestPriorityColor(dateObj.day, dateObj.isCurrentMonth)" 
+                   class="absolute bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full"
+                   :style="{ backgroundColor: getHighestPriorityColor(dateObj.day, dateObj.isCurrentMonth) }">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Event Detail Modal -->
+        <div v-if="isEventModalOpen && selectedEvent" class="fixed inset-0 z-100 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" @click.self="isEventModalOpen = false">
+          <div class="bg-base-100 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all">
+            <div class="p-6 border-b border-base-200 flex items-center justify-between" :style="{ borderTop: `4px solid ${selectedEvent.color}` }">
+              <h3 class="text-lg font-bold">{{ selectedEvent.title }}</h3>
+              <button @click="isEventModalOpen = false" class="btn btn-ghost btn-sm btn-circle text-base-content/50">✕</button>
+            </div>
+            <div class="p-6 space-y-4">
+              <div class="flex items-start gap-4 text-sm">
+                <div class="p-2 rounded-lg bg-base-200">
+                  <Clock :size="18" class="text-primary" />
+                </div>
+                <div>
+                  <p class="font-semibold">Time & Date</p>
+                  <p class="text-base-content/60">
+                    {{ new Date(selectedEvent.start).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) }}
+                    <span v-if="selectedEvent.end && selectedEvent.start !== selectedEvent.end">
+                      - {{ new Date(selectedEvent.end).toLocaleTimeString([], { timeStyle: 'short' }) }}
+                    </span>
+                  </p>
+                </div>
+              </div>
+
+              <div v-if="selectedEvent.description" class="flex items-start gap-4 text-sm">
+                <div class="p-2 rounded-lg bg-base-200">
+                  <FileText :size="18" class="text-primary" />
+                </div>
+                <div>
+                  <p class="font-semibold">Description</p>
+                  <p class="text-base-content/60 line-clamp-4">{{ selectedEvent.description }}</p>
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between pt-4 border-t border-base-200">
+                <span class="text-[10px] px-2 py-1 rounded-full bg-base-200 font-bold uppercase tracking-wider" :style="{ color: selectedEvent.color }">
+                  {{ selectedEvent.priority }} Priority
+                </span>
+                <div class="flex gap-2">
+                  <button v-if="selectedEvent.memo_id" @click="$router.push(`/admin/memos?id=${selectedEvent.memo_id}`); isEventModalOpen = false" class="btn btn-primary btn-sm">View Memo</button>
+                  <button @click="isEventModalOpen = false" class="btn btn-ghost btn-sm">Close</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -219,6 +415,46 @@ onMounted(() => {
   @apply bg-base-100 rounded-xl p-5 flex items-center gap-4;
   @apply border border-base-300;
   @apply hover:shadow-md transition-shadow duration-200;
+}
+
+.stat-card-clickable {
+  @apply cursor-pointer hover:border-warning/50 hover:shadow-warning/10;
+  transition: all 0.2s ease;
+}
+.stat-card-clickable:hover {
+  transform: translateY(-2px);
+}
+
+.stat-card-arrow {
+  @apply flex items-center ml-auto opacity-60;
+}
+
+/* Pending Approval Banner */
+.pending-banner {
+  @apply rounded-xl border border-warning/30 bg-warning/10;
+  padding: 12px 20px;
+  animation: banner-slide-in 0.3s ease;
+}
+
+@keyframes banner-slide-in {
+  0% { opacity: 0; transform: translateY(-8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.pending-banner-content {
+  @apply flex items-center gap-3;
+}
+
+.pending-banner-icon {
+  @apply flex items-center justify-center w-9 h-9 rounded-lg bg-warning/20 shrink-0;
+}
+
+.pending-banner-btn {
+  @apply btn btn-warning btn-sm shrink-0 font-semibold;
+}
+
+.pending-banner-dismiss {
+  @apply btn btn-ghost btn-sm btn-circle shrink-0 text-warning;
 }
 
 .stat-icon {
@@ -320,5 +556,17 @@ onMounted(() => {
   content: '✓';
   @apply text-success font-bold text-lg;
   position: absolute;
+}
+
+.calendar-day.has-events {
+  @apply font-semibold;
+}
+
+.memo-item {
+  @apply transition-all duration-200;
+}
+
+.memo-item:hover {
+  transform: translateX(4px);
 }
 </style>

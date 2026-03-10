@@ -3,7 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
+use MongoDB\Laravel\Eloquent\Model;
 
 class NotificationPreference extends Model
 {
@@ -20,6 +20,7 @@ class NotificationPreference extends Model
         'calendar_response',
         'profile_updated',
         'calendar_secretary_created',
+        'memo_reminder',
         'email_notifications',
         'push_notifications'
     ];
@@ -34,6 +35,7 @@ class NotificationPreference extends Model
         'calendar_response' => 'boolean',
         'profile_updated' => 'boolean',
         'calendar_secretary_created' => 'boolean',
+        'memo_reminder' => 'boolean',
         'email_notifications' => 'boolean',
         'push_notifications' => 'boolean'
     ];
@@ -48,11 +50,14 @@ class NotificationPreference extends Model
      */
     public static function getDefaultForUser($userId)
     {
-        $preference = self::where('user_id', $userId)->first();
+        // Convert ObjectId to string if needed
+        $userIdString = (string) $userId;
+        
+        $preference = self::where('user_id', $userIdString)->first();
         
         if (!$preference) {
             $preference = self::create([
-                'user_id' => $userId,
+                'user_id' => $userIdString,
                 'memo_approved' => true,
                 'memo_rejected' => true,
                 'memo_received' => true,
@@ -62,6 +67,7 @@ class NotificationPreference extends Model
                 'calendar_response' => true,
                 'profile_updated' => true,
                 'calendar_secretary_created' => true,
+                'memo_reminder' => true,
                 'email_notifications' => true,
                 'push_notifications' => true
             ]);
@@ -84,7 +90,8 @@ class NotificationPreference extends Model
             'calendar.updated' => $this->calendar_updated,
             'calendar.response' => $this->calendar_response,
             'profile.updated' => $this->profile_updated,
-            'calendar.secretary_created' => $this->calendar_secretary_created
+            'calendar.secretary_created' => $this->calendar_secretary_created,
+            'memo.reminder' => $this->memo_reminder
         ];
 
         return $mapping[$type] ?? false;

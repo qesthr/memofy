@@ -83,14 +83,7 @@ const selectDate = (day) => {
   }
 }
 const getPriorityColor = (event) => {
-  if (event.source === 'GOOGLE') return '#4285F4'
-  const priority = event.priority || 'medium'
-  switch (priority) {
-    case 'high': return '#F44336'
-    case 'medium': return '#FF9800'
-    case 'low': return '#4CAF50'
-    default: return '#3B82F6'
-  }
+  return event.color || '#3B82F6'
 }
 </script>
 
