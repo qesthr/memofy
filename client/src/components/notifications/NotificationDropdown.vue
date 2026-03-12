@@ -170,7 +170,7 @@ onMounted(() => {
         <div class="flex flex-col gap-3">
           <div class="flex justify-between items-center">
             <h3 class="font-bold text-lg">Notifications</h3>
-            <div class="flex gap-1">
+              <div class="flex gap-1 items-center">
               <button 
                 @click="markAllAsRead"
                 class="btn btn-ghost btn-xs text-success"
@@ -240,7 +240,7 @@ onMounted(() => {
           >
             <div class="flex gap-3">
               <!-- Icon -->
-              <div :class="['p-2 rounded-full h-fit self-start', getNotificationColor(notification.type)]">
+              <div :class="['p-2 rounded-full h-fit self-start flex items-center justify-center', getNotificationColor(notification.type)]">
                 <component :is="getNotificationIcon(notification.type)" :size="18" />
               </div>
               

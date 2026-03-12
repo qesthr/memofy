@@ -324,19 +324,16 @@ onMounted(() => {
 
     <div class="bg-base-100 rounded-xl border border-base-200 p-6 mb-6">
       <div class="flex flex-col md:flex-row gap-4 justify-between">
-        <div class="flex flex-wrap gap-2">
+        <div class="memo-pill-tabs">
           <button 
             v-for="filter in filters" 
             :key="filter.id"
             @click="activeFilter = filter.id; handleFilterChange()"
-            class="btn btn-sm gap-2"
-            :class="activeFilter === filter.id ? 'btn-primary text-white' : 'btn-ghost bg-base-200'"
+            class="memo-pill-tab"
+            :class="{ 'active': activeFilter === filter.id }"
           >
-            <component :is="filter.icon" :size="14" />
             {{ filter.label }}
-            <span v-if="filter.count !== null" class="badge badge-xs">
-              {{ filter.count }}
-            </span>
+            <span v-if="filter.count !== null" class="badge badge-xs ml-1">{{ filter.count }}</span>
           </button>
         </div>
 

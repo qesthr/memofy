@@ -175,20 +175,20 @@ onMounted(() => {
         <div class="bg-base-100 rounded-2xl p-6 border border-base-300">
            <h3 class="font-bold text-base-content mb-4">Quick Actions</h3>
            <div class="space-y-3">
-             <button class="w-full btn btn-primary border-0 flex items-center gap-2 rounded-xl py-3 normal-case h-auto shadow-lg shadow-primary/10">
-               <Plus class="w-5 h-5" />
-               Distribute Memo
-             </button>
-             
-             <button class="w-full btn btn-outline btn-primary flex items-center gap-2 rounded-xl py-3 normal-case h-auto">
-               <FileStack class="w-5 h-5" />
-               View All Memos
-             </button>
+             <button @click="$router.push('/secretary/memos?compose=true')" class="w-full btn btn-primary border-0 flex items-center gap-2 rounded-xl py-3 normal-case h-auto shadow-lg shadow-primary/10">
+                <Plus class="w-5 h-5" />
+                Distribute Memo
+              </button>
 
-             <button class="w-full btn btn-outline btn-primary flex items-center gap-2 rounded-xl py-3 normal-case h-auto">
-               <Users class="w-5 h-5" />
-               Department Members
-             </button>
+              <button @click="$router.push('/secretary/memos')" class="w-full btn btn-outline btn-primary flex items-center gap-2 rounded-xl py-3 normal-case h-auto">
+                <FileStack class="w-5 h-5" />
+                View All Memos
+              </button>
+
+              <button @click="$router.push('/secretary/users')" class="w-full btn btn-outline btn-primary flex items-center gap-2 rounded-xl py-3 normal-case h-auto">
+                <Users class="w-5 h-5" />
+                Department Members
+            </button>
            </div>
         </div>
       </div>
