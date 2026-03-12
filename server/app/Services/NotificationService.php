@@ -14,7 +14,7 @@ class NotificationService
     /**
      * Create a notification for a user
      */
-    public function createNotification(User $user, string $type, array $data, string $link = null): Notification
+    public function createNotification(User $user, string $type, array $data, string $link = null): ?Notification
     {
         // Check user preferences
         $preferences = NotificationPreference::getDefaultForUser($user->id);

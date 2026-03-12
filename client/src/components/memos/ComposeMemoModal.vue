@@ -746,7 +746,7 @@ watch(() => props.isOpen, (val) => {
             :disabled="!canSubmit || isSubmitting"
           >
             <Loader2 v-if="isSubmitting" :size="12" class="animate-spin mr-1.5" />
-            {{ isSubmitting ? 'Sending...' : 'Send' }}
+            {{ isSubmitting ? 'Composing...' : 'Compose' }}
           </button>
         </div>
       </div>
