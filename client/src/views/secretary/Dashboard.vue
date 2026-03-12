@@ -185,7 +185,7 @@ onMounted(() => {
                 View All Memos
               </button>
 
-              <button @click="$router.push('/secretary/users')" class="w-full btn btn-outline btn-primary flex items-center gap-2 rounded-xl py-3 normal-case h-auto">
+              <button @click="$router.push('/secretary/faculty')" class="w-full btn btn-outline btn-primary flex items-center gap-2 rounded-xl py-3 normal-case h-auto">
                 <Users class="w-5 h-5" />
                 Department Members
             </button>
