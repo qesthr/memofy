@@ -11,6 +11,13 @@ import Swal from 'sweetalert2'
 import html2pdf from 'html2pdf.js'
 import { Cloud, ExternalLink } from 'lucide-vue-next'
 
+// allowed file types for attachments
+const allowedTypes = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+]
+
 // Filter states
 const activeTab = ref('all')
 

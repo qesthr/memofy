@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { Lock, Clock, Save, RefreshCw, Shield, AlertCircle, CheckCircle, ChevronDown, ChevronRight, UserCheck } from 'lucide-vue-next'
+import { Lock, Clock, Save, RefreshCw, Shield, AlertCircle, CheckCircle, ChevronDown, ChevronRight, UserCheck, X } from 'lucide-vue-next'
 import api from '../../services/api'
 import Swal from 'sweetalert2'
 import { useAuth } from '@/composables/useAuth'
@@ -410,18 +410,6 @@ onMounted(() => {
           </div>
         </div>
 
-<<<<<<< HEAD
-        <div class="p-6 space-y-6">
-          <div class="bg-blue-40/50 rounded-lg p-4 border border-blue-100">
-            <div class="flex items-start gap-3">
-              <AlertCircle class="mt-0.5" :size="18" />
-              <div>
-                <h3 class="font-semibold text-sm">About Two-Phase Locking</h3>
-                <p class="text-sm mt-1">
-                  When an admin starts editing a user, a lock is acquired to prevent other admins from editing the same user simultaneously.
-                  The lock automatically expires after the configured duration if not renewed.
-                </p>
-=======
         <!-- Section 2: Account Lockout Settings -->
         <div class="bg-base-100 rounded-xl border border-base-200 overflow-hidden shadow-sm transition-all duration-300">
           <button 
@@ -436,7 +424,6 @@ onMounted(() => {
               <div class="text-left">
                 <h2 class="text-lg font-bold">Account Lockout Settings</h2>
                 <p class="text-sm text-base-content/60">Manage brute-force protection durations</p>
->>>>>>> 28962824d7f16703a35ea084f16b58226c179582
               </div>
             </div>
             <div class="transition-transform duration-300" :class="{ 'rotate-180': activeSection === 'lockout' }">
