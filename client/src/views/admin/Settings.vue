@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { Lock, Clock, Save, RefreshCw, Shield, AlertCircle, CheckCircle, ChevronDown, ChevronRight, UserCheck } from 'lucide-vue-next'
+import { Lock, Clock, Save, RefreshCw, Shield, AlertCircle, CheckCircle, ChevronDown, ChevronRight, UserCheck, X } from 'lucide-vue-next'
 import api from '../../services/api'
 import Swal from 'sweetalert2'
 import { useAuth } from '@/composables/useAuth'

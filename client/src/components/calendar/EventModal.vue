@@ -219,7 +219,7 @@ const viewMemo = () => {
 
 <template>
   <div v-if="showEventModal" class="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-    <div class="bg-base-100 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+    <div class="bg-base-100 rounded-xl shadow-2xl w-[60vh] h-[70vh] flex flex-col">
       <!-- Header -->
       <div class="flex items-center justify-between p-4 border-b border-base-200">
         <div class="flex items-center gap-3">
@@ -237,7 +237,7 @@ const viewMemo = () => {
       </div>
 
       <!-- Body -->
-      <div class="p-6 space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
+      <div class="p-6 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
         <!-- Title -->
         <div class="flex items-start gap-4">
            <div class="p-2 bg-primary/10 rounded-lg text-primary mt-1">

@@ -14,7 +14,7 @@ export function useLogout() {
             imageHeight: 80,
             imageAlt: 'Memofy Logo',
             showCancelButton: true,
-            confirmButtonText: 'Yes, Logout',
+            confirmButtonText: 'Logout',
             confirmButtonColor: '#0ea5e9', // Primary blue
             cancelButtonColor: '#d33',
             reverseButtons: true,

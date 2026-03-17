@@ -217,26 +217,25 @@ const uploadSingleFile = async (file) => {
 
   // Validate file type
   const allowedTypes = [
-    'application/pdf',
-    'image/jpeg', 'image/png', 'image/gif', 'image/svg+xml',
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.ms-excel',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'text/plain',
-    'application/zip',
-    'application/x-zip-compressed'
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
   ]
   
-  if (!allowedTypes.includes(file.type)) {
-    Swal.fire({
-      title: 'Invalid File Type',
-      text: `${file.name} has an unsupported file type`,
-      icon: 'warning',
-      confirmButtonText: 'OK'
-    })
-    return
-  }
+ if (!allowedTypes.includes(file.type)) {
+  const ext = file.name.split('.').pop()?.toLowerCase()
+  Swal.fire({
+    icon: 'error',
+    title: 'Wrong Document Format',
+    html: `<p style="margin-bottom:8px"><b>.${ext}</b> files are not supported.</p>
+           <p style="font-size:13px;color:#6B7280">Please attach a <strong>PDF, DOC, or DOCX</strong> file only.</p>`,
+    confirmButtonText: 'Try Again',
+    customClass: {
+      popup: 'swal-top-layer'
+    }
+  })
+  return
+}
 
   try {
     isUploading.value = true
@@ -515,7 +514,7 @@ watch(() => props.isOpen, (val) => {
 
 <template>
   <Teleport to="body">
-    <div v-if="isOpen" class="modal modal-open z-99999 items-center justify-center">
+    <div v-if="isOpen" class="modal modal-open z-[99999] items-center justify-center">
     <div class="modal-box p-0 max-w-6xl w-[95vw] max-h-[95vh] h-[90vh] overflow-hidden rounded-xl bg-base-100 shadow-2xl border border-base-300 flex flex-col">
       <!-- Fixed Header -->
       <div class="bg-primary px-5 py-3 flex items-center justify-between text-primary-content shrink-0 z-10">
@@ -746,7 +745,7 @@ watch(() => props.isOpen, (val) => {
             :disabled="!canSubmit || isSubmitting"
           >
             <Loader2 v-if="isSubmitting" :size="12" class="animate-spin mr-1.5" />
-            {{ isSubmitting ? 'Sending...' : 'Send' }}
+            {{ isSubmitting ? 'Composing...' : 'Compose' }}
           </button>
         </div>
       </div>
@@ -824,5 +823,9 @@ select {
   -webkit-appearance: none;
   -moz-appearance: none;
   appearance: none;
+}
+
+.swal-top-layer {
+  z-index: 999999 !important;
 }
 </style>

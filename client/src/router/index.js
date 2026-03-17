@@ -111,7 +111,7 @@ const routes = [
         path: 'faculty',
         name: 'SecretaryFaculty',
         component: () => import('../views/secretary/Faculty.vue'),
-        meta: { permission: 'nav.faculty' }
+        meta: {}
       },
       {
         path: 'archive',
