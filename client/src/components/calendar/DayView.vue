@@ -95,49 +95,52 @@ const allDayEvents = computed(() => {
 
 <template>
   <div class="flex flex-col h-full bg-base-100 overflow-hidden">
-    <!-- Day Header -->
-    <div class="flex border-b border-black/20 dark:border-white/20">
-      <div class="w-20 border-r border-black/20 dark:border-white/20"></div>
-      <div class="flex-1 py-6 flex flex-col items-center">
-        <span class="text-sm font-bold text-base-content/40 uppercase tracking-widest">{{ currentDay.name }}</span>
-        <div class="w-16 h-16 flex items-center justify-center rounded-full mt-2 transition-all shadow-lg"
-             :class="{ 'bg-primary text-primary-content font-bold': currentDay.isToday, 'border-4 border-primary text-primary font-bold': !currentDay.isToday }">
-          <span class="text-4xl">{{ currentDay.date }}</span>
-        </div>
-      </div>
-    </div>
 
-    <!-- All Day Section -->
-    <div v-if="allDayEvents.length > 0" class="flex border-b border-black/20 dark:border-white/20 bg-base-200/20">
-      <div class="w-20 flex flex-col items-center justify-center border-r border-black/20 dark:border-white/20">
-        <span class="text-[10px] font-bold text-base-content/40 uppercase">All Day</span>
-      </div>
-      <div class="flex-1 p-2 flex flex-wrap gap-2">
-        <div v-for="event in allDayEvents" :key="event.id"
-             @click="() => {
-               if (can('calendar.edit_event')) {
-                 openEventModal(event)
-               } else {
-                 Swal.fire({
-                   icon: 'error',
-                   title: 'Permission Denied',
-                   text: 'You do not have permission to edit events.'
-                 })
-               }
-             }"
-             class="text-white text-xs font-bold px-3 py-1.5 rounded truncate shadow-md min-w-[150px] cursor-pointer hover:brightness-110 transition-all"
-             :style="{ backgroundColor: getEventStyle(event).backgroundColor, borderLeft: getEventStyle(event).borderLeft }">
-          {{ event.title }}
-        </div>
-      </div>
-    </div>
-
-    <!-- Scrollable Time Grid -->
+    <!-- Single scrollable container for header + time grid -->
     <div class="flex-1 overflow-y-auto relative custom-scrollbar p-0">
+
+      <!-- Day Header (sticky) -->
+      <div class="flex border-b border-base-300 sticky top-0 z-20 bg-base-100">
+        <div class="w-20 border-r border-base-300"></div>
+        <div class="flex-1 py-6 flex flex-col items-center">
+          <span class="text-sm font-bold text-base-content/40 uppercase tracking-widest">{{ currentDay.name }}</span>
+          <div class="w-16 h-16 flex items-center justify-center rounded-full mt-2 transition-all shadow-lg"
+               :class="{ 'bg-primary text-primary-content font-bold': currentDay.isToday, 'border-4 border-primary text-primary font-bold': !currentDay.isToday }">
+            <span class="text-4xl">{{ currentDay.date }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- All Day Section (sticky, below header) -->
+      <div v-if="allDayEvents.length > 0" class="flex border-b border-base-300 bg-base-200/20 sticky top-[106px] z-20">
+        <div class="w-20 flex flex-col items-center justify-center border-r border-base-300">
+          <span class="text-[10px] font-bold text-base-content/40 uppercase">All Day</span>
+        </div>
+        <div class="flex-1 p-2 flex flex-wrap gap-2">
+          <div v-for="event in allDayEvents" :key="event.id"
+               @click="() => {
+                 if (can('calendar.edit_event')) {
+                   openEventModal(event)
+                 } else {
+                   Swal.fire({
+                     icon: 'error',
+                     title: 'Permission Denied',
+                     text: 'You do not have permission to edit events.'
+                   })
+                 }
+               }"
+               class="text-white text-xs font-bold px-3 py-1.5 rounded truncate shadow-md min-w-[150px] cursor-pointer hover:brightness-110 transition-all"
+               :style="{ backgroundColor: getEventStyle(event).backgroundColor, borderLeft: getEventStyle(event).borderLeft }">
+            {{ event.title }}
+          </div>
+        </div>
+      </div>
+
+      <!-- Scrollable Time Grid -->
       <div class="flex relative min-h-[1440px]">
         
         <!-- Time Labels -->
-        <div class="w-20 shrink-0 border-r border-black/10 dark:border-white/10 bg-base-100 z-10">
+        <div class="w-20 shrink-0 border-r border-base-300 bg-base-100 z-10">
           <div v-for="slot in timeSlots" :key="`${slot.hour}-${slot.minute}`" class="h-[30px] relative">
             <span v-if="slot.hour > 0 || slot.minute > 0" class="absolute -top-2.5 right-3 text-[10px] text-base-content/40 font-bold whitespace-nowrap uppercase">
               {{ slot.label }}
@@ -174,7 +177,7 @@ const allDayEvents = computed(() => {
                       })
                     }
                   }"
-                  class="h-[30px] hover:bg-base-200/50 cursor-pointer transition-colors border-b border-black/10 dark:border-white/10 last:border-none">
+                  class="h-[30px] hover:bg-base-200/50 cursor-pointer transition-colors border-b border-base-300 last:border-none">
              </div>
 
              <!-- Events Overlay -->

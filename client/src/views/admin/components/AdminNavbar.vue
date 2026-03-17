@@ -45,7 +45,7 @@ const getInitials = (name) => {
             <Sun v-if="theme === 'dark'" :size="20" />
             <Moon v-else :size="20" />
           </button>
-          <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow-2xl bg-base-100 border border-base-300 rounded-xl w-40 mt-4 max-h-[70vh] overflow-y-auto custom-scrollbar flex-nowrap">
+          <ul tabindex="0" class="dropdown-content z-[50] menu p-2 shadow-2xl bg-base-100 border border-base-300 rounded-xl w-40 mt-4 max-h-[70vh] overflow-y-auto custom-scrollbar flex-nowrap">
             <li class="menu-title px-4 py-2 opacity-60 text-[10px] uppercase tracking-wider font-bold">Select Theme</li>
             <li v-for="t in ['light', 'dark']" :key="t">
               <button 
@@ -78,7 +78,7 @@ const getInitials = (name) => {
               <span class="text-[10px] text-base-content/60 leading-tight">{{ user?.first_name || 'System' }}</span>
             </div>
           </div>
-          <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow-xl bg-base-100 border border-base-300 rounded-box w-52 mt-3">
+          <ul tabindex="0" class="dropdown-content z-[50] menu p-2 shadow-xl bg-base-100 border border-base-300 rounded-box w-52 mt-3">
             <li class="menu-title px-4 py-2 opacity-60">Account Settings</li>
             <li><button @click="showPhotoModal = true"><Camera :size="16" /> Profile Photos</button></li>
             <li><button @click="showAccountModal = true"><Settings :size="16" /> My Account</button></li>
@@ -105,7 +105,7 @@ const getInitials = (name) => {
 @reference "../../../style.css";
 
 .navbar {
-  @apply fixed top-0 right-0 h-[4.56rem] bg-base-100 border-b border-base-300 z-10;
+  @apply fixed top-0 right-0 h-[4.56rem] bg-base-100 border-b border-base-300 z-30;
   width: calc(100% - 16rem);
   margin-left: 16rem;
 }

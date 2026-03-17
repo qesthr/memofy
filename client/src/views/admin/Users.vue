@@ -11,10 +11,10 @@ const showAddUserModal = ref(false)
 const isEditing = ref(false)
 const editingUserId = ref(null)
 const isLoading = ref(false)
-const isCheckingLock = ref(false)
 const lockTooltipVisible = ref(false)
 const hoveredUserId = ref(null)
 const currentSessionExpiresAt = ref(null)
+const checkingLockUserIds = ref(new Set()) // Track which users are being checked
 
 const lockSettings = ref({
   minutes: 1,
@@ -26,6 +26,11 @@ const allowedDomains = ref(['buksu.edu.ph', 'student.buksu.edu.ph']) // Default 
 const userLocks = ref({})
 let heartbeatInterval = null
 let lockCheckInterval = null
+
+// Helper to check if a specific user's lock is being checked
+const isCheckingLockForUser = (userId) => {
+  return checkingLockUserIds.value.has(userId)
+}
 
 const HEARTBEAT_INTERVAL = 30000
 const LOCK_CHECK_INTERVAL = 1000
@@ -326,12 +331,13 @@ const tryAcquireLock = async (userId) => {
 
 const releaseLock = async (userId) => {
   try {
-    await api.post('/locks/release', {
+    const response = await api.post('/locks/release', {
       resource_type: 'user',
       resource_id: userId
     })
+    console.log(`Lock released for user ${userId}:`, response.data)
   } catch (error) {
-    console.error('Error releasing lock:', error)
+    console.error(`Error releasing lock for user ${userId}:`, error)
   }
 }
 
@@ -368,7 +374,7 @@ const openAddUserModal = () => {
 }
 
 const openEditModal = async (user) => {
-  isCheckingLock.value = true
+  checkingLockUserIds.value.add(user.id) // Mark this specific user as being checked
   
   try {
     const result = await tryAcquireLock(user.id)
@@ -401,7 +407,7 @@ const openEditModal = async (user) => {
           confirmButtonColor: '#4285F4'
         })
       }
-      isCheckingLock.value = false
+      checkingLockUserIds.value.delete(user.id) // Remove from checking set
       return
     }
 
@@ -428,21 +434,30 @@ const openEditModal = async (user) => {
       confirmButtonColor: '#4285F4'
     })
   } finally {
-    isCheckingLock.value = false
+    checkingLockUserIds.value.delete(user.id) // Ensure we remove from checking set
   }
 }
 
 const closeModal = async () => {
+  // Always try to release lock if there's an active editing session
   if (editingUserId.value) {
-    await releaseLock(editingUserId.value)
+    try {
+      await releaseLock(editingUserId.value)
+      console.log(`Lock released for user ${editingUserId.value} on modal close`)
+    } catch (error) {
+      console.error('Error releasing lock on modal close:', error)
+    }
+    checkingLockUserIds.value.delete(editingUserId.value)
     editingUserId.value = null
   }
   
+  // Clear heartbeat interval
   if (heartbeatInterval) {
     clearInterval(heartbeatInterval)
     heartbeatInterval = null
   }
   
+  // Reset modal state
   currentSessionExpiresAt.value = null
   showAddUserModal.value = false
   isEditing.value = false
@@ -614,7 +629,19 @@ onMounted(() => {
   }, LOCK_CHECK_INTERVAL)
 })
 
-onUnmounted(() => {
+onUnmounted(async () => {
+  // Always release lock if there's an active editing session
+  if (editingUserId.value) {
+    try {
+      await releaseLock(editingUserId.value)
+    } catch (error) {
+      console.error('Error releasing lock on unmount:', error)
+    }
+    checkingLockUserIds.value.delete(editingUserId.value)
+    editingUserId.value = null
+  }
+  
+  // Clear all intervals
   if (heartbeatInterval) {
     clearInterval(heartbeatInterval)
   }
@@ -708,11 +735,11 @@ onUnmounted(() => {
                           : 'text-primary bg-blue-50 hover:bg-blue-100'
                       ]"
                       title="Edit user"
-                      :disabled="isCheckingLock"
+                      :disabled="isCheckingLockForUser(user.id)"
                       @mouseenter="onMouseEnterEdit(user)"
                       @mouseleave="onMouseLeaveEdit"
                     >
-                      <Pencil v-if="!isCheckingLock" :size="16" />
+                      <Pencil v-if="!isCheckingLockForUser(user.id)" :size="16" />
                       <span v-else class="loading loading-spinner loading-sm"></span>
                     </button>
                     

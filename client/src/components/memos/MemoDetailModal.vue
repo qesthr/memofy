@@ -195,7 +195,7 @@ const closeModal = () => {
     <div v-if="isOpen" class="modal modal-open z-[99999]">
       <div class="modal-box max-w-4xl w-[95vw] bg-white p-0 rounded-none shadow-2xl flex flex-col relative overflow-hidden">
         <!-- Close Button -->
-        <button @click="closeModal" class="absolute top-2 right-2 btn btn-ghost btn-circle btn-sm z-50 bg-white/80 hover:bg-white">
+        <button @click="closeModal" class="absolute top-2 right-2 btn btn-error btn-circle btn-sm z-50 text-white hover:btn-error">
           <X :size="18" />
         </button>
         
@@ -283,14 +283,8 @@ const closeModal = () => {
               >
                 READ
               </span>
-              <span 
-                v-else-if="memo.status === 'sent'" 
-                class="badge badge-warning badge-sm font-bold text-[10px]"
-              >
-                NEW
-              </span>
             </div>
-            <button @click="closeModal" class="btn btn-ghost btn-sm font-bold text-[10px] uppercase tracking-wider">Close</button>
+            <button @click="closeModal" class="btn btn-error btn-sm font-bold text-[10px] uppercase tracking-wider text-white">Close</button>
           </div>
         </div>
       </div>

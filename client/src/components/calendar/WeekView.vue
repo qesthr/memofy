@@ -101,67 +101,68 @@ const allDayEventsForDay = (fullDate) => {
 <template>
   <div class="flex flex-col h-full bg-base-100 overflow-hidden">
 
-    <!-- Week Header -->
-    <div class="grid grid-cols-[64px_repeat(7,1fr)] border-b border-black/20 dark:border-white/20">
-      <div class="border-r border-black/20 dark:border-white/20"></div>
+    <!-- Single scrollable container for header + time grid -->
+    <div class="flex-1 overflow-y-scroll custom-scrollbar">
 
-      <div v-for="day in weekDays"
-           :key="day.fullDate"
-           class="py-3 flex flex-col items-center border-r border-black/10 last:border-r-0">
+      <!-- Week Header (sticky) -->
+      <div class="grid grid-cols-[64px_repeat(7,1fr)] border-b border-base-300 sticky top-0 z-20 bg-base-100">
+        <div class="border-r border-base-300"></div>
 
-        <span class="text-[11px] font-bold text-base-content/40 uppercase tracking-widest">
-          {{ day.name }}
-        </span>
+        <div v-for="day in weekDays"
+             :key="day.fullDate"
+             class="py-3 flex flex-col items-center border-r border-base-300 last:border-r-0">
 
-        <div class="w-10 h-10 flex items-center justify-center rounded-full mt-1 transition-all"
-             :class="{ 
-               'bg-primary text-primary-content font-bold shadow-lg': day.isToday,
-               'border-2 border-primary text-primary font-bold': day.fullDate === formattedSelectedDate && !day.isToday
-             }">
-          <span class="text-xl">{{ day.date }}</span>
-        </div>
+          <span class="text-[11px] font-bold text-base-content/40 uppercase tracking-widest">
+            {{ day.name }}
+          </span>
 
-      </div>
-    </div>
-
-    <!-- All Day Section -->
-    <div class="grid grid-cols-[64px_repeat(7,1fr)] border-b border-black/20 dark:border-white/20">
-
-      <div class="flex items-center justify-center border-r border-black/20 dark:border-white/20">
-        <span class="text-[9px] font-bold text-base-content/40 uppercase">
-          All Day
-        </span>
-      </div>
-
-      <div v-for="day in weekDays"
-           :key="day.fullDate"
-           class="border-r border-black/20 dark:border-white/20 last:border-r-0 p-1 flex flex-col gap-1"
-           :class="{ 'bg-primary/5': day.fullDate === formattedSelectedDate }">
-
-        <div v-for="event in allDayEventsForDay(day.fullDate)"
-             :key="event.id"
-             @click="openEventModal(event)"
-             class="text-white text-[10px] font-bold px-2 py-1 rounded truncate shadow-sm cursor-pointer"
-             :style="{ backgroundColor: getEventStyle(event).backgroundColor }">
-
-          {{ event.title }}
+          <div class="w-10 h-10 flex items-center justify-center rounded-full mt-1 transition-all"
+               :class="{ 
+                 'bg-primary text-primary-content font-bold shadow-lg': day.isToday,
+                 'border-2 border-primary text-primary font-bold': day.fullDate === formattedSelectedDate && !day.isToday
+               }">
+            <span class="text-xl">{{ day.date }}</span>
+          </div>
 
         </div>
       </div>
 
-    </div>
+      <!-- All Day Section (sticky, below header) -->
+      <div class="grid grid-cols-[64px_repeat(7,1fr)] border-b border-base-300 sticky top-[74px] z-20 bg-base-100">
 
-    <!-- Time Grid -->
-    <div class="flex-1 overflow-y-auto custom-scrollbar">
+        <div class="flex items-center justify-center border-r border-base-300">
+          <span class="text-[9px] font-bold text-base-content/40 uppercase">
+            All Day
+          </span>
+        </div>
 
+        <div v-for="day in weekDays"
+             :key="day.fullDate"
+             class="border-r border-base-300 last:border-r-0 py-1 px-1 flex flex-col gap-1"
+             :class="{ 'bg-primary/5': day.fullDate === formattedSelectedDate }">
+
+          <div v-for="event in allDayEventsForDay(day.fullDate)"
+               :key="event.id"
+               @click="openEventModal(event)"
+               class="text-white text-[10px] font-bold px-2 py-1 rounded truncate shadow-sm cursor-pointer"
+               :style="{ backgroundColor: getEventStyle(event).backgroundColor }">
+
+            {{ event.title }}
+
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Time Grid -->
       <div class="grid grid-cols-[64px_repeat(7,1fr)] relative min-h-[1440px]">
 
         <!-- Time Labels -->
-        <div class="border-r border-black/20 dark:border-white/20">
+        <div class="border-r border-base-300">
 
           <div v-for="slot in timeSlots"
                :key="`${slot.hour}-${slot.minute}`"
-               class="h-[30px] flex items-start justify-end pr-2">
+               class="h-[30px] flex items-center justify-end pr-2">
 
             <span v-if="slot.minute === 0"
                   class="text-[9px] text-base-content/40 font-medium">
@@ -175,12 +176,12 @@ const allDayEventsForDay = (fullDate) => {
         <!-- Day Columns -->
         <div v-for="day in weekDays"
              :key="day.fullDate"
-             class="relative border-r border-black/20 dark:border-white/20 last:border-r-0">
+             class="relative border-r border-base-300 last:border-r-0">
 
           <!-- Click Slots -->
           <div v-for="slot in timeSlots"
                :key="`${slot.hour}-${slot.minute}`"
-               class="h-[30px] border-b border-black/5 dark:border-white/5 hover:bg-base-200/50 cursor-pointer">
+               class="h-[30px] border-b border-base-300 hover:bg-base-200/50 cursor-pointer">
           </div>
 
           <!-- Events -->

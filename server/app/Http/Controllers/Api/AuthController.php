@@ -606,6 +606,10 @@ class AuthController extends Controller
             $user->profile_picture = $imageData;
             $user->save();
 
+            // Clear the cache for this user's current user data
+            $cacheKey = "current_user_data_{$user->id}";
+            \Illuminate\Support\Facades\Cache::forget($cacheKey);
+
             $this->activityLogger->logUserAction($user, 'upload_profile_picture', "Updated profile picture (stored as base64)", $this->activityLogger->extractRequestInfo($request));
 
             return response()->json([

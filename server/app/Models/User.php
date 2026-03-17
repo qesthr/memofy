@@ -64,7 +64,10 @@ class User extends Authenticatable
      *
      * @var array<string, string>
      */
-    protected $appends = ['permissions'];
+    /**
+     * The attributes that should be appended when serializing.
+     */
+    protected $appends = ['permissions', 'full_name'];
 
     /**
      * The attributes that should be cast.

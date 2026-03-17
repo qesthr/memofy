@@ -97,9 +97,9 @@ const currentTitle = computed(() => {
     </header>
 
     <!-- Main Body -->
-    <div class="flex-1 flex overflow-hidden border-t border-black/20 dark:border-white/20">
+    <div class="flex-1 flex overflow-hidden border-t border-base-300">
       <!-- Sidebar -->
-      <aside class="w-64 flex-shrink-0 border-r border-black/20 dark:border-white/20 p-4 flex flex-col gap-6 hidden md:flex overflow-y-auto custom-scrollbar">
+      <aside class="w-64 flex-shrink-0 border-r border-base-300 p-4 flex flex-col gap-6 hidden md:flex overflow-y-auto custom-scrollbar">
         <!-- Add Event Button - Only visible for users with calendar.add_event permission -->
         <button 
           v-if="can('calendar.add_event')" 
