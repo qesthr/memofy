@@ -50,7 +50,7 @@ class NotificationService
     /**
      * Send memo approved notification
      */
-    public function notifyMemoApproved(User $sender, User $creator, $memo): Notification
+    public function notifyMemoApproved(User $sender, User $creator, $memo): ?Notification
     {
         $data = [
             'memo_id' => $memo->id,
@@ -71,7 +71,7 @@ class NotificationService
     /**
      * Send memo rejected notification
      */
-    public function notifyMemoRejected(User $sender, User $creator, $memo, string $reason = null): Notification
+    public function notifyMemoRejected(User $sender, User $creator, $memo, string $reason = null): ?Notification
     {
         $data = [
             'memo_id' => $memo->id,
