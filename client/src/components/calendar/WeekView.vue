@@ -100,12 +100,19 @@ const allDayEventsForDay = (fullDate) => {
 
 <template>
   <div class="flex flex-col h-full bg-base-100 overflow-hidden">
+
     <!-- Week Header -->
-    <div class="flex border-b border-black/20 dark:border-white/20">
-      <div class="w-16 border-r border-black/20 dark:border-white/20"></div>
-      <div v-for="day in weekDays" :key="day.fullDate" 
-           class="flex-1 py-3 flex flex-col items-center">
-        <span class="text-[11px] font-bold text-base-content/40 uppercase tracking-widest">{{ day.name }}</span>
+    <div class="grid grid-cols-[64px_repeat(7,1fr)] border-b border-black/20 dark:border-white/20">
+      <div class="border-r border-black/20 dark:border-white/20"></div>
+
+      <div v-for="day in weekDays"
+           :key="day.fullDate"
+           class="py-3 flex flex-col items-center border-r border-black/10 last:border-r-0">
+
+        <span class="text-[11px] font-bold text-base-content/40 uppercase tracking-widest">
+          {{ day.name }}
+        </span>
+
         <div class="w-10 h-10 flex items-center justify-center rounded-full mt-1 transition-all"
              :class="{ 
                'bg-primary text-primary-content font-bold shadow-lg': day.isToday,
@@ -113,107 +120,92 @@ const allDayEventsForDay = (fullDate) => {
              }">
           <span class="text-xl">{{ day.date }}</span>
         </div>
+
       </div>
     </div>
 
     <!-- All Day Section -->
-    <div class="flex border-b border-black/20 dark:border-white/20 min-h-[40px] bg-base-200/20">
-      <div class="w-16 flex flex-col items-center justify-center border-r border-black/20 dark:border-white/20">
-        <span class="text-[9px] font-bold text-base-content/40 uppercase">All Day</span>
+    <div class="grid grid-cols-[64px_repeat(7,1fr)] border-b border-black/20 dark:border-white/20">
+
+      <div class="flex items-center justify-center border-r border-black/20 dark:border-white/20">
+        <span class="text-[9px] font-bold text-base-content/40 uppercase">
+          All Day
+        </span>
       </div>
-      <div v-for="day in weekDays" :key="day.fullDate" 
-           class="flex-1 border-r border-black/20 dark:border-white/20 last:border-r-0 p-1 flex flex-col gap-1"
+
+      <div v-for="day in weekDays"
+           :key="day.fullDate"
+           class="border-r border-black/20 dark:border-white/20 last:border-r-0 p-1 flex flex-col gap-1"
            :class="{ 'bg-primary/5': day.fullDate === formattedSelectedDate }">
-        <div v-for="event in allDayEventsForDay(day.fullDate)" :key="event.id"
-             @click="() => {
-               if (can('calendar.edit_event')) {
-                 openEventModal(event)
-               } else {
-                 Swal.fire({
-                   icon: 'error',
-                   title: 'Permission Denied',
-                   text: 'You do not have permission to edit events.'
-                 })
-               }
-             }"
-             class="text-white text-[10px] font-bold px-2 py-1 rounded truncate shadow-sm cursor-pointer hover:brightness-110 transition-all"
-             :style="{ backgroundColor: getEventStyle(event).backgroundColor, borderLeft: getEventStyle(event).borderLeft }">
+
+        <div v-for="event in allDayEventsForDay(day.fullDate)"
+             :key="event.id"
+             @click="openEventModal(event)"
+             class="text-white text-[10px] font-bold px-2 py-1 rounded truncate shadow-sm cursor-pointer"
+             :style="{ backgroundColor: getEventStyle(event).backgroundColor }">
+
           {{ event.title }}
+
         </div>
       </div>
+
     </div>
 
-    <!-- Scrollable Time Grid -->
-    <div class="flex-1 overflow-y-auto overflow-x-hidden relative custom-scrollbar">
-      <div class="flex relative min-h-[1440px]"> <!-- 24 hours * 60px -->
-        
+    <!-- Time Grid -->
+    <div class="flex-1 overflow-y-auto custom-scrollbar">
+
+      <div class="grid grid-cols-[64px_repeat(7,1fr)] relative min-h-[1440px]">
+
         <!-- Time Labels -->
-        <div class="w-16 shrink-0 border-r border-black/20 dark:border-white/20">
-          <div v-for="slot in timeSlots" :key="`${slot.hour}-${slot.minute}`" class="h-[30px] relative">
-            <span v-if="slot.hour > 0 || slot.minute > 0" class="absolute -top-2 right-2 text-[9px] text-base-content/40 font-medium whitespace-nowrap">
+        <div class="border-r border-black/20 dark:border-white/20">
+
+          <div v-for="slot in timeSlots"
+               :key="`${slot.hour}-${slot.minute}`"
+               class="h-[30px] flex items-start justify-end pr-2">
+
+            <span v-if="slot.minute === 0"
+                  class="text-[9px] text-base-content/40 font-medium">
               {{ slot.label }}
             </span>
+
           </div>
+
         </div>
 
-        <!-- Grid and Events -->
-        <div class="flex flex-1 relative">
-          <!-- background grid lines (removed and moved to slots) -->
-          <div class="absolute inset-0">
+        <!-- Day Columns -->
+        <div v-for="day in weekDays"
+             :key="day.fullDate"
+             class="relative border-r border-black/20 dark:border-white/20 last:border-r-0">
+
+          <!-- Click Slots -->
+          <div v-for="slot in timeSlots"
+               :key="`${slot.hour}-${slot.minute}`"
+               class="h-[30px] border-b border-black/5 dark:border-white/5 hover:bg-base-200/50 cursor-pointer">
           </div>
 
-          <!-- Days interaction area -->
-          <div v-for="day in weekDays" :key="day.fullDate" 
-               class="flex-1 border-r border-black/20 dark:border-white/20 last:border-r-0 relative"
-               :class="{ 'bg-primary/3': day.fullDate === formattedSelectedDate }">
-             <!-- Clickable Slots for New Events (30 min slots) -->
-             <div v-for="slot in timeSlots" :key="`${slot.hour}-${slot.minute}`" 
-                  @click="() => {
-                    if (can('calendar.add_event')) {
-                      openEventModal({ 
-                        start: `${day.fullDate}T${slot.hour.toString().padStart(2, '0')}:${slot.minute.toString().padStart(2, '0')}`,
-                        end: (() => {
-                          let h = slot.hour; let m = slot.minute + 30;
-                          if (m >= 60) { h++; m = 0; }
-                          return `${day.fullDate}T${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-                        })(),
-                        is_editable: true 
-                      })
-                    } else {
-                      Swal.fire({
-                        icon: 'error',
-                        title: 'Permission Denied',
-                        text: 'You do not have permission to add events.'
-                      })
-                    }
-                  }"
-                  class="h-[30px] hover:bg-base-200/50 cursor-pointer transition-colors border-b border-black/5 dark:border-white/5 last:border-none">
-             </div>
+          <!-- Events -->
+          <div v-for="event in getDayEvents(day.fullDate)"
+               :key="event.id"
+               @click.stop="openEventModal(event)"
+               class="absolute left-1 right-1 rounded p-1 shadow-sm text-white cursor-pointer"
+               :style="getEventStyle(event)">
 
-             <!-- Events for this day (Overlay) -->
-             <div v-for="event in getDayEvents(day.fullDate)" :key="event.id"
-                  @click.stop="() => {
-                    if (can('calendar.edit_event')) {
-                      openEventModal(event)
-                    } else {
-                      Swal.fire({
-                        icon: 'error',
-                        title: 'Permission Denied',
-                        text: 'You do not have permission to edit events.'
-                      })
-                    }
-                  }"
-                  class="absolute left-1 right-1 rounded p-1 shadow-sm overflow-hidden z-10 cursor-pointer hover:shadow-md transition-all text-white"
-                  :style="getEventStyle(event)">
-                <div class="text-[10px] font-bold leading-tight">{{ event.title }}</div>
-                <div class="text-[9px] opacity-80 leading-snug">
-                  {{ new Date(event.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
-                </div>
-             </div>
+            <div class="text-[10px] font-bold leading-tight">
+              {{ event.title }}
+            </div>
+
+            <div class="text-[9px] opacity-80">
+              {{ new Date(event.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+            </div>
+
           </div>
+
         </div>
+
       </div>
+
     </div>
+
   </div>
 </template>
 

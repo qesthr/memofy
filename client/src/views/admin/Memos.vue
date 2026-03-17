@@ -11,6 +11,13 @@ import Swal from 'sweetalert2'
 import html2pdf from 'html2pdf.js'
 import { Cloud, ExternalLink } from 'lucide-vue-next'
 
+// allowed file types for attachments
+const allowedTypes = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+]
+
 // Filter states
 const activeTab = ref('all')
 
@@ -438,9 +445,9 @@ onMounted(async () => {
 /* Approval Modal */
 .approval-modal-box {
   @apply relative flex flex-col;
-  max-width: 52rem;
   width: 95vw;
-  max-height: 85vh;
+  height: 92vh;
+  max-width: 1400px;
   background: var(--color-memo-surface);
   border-radius: 20px;
   box-shadow: 0 20px 60px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.05);
@@ -582,4 +589,11 @@ onMounted(async () => {
     @apply w-full justify-end;
   }
 }
+
+.memo-a4-page {
+  width: 100%;
+  max-width: 794px;
+  margin: auto;
+}
+
 </style>

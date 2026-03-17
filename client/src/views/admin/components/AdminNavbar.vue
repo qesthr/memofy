@@ -105,7 +105,7 @@ const getInitials = (name) => {
 @reference "../../../style.css";
 
 .navbar {
-  @apply fixed top-0 right-0 h-16 bg-base-100 border-b border-base-300 z-10;
+  @apply fixed top-0 right-0 h-[4.56rem] bg-base-100 border-b border-base-300 z-10;
   width: calc(100% - 16rem);
   margin-left: 16rem;
 }
