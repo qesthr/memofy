@@ -887,7 +887,7 @@ onUnmounted(() => {
                   Role <span class="text-error">*</span>
                 </span>
               </label>
-              <select v-model="formData.role" class="select select-bordered w-full bg-base-200 border-base-300 focus:border-primary rounded-xl" :disabled="isEditing">
+              <select v-model="formData.role" class="select select-bordered w-full bg-base-200 border-base-300 focus:border-primary rounded-xl">
                 <option value="" disabled>Select</option>
                 <option v-for="role in roles" :key="role.value" :value="role.value">
                   {{ role.label }}

@@ -453,15 +453,16 @@ onUnmounted(() => {
       </div>
 
       <!-- Decorative Curves (CSS only approximation for the blue curves) -->
-      <div class="absolute right-0 top-0 bottom-0 w-24 bg-[#0ea5e9] skew-x-[-10deg] translate-x-12"></div>
-      <div class="absolute right-0 top-0 bottom-0 w-24 bg-[#0284c7] skew-x-[-10deg] translate-x-6 z-0"></div>
+      <!-- <div class="absolute right-0 top-0 bottom-0 w-24 bg-[#0ea5e9] skew-x-[-10deg] translate-x-12"></div> -->
+
+      
+      <div class="absolute top-0 right-0 bottom-0 w-40 bg-[#0273b8] z-0 rounded-tl-2xl rounded-bl-2xl shadow-lg translate-x-22"></div>
+      <div class="absolute top-0 right-0 bottom-0 w-32 bg-[#0284c7] z-0 rounded-tl-2xl rounded-bl-2xl shadow-lg translate-x-22"></div>
+       
     </div>
 
     <!-- Right Side - Login Form -->
     <div class="w-full lg:w-1/2 flex items-center justify-center p-8 lg:p-16 bg-white relative">
-      <!-- Blue curve overlap fix for right side to match design -->
-       <div class="absolute left-0 top-0 bottom-0 w-4 bg-[#0ea5e9] lg:block hidden"></div>
-
       <div class="w-full max-w-md space-y-8">
         <div class="text-center">
           <div class="flex justify-center mb-4">
