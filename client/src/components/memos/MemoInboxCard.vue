@@ -697,4 +697,95 @@ defineExpose({
   color: var(--color-memo-text-muted);
   font-weight: 500;
 }
+
+/* Memo Row */
+.memo-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--color-memo-border);
+  cursor: pointer;
+  transition: background 0.15s ease;
+  position: relative;
+}
+
+.memo-row:hover {
+  background: var(--color-memo-bg);
+}
+
+.memo-row:hover .memo-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Priority Dot */
+.priority-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 6px;
+  background: var(--color-memo-text-muted);
+}
+
+.priority-dot.urgent { background: #EF4444; }
+.priority-dot.high   { background: #F97316; }
+.priority-dot.medium,
+.priority-dot.normal { background: #3B82F6; }
+.priority-dot.low    { background: #10B981; }
+
+/* Unread Dot */
+.unread-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-memo-indigo);
+  flex-shrink: 0;
+}
+
+/* Status Badge */
+.memo-status-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.memo-status-badge.sent        { background: #FEF9C3; color: #854D0E; }
+.memo-status-badge.read        { background: #DBEAFE; color: #1E3A8A; }
+.memo-status-badge.acknowledged { background: #DCFCE7; color: #14532D; }
+.memo-status-badge.pending_approval { background: #FEE2E2; color: #7F1D1D; }
+.memo-status-badge.draft       { background: #F3F4F6; color: #374151; }
+
+/* Action Buttons (hidden until row hover) */
+.memo-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  flex-shrink: 0;
+}
+
+/* Skeleton animation */
+.memo-skeleton {
+  background: linear-gradient(90deg,
+    var(--color-memo-border) 25%,
+    var(--color-memo-bg) 50%,
+    var(--color-memo-border) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s infinite;
+  border-radius: 4px;
+}
+
+@keyframes skeleton-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
 </style>
