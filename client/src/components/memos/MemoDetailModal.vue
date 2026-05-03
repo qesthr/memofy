@@ -201,7 +201,7 @@ const closeModal = () => {
         
         
         <!-- Scrollable Content -->
-        <div class="flex-1 overflow-y-auto bg-gray-100 custom-scrollbar">
+        <div class="flex-1 overflow-y-auto overflow-x-hidden bg-gray-100 custom-scrollbar flex flex-col items-center">
           <MemoPdfTemplate 
             ref="pdfContent"
             :memo="memo" 

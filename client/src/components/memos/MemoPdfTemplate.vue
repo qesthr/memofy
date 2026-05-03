@@ -119,7 +119,8 @@ const contentPages = computed(() => {
 </script>
 
 <template>
-  <div class="memo-pdf-template bg-gray-100 flex flex-col items-center gap-8 py-8">
+  <div class="memo-pdf-template bg-gray-100 flex flex-col items-center gap-8 py-8"
+     style="width: 100%; overflow-x: hidden;">
     
     <div 
         v-for="(page, index) in contentPages" 
@@ -262,11 +263,10 @@ const contentPages = computed(() => {
 <style scoped>
 /* A4 Dimensions */
 .memo-a4-page {
-    width: 210mm;
+    width: min(210mm, 100%);
     min-height: 297mm;
     display: flex;
     flex-direction: column;
-    /* print-friendly defaults */
     box-sizing: border-box;
 }
 

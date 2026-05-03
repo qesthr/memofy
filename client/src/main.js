@@ -4,7 +4,6 @@ import App from './App.vue'
 import router from './router'
 import { createGtag } from 'vue-gtag'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Title, Tooltip, Legend, Filler } from 'chart.js'
-
 import canDirective from './directives/can'
 
 // Register Chart.js components globally
@@ -33,3 +32,12 @@ app.use(createGtag({
 }))
 
 app.mount('#app')
+
+// Hide the HTML loader once Vue is mounted
+const loader = document.getElementById('app-loader')
+if (loader) {
+  router.isReady().then(() => {
+    loader.classList.add('hide')
+    setTimeout(() => loader.remove(), 350)
+  })
+}

@@ -499,10 +499,16 @@ onMounted(async () => {
 }
 
 .approval-modal-body {
-  @apply flex-1 overflow-y-auto;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;   
   background: #F3F1ED;
   padding: 16px;
+  display: flex;        
+  flex-direction: column;
+  align-items: center;   
 }
+
 
 .approval-modal-footer {
   @apply flex items-center justify-between;
@@ -593,7 +599,8 @@ onMounted(async () => {
 .memo-a4-page {
   width: 100%;
   max-width: 794px;
-  margin: auto;
+  margin: 0 auto;
+  box-sizing: border-box;
 }
 
 </style>
