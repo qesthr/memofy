@@ -19,6 +19,7 @@ const user = ref(safeParse(localStorage.getItem('user')))
 const token = ref(localStorage.getItem('token') || null)
 const isAuthenticated = computed(() => !!token.value)
 const loading = ref(false)
+const fetchingUser = ref(false)
 const error = ref(null)
 
 // Session timeout handling
@@ -163,15 +164,25 @@ const logout = async (isSessionTimeout = false) => {
   }
 }
 
-const fetchUser = async () => {
-  if (!token.value) return null
+const fetchUser = async (force = false) => {
+  if (!token.value || (fetchingUser.value && !force)) return user.value
+  
+  // Basic throttle: don't fetch more than once every 30 seconds unless forced
+  const lastFetch = sessionStorage.getItem('last_user_fetch')
+  if (!force && lastFetch && (Date.now() - parseInt(lastFetch) < 30000)) {
+    return user.value
+  }
+
+  fetchingUser.value = true
   try {
     const response = await api.get('/current-user')
     const refreshedUser = response.data.user
     const permissions = response.data.permissions || refreshedUser.permissions || []
 
-    user.value = { ...refreshedUser, permissions }
-    localStorage.setItem('user', JSON.stringify({ ...refreshedUser, permissions }))
+    const userData = { ...refreshedUser, permissions }
+    user.value = userData
+    localStorage.setItem('user', JSON.stringify(userData))
+    sessionStorage.setItem('last_user_fetch', Date.now().toString())
 
     const roleName = (refreshedUser.role && typeof refreshedUser.role === 'object')
       ? refreshedUser.role.name
@@ -185,6 +196,8 @@ const fetchUser = async () => {
       logout()
     }
     return null
+  } finally {
+    fetchingUser.value = false
   }
 }
 

@@ -127,6 +127,7 @@ const showPendingBanner = ref(false)
 const bannerDismissed = ref(false)
 
 const router = useRouter()
+const isLoading = ref(false)
 
 const goToPending = () => {
   router.push('/admin/memos?tab=pending')
@@ -136,6 +137,8 @@ const goToPending = () => {
 import api from '../../services/api'
 
 const fetchDashboardData = async () => {
+  if (isLoading.value) return
+  isLoading.value = true
   try {
     const response = await api.get('/admin/dashboard-stats')
     const data = response.data
@@ -157,6 +160,8 @@ const fetchDashboardData = async () => {
 
   } catch (error) {
     console.error('Error fetching dashboard data:', error)
+  } finally {
+    isLoading.value = false
   }
 }
 

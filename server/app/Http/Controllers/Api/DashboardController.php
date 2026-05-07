@@ -51,62 +51,71 @@ class DashboardController extends Controller
         $page = (int) $request->get('activity_page', 1);
         
         // Generate a unique cache key based on user and parameters
-        $cacheKey = "dashboard_data_user_{$user->id}_v1_page_{$page}_per_{$perPage}";
+        $cacheKey = "dashboard_data_user_{$user->id}_v2_page_{$page}_per_{$perPage}";
         
-        return \Illuminate\Support\Facades\Cache::remember($cacheKey, now()->addSeconds(1), function () use ($user, $request, $perPage, $page) {
+        return \Illuminate\Support\Facades\Cache::remember($cacheKey, now()->addMinutes(5), function () use ($user, $request, $perPage, $page) {
             // 1. Stats - Optimized to use fewer queries
             $stats = [];
             
             if ($user->hasPermissionTo('faculty.view_all')) {
-                $stats['total_users'] = User::count();
-                $stats['active_users'] = User::where('is_active', true)->count();
+                $stats['total_users'] = \Illuminate\Support\Facades\Cache::remember('total_users_count', now()->addMinutes(10), fn() => User::count());
+                $stats['active_users'] = \Illuminate\Support\Facades\Cache::remember('active_users_count', now()->addMinutes(10), fn() => User::where('is_active', true)->count());
                 
-                $stats['total_memos'] = Memo::where('status', '!=', 'draft')->count();
-                $stats['pending_approval'] = Memo::where('status', 'pending_approval')->count();
-                $stats['upcoming_deadlines'] = Memo::where('status', 'sent')
+                $stats['total_memos'] = \Illuminate\Support\Facades\Cache::remember('total_memos_count', now()->addMinutes(5), fn() => Memo::where('status', '!=', 'draft')->count());
+                $stats['pending_approval'] = Memo::where('status', 'pending_approval')->count(); // Keep real-time
+                $stats['upcoming_deadlines'] = \Illuminate\Support\Facades\Cache::remember('upcoming_deadlines_count', now()->addMinutes(5), fn() => Memo::where('status', 'sent')
                                                     ->where('deadline_at', '>', now())
-                                                    ->count();
+                                                    ->count());
                 
-                // Calculate Global Acknowledgment Rate
-                $totalAcks = \App\Models\MemoAcknowledgment::count();
-                $acknowledgedCount = \App\Models\MemoAcknowledgment::where('is_acknowledged', true)->count();
-                $stats['acknowledgment_rate'] = $totalAcks > 0 ? round(($acknowledgedCount / $totalAcks) * 100) : 0;
+                // Optimized acknowledgment rate calculation
+                $stats['acknowledgment_rate'] = \Illuminate\Support\Facades\Cache::remember('global_ack_rate', now()->addMinutes(10), function() {
+                    $totalAcks = \App\Models\MemoAcknowledgment::count();
+                    if ($totalAcks === 0) return 0;
+                    $acknowledgedCount = \App\Models\MemoAcknowledgment::where('is_acknowledged', true)->count();
+                    return round(($acknowledgedCount / $totalAcks) * 100);
+                });
                 
             } else if ($user->hasPermissionTo('faculty.view')) {
-                $stats['total_users'] = User::where('department', $user->department)->count();
-                $stats['active_users'] = User::where('department', $user->department)
+                $stats['total_users'] = \Illuminate\Support\Facades\Cache::remember("dept_users_count_{$user->department}", now()->addMinutes(10), fn() => User::where('department', $user->department)->count());
+                $stats['active_users'] = \Illuminate\Support\Facades\Cache::remember("dept_active_users_count_{$user->department}", now()->addMinutes(10), fn() => User::where('department', $user->department)
                                             ->where('is_active', true)
-                                            ->count();
+                                            ->count());
             }
 
             if ($user->hasPermissionTo('memo.view_all')) {
-                $stats['total_memos'] = Memo::where('status', '!=', 'draft')->count();
+                $stats['total_memos'] = \Illuminate\Support\Facades\Cache::remember('total_memos_count_memo_view', now()->addMinutes(5), fn() => Memo::where('status', '!=', 'draft')->count());
                 $stats['pending_approval'] = Memo::where('status', 'pending_approval')->count();
             } else if ($user->hasPermissionTo('memo.view')) {
-                $stats['total_memos'] = Memo::where(function($q) use ($user) {
-                                                $q->where('recipient_id', $user->id)
-                                                  ->orWhere('sender_id', $user->id);
-                                            })
-                                            ->where('status', '!=', 'draft')
-                                            ->count();
+                $stats['total_memos'] = \Illuminate\Support\Facades\Cache::remember("user_total_memos_{$user->id}", now()->addMinutes(5), function() use ($user) {
+                    return Memo::where(function($q) use ($user) {
+                                    $q->where('recipient_id', $user->id)
+                                      ->orWhere('sender_id', $user->id);
+                                })
+                                ->where('status', '!=', 'draft')
+                                ->count();
+                });
                 $stats['pending_approval'] = Memo::where('sender_id', $user->id)
                                               ->where('status', 'pending_approval')
                                               ->count();
             }
 
-            // 2. Recent Activities - With pagination
-            $logsQuery = UserActivityLog::with(['actor:id,first_name,last_name,email,role']);
+            // 2. Recent Activities - Optimized to fetch only necessary fields and limit
+            $logsQuery = UserActivityLog::query();
             
             if (!$user->hasPermissionTo('activity.view_all')) {
                 if ($user->hasPermissionTo('activity.view_department')) {
-                    $userIds = User::where('department', $user->department)->pluck('_id');
-                    $logsQuery->whereIn('actor_id', $userIds);
+                    // Use a simpler where check if possible
+                    $logsQuery->where('actor_department', $user->department);
                 } else {
                     $logsQuery->where('actor_id', $user->id);
                 }
             }
             
-            $recentActivities = $logsQuery->latest()->paginate($perPage, ['*'], 'activity_page', $page);
+            // Limit to 5 for dashboard to keep it fast
+            $recentActivities = $logsQuery->with(['actor:id,first_name,last_name,email,role'])
+                                          ->latest()
+                                          ->limit(5)
+                                          ->get();
 
             // 3. Recent Memos
             $memosQuery = Memo::with(['sender:_id,first_name,last_name', 'recipient:_id,first_name,last_name'])
@@ -121,16 +130,19 @@ class DashboardController extends Controller
             }
             $recentMemos = $memosQuery->latest()->limit(5)->get();
 
-            // 4. Calendar Events (for mini calendar)
+            // 4. Calendar Events (for mini calendar) - Optimized MongoDB query
             $startDate = now()->startOfMonth();
             $endDate = now()->endOfMonth();
             $userId = (string)$user->id;
             
-            $calendarEvents = \App\Models\CalendarEvent::where(function ($query) use ($userId) {
+            // Get event IDs where user is a participant first (avoids expensive orWhereHas)
+            $participatingEventIds = \App\Models\CalendarEventParticipant::where('user_id', $userId)
+                ->pluck('calendar_event_id')
+                ->toArray();
+            
+            $calendarEvents = \App\Models\CalendarEvent::where(function ($query) use ($userId, $participatingEventIds) {
                     $query->where('created_by', $userId)
-                          ->orWhereHas('participants', function ($pQuery) use ($userId) {
-                              $pQuery->where('user_id', $userId);
-                          });
+                          ->orWhereIn('_id', $participatingEventIds);
                 })
                 ->where(function($q) use ($startDate, $endDate) {
                     $q->whereBetween('start', [$startDate, $endDate])

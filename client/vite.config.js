@@ -13,7 +13,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8000',
+        target: 'http://server:8000',
         changeOrigin: true,
         // Note: Do NOT set Content-Type header here; let the browser set it automatically
         // for different request types (application/json for regular requests, 

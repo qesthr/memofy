@@ -1,0 +1,43 @@
+services:
+  server:
+    build: ./server
+    container_name: memofy-server
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./server:/var/www/html
+      - /var/www/html/vendor  # Anonymous volume for vendor to speed up PHP on Windows
+    environment:
+      - DB_CONNECTION=mongodb
+      - MONGODB_URI=mongodb+srv://memofy_db:Joenil%4020@memofy.wdjopbm.mongodb.net/buksu-memofy?appName=memofy
+      - MONGODB_DATABASE=buksu-memofy
+      - APP_ENV=local
+      - APP_DEBUG=true
+      - APP_URL=http://localhost:8000
+      - APP_FRONTEND_URL=http://localhost:3001
+      - LOG_CHANNEL=stack
+    networks:
+      - memofy-network
+    restart: unless-stopped
+
+  client:
+    build: ./client
+    container_name: memofy-client
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./client:/app
+      - /app/node_modules  # Anonymous volume for node_modules to speed up Vite on Windows
+    environment:
+      - VITE_API_BASE_URL=/api
+      - CHOKIDAR_USEPOLLING=true
+      - NODE_ENV=development
+    depends_on:
+      - server
+    networks:
+      - memofy-network
+    restart: unless-stopped
+
+networks:
+  memofy-network:
+    driver: bridge

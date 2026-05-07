@@ -184,11 +184,11 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to, from, next) => {
-  const { fetchUser, can } = useAuth()
+  const { user, fetchUser, can } = useAuth()
 
-  // Refresh user data silently to get latest permissions
+  // Refresh user data if token exists but user state is empty
   const token = localStorage.getItem('token')
-  if (token) {
+  if (token && !user.value) {
     await fetchUser()
   }
 

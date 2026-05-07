@@ -55,8 +55,11 @@ const generateCalendar = () => {
 }
 
 const user = ref(null)
+const isLoading = ref(false)
 
 const fetchDashboardData = async () => {
+  if (isLoading.value) return
+  isLoading.value = true
   try {
     const response = await api.get('/dashboard')
     const { user_stats, stats: globalStats, user: userData } = response.data
@@ -70,10 +73,10 @@ const fetchDashboardData = async () => {
     stats.value[1].value = user_stats.acknowledged_memos || 0 
     stats.value[2].value = user_stats.pending_memos || 0
     
-
-    
   } catch (error) {
     console.error('Error fetching secretary dashboard:', error)
+  } finally {
+    isLoading.value = false
   }
 }
 

@@ -36,7 +36,11 @@ const generateCalendar = () => {
     calendarDays.value = days
 }
 
+const isLoading = ref(false)
+
 const fetchDashboardData = async () => {
+  if (isLoading.value) return
+  isLoading.value = true
   try {
     const response = await api.get('/dashboard')
     const { user_stats } = response.data
@@ -46,6 +50,8 @@ const fetchDashboardData = async () => {
     
   } catch (error) {
     console.error('Error fetching faculty dashboard:', error)
+  } finally {
+    isLoading.value = false
   }
 }
 

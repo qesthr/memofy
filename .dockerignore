@@ -1,0 +1,11 @@
+node_modules
+vendor
+.git
+.env
+.env.local
+storage/*.key
+/client/dist
+/server/storage/*.log
+/server/bootstrap/cache/*
+.DS_Store
+.vscode
